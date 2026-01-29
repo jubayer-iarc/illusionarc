@@ -15,7 +15,8 @@
         <!-- Header row -->
         <div class="flex items-center justify-between gap-3">
           <NuxtLink to="/" class="flex items-center gap-2">
-            <UIcon name="i-heroicons-sparkles" class="text-xl" />
+            <!--<UIcon name="i-heroicons-sparkles" class="text-xl" /> -->
+            <img src="/android-chrome-512x512.png" alt="illusion Arc Logo" class="h-8 w-8 object-contain" />
             <span class="font-semibold tracking-wide">illusion Arc</span>
           </NuxtLink>
 
