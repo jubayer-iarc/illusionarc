@@ -67,6 +67,7 @@ async function signOut(): Promise<void> {
             <NuxtLink to="/admin/services" class="admin-link">Services</NuxtLink>
             <NuxtLink to="/admin/works" class="admin-link">Works</NuxtLink>
             <NuxtLink to="/admin/tournaments" class="admin-link">Tournaments</NuxtLink>
+            <NuxtLink to="/admin/payments" class="admin-link">Payments</NuxtLink>
           </nav>
 
           <!-- Footer -->

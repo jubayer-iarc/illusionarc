@@ -1,21 +1,38 @@
+<!-- app/pages/subscribe.vue -->
 <script setup lang="ts">
 useHead({ title: 'Subscribe' })
 
 const user = useSupabaseUser()
+const supabase = useSupabaseClient()
 const toast = useToast()
 
 const loading = ref(true)
+const plansLoading = ref(true)
 const activating = ref<string | null>(null)
+
 const state = ref<any>(null)
 const errorMsg = ref<string | null>(null)
 const okMsg = ref<string | null>(null)
+
+type PlanRow = {
+  id: string
+  code: string
+  title: string
+  duration_days: number
+  price_bdt: number
+  is_active: boolean
+  discount_active: boolean
+  discount_price_bdt: number | null
+  discount_note: string | null
+  created_at: string
+}
 
 function serverCookieHeaders() {
   return import.meta.server ? useRequestHeaders(['cookie']) : undefined
 }
 
-async function refresh() {
-  loading.value = true
+/* ---------------- Subscription status ---------------- */
+async function refreshStatus() {
   errorMsg.value = null
   try {
     state.value = await $fetch('/api/subscriptions/me', {
@@ -25,41 +42,73 @@ async function refresh() {
     })
   } catch (e: any) {
     errorMsg.value = e?.data?.message || e?.message || 'Failed to load subscription status'
+  }
+}
+
+/* ---------------- Plans from DB ---------------- */
+const plans = ref<PlanRow[]>([])
+
+function effectivePrice(p: PlanRow) {
+  const dp = p.discount_price_bdt
+  const ok = p.discount_active && dp !== null && dp >= 0 && dp < p.price_bdt
+  return ok ? dp : p.price_bdt
+}
+function hasValidDiscount(p: PlanRow) {
+  return p.discount_active && p.discount_price_bdt !== null && p.discount_price_bdt >= 0 && p.discount_price_bdt < p.price_bdt
+}
+
+function planBullets(p: PlanRow) {
+  // Keep bullets consistent (you can customize per plan later if you add columns)
+  return ['Tournament access', 'Secure payment (SSLCOMMERZ)', 'Stacks with remaining time']
+}
+
+function planDesc(p: PlanRow) {
+  const d = p.duration_days
+  if (d <= 1) return 'Great for a single tournament day.'
+  if (d <= 7) return 'Best choice for weekly play.'
+  if (d <= 30) return 'Monthly access, maximum convenience.'
+  return 'Long-term access, maximum value.'
+}
+
+function featured(p: PlanRow) {
+  // Simple rule: feature the middle option (or 7-day) if exists
+  return p.code === '7d' || p.duration_days === 7
+}
+
+async function loadPlans() {
+  plansLoading.value = true
+  try {
+    const { data, error } = await supabase
+      .from('subscription_plans')
+      .select('id, code, title, duration_days, price_bdt, is_active, discount_active, discount_price_bdt, discount_note, created_at')
+      .eq('is_active', true)
+      .order('duration_days', { ascending: true })
+
+    if (error) throw error
+    plans.value = (data || []) as PlanRow[]
+  } catch (e: any) {
+    toast.add({ title: 'Failed to load plans', description: e?.message || 'Try again.', color: 'error' })
+    plans.value = []
+  } finally {
+    plansLoading.value = false
+  }
+}
+
+/* ---------------- Page load ---------------- */
+async function refreshAll() {
+  loading.value = true
+  okMsg.value = null
+  errorMsg.value = null
+  try {
+    await Promise.all([refreshStatus(), loadPlans()])
   } finally {
     loading.value = false
   }
 }
 
-await refresh()
+await refreshAll()
 
-const plans = [
-  {
-    code: '1d',
-    title: '1 Day',
-    days: 1,
-    priceBdt: 50,
-    desc: 'Great for a single tournament day.',
-    bullets: ['Tournament access', 'Secure payment (SSLCOMMERZ)', 'Stacks with remaining time']
-  },
-  {
-    code: '7d',
-    title: '7 Days',
-    days: 7,
-    priceBdt: 199,
-    desc: 'Best choice for weekly play.',
-    bullets: ['Tournament access', 'Secure payment (SSLCOMMERZ)', 'Stacks with remaining time'],
-    featured: true
-  },
-  {
-    code: '30d',
-    title: '30 Days',
-    days: 30,
-    priceBdt: 499,
-    desc: 'Monthly access, maximum convenience.',
-    bullets: ['Tournament access', 'Secure payment (SSLCOMMERZ)', 'Stacks with remaining time']
-  }
-] as const
-
+/* ---------------- Time helpers ---------------- */
 function fmt(dt: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(dt))
 }
@@ -87,22 +136,18 @@ const endsAt = computed<string | null>(() => state.value?.subscription?.ends_at 
 const remaining = computed(() => formatRemaining(msLeft(endsAt.value)))
 const lastPlanTitle = computed(() => state.value?.subscription?.subscription_plans?.title || null)
 
+/* ---------------- CTA helpers ---------------- */
 function ctaLabel() {
   if (!user.value) return 'Log in to subscribe'
   return active.value ? 'Extend' : 'Subscribe'
 }
 function ctaHint(days: number) {
   if (!user.value) return 'Sign in required'
-  return active.value
-    ? `Adds +${days} day${days > 1 ? 's' : ''} after payment`
-    : `Starts after payment • ${days} day${days > 1 ? 's' : ''}`
+  return active.value ? `Adds +${days} day${days > 1 ? 's' : ''} after payment` : `Starts after payment • ${days} day${days > 1 ? 's' : ''}`
 }
 
-/**
- * ✅ REAL PAYMENT:
- * Call /api/payments/start -> get gatewayUrl -> redirect user to SSLCOMMERZ
- */
-async function activate(planCode: typeof plans[number]['code']) {
+/* ---------------- Payment start ---------------- */
+async function activate(planCode: string) {
   okMsg.value = null
   errorMsg.value = null
 
@@ -124,8 +169,6 @@ async function activate(planCode: typeof plans[number]['code']) {
     if (!gatewayUrl) throw new Error('No gatewayUrl returned')
 
     okMsg.value = 'Redirecting to payment gateway…'
-
-    // ✅ redirect user to SSLCOMMERZ
     if (import.meta.client) window.location.href = gatewayUrl
   } catch (e: any) {
     errorMsg.value = e?.data?.message || e?.message || 'Payment start failed'
@@ -133,6 +176,10 @@ async function activate(planCode: typeof plans[number]['code']) {
   } finally {
     activating.value = null
   }
+}
+
+function money(v: number) {
+  return new Intl.NumberFormat().format(v || 0)
 }
 </script>
 
@@ -183,7 +230,7 @@ async function activate(planCode: typeof plans[number]['code']) {
         </div>
 
         <div class="flex items-center gap-3">
-          <UButton class="!rounded-full" size="md" variant="soft" :disabled="!user" @click="refresh">
+          <UButton class="!rounded-full" size="md" variant="soft" :disabled="!user" @click="refreshAll">
             Refresh
           </UButton>
           <div class="hidden sm:block text-xs opacity-60">
@@ -206,6 +253,11 @@ async function activate(planCode: typeof plans[number]['code']) {
       Loading…
     </div>
 
+    <!-- Plans loading -->
+    <div v-else-if="plansLoading" class="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6 opacity-80">
+      Loading plans…
+    </div>
+
     <!-- Pricing -->
     <div v-else class="mt-8 grid gap-5 lg:grid-cols-3">
       <div
@@ -213,33 +265,52 @@ async function activate(planCode: typeof plans[number]['code']) {
         :key="p.code"
         class="relative rounded-3xl border border-white/10 bg-white/5 p-7 flex flex-col"
       >
+        <!-- Most popular badge -->
+        <div v-if="featured(p)" class="absolute -top-3 left-6">
+          <span class="rounded-full border border-white/15 bg-black/35 px-3 py-1 text-xs">
+            Most Popular
+          </span>
+        </div>
+
         <!-- Top row: title + duration pill -->
         <div class="flex items-start justify-between gap-4">
           <div>
             <div class="text-lg font-semibold">{{ p.title }}</div>
-            <div class="mt-1 text-sm opacity-75">{{ p.desc }}</div>
+            <div class="mt-1 text-sm opacity-75">{{ planDesc(p) }}</div>
           </div>
 
           <!-- duration pill -->
-          <div
-            class="shrink-0 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/25 px-3 py-1 text-xs"
-          >
+          <div class="shrink-0 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/25 px-3 py-1 text-xs">
             <span class="inline-flex h-1.5 w-1.5 rounded-full bg-white/70" />
-            <span class="font-medium">{{ p.days }} day{{ p.days > 1 ? 's' : '' }}</span>
+            <span class="font-medium">{{ p.duration_days }} day{{ p.duration_days > 1 ? 's' : '' }}</span>
           </div>
         </div>
 
         <!-- Price -->
         <div class="mt-6">
-          <div class="text-3xl font-semibold tracking-tight">BDT {{ p.priceBdt }}</div>
-          <div class="mt-1 text-xs opacity-60">
+          <div class="flex items-baseline gap-3">
+            <div class="text-3xl font-semibold tracking-tight">
+              BDT {{ money(effectivePrice(p)) }}
+            </div>
+
+            <div v-if="hasValidDiscount(p)" class="text-sm opacity-70 line-through">
+              BDT {{ money(p.price_bdt) }}
+            </div>
+          </div>
+
+          <div v-if="hasValidDiscount(p) && p.discount_note" class="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs">
+            <span class="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            {{ p.discount_note }}
+          </div>
+
+          <div class="mt-2 text-xs opacity-60">
             Secure checkout • Code: <span class="font-medium">{{ p.code }}</span>
           </div>
         </div>
 
         <!-- Bullets -->
         <div class="mt-6 space-y-2 text-sm">
-          <div v-for="b in p.bullets" :key="b" class="flex items-center gap-2 opacity-85">
+          <div v-for="b in planBullets(p)" :key="b" class="flex items-center gap-2 opacity-85">
             <span class="inline-flex h-1.5 w-1.5 rounded-full bg-white/60" />
             <span>{{ b }}</span>
           </div>
@@ -260,20 +331,17 @@ async function activate(planCode: typeof plans[number]['code']) {
         </UButton>
 
         <div class="mt-3 text-center text-xs opacity-70 min-h-[18px]">
-          {{ ctaHint(p.days) }}
-        </div>
-
-        <!-- Most popular badge -->
-        <div v-if="p.featured" class="absolute -top-3 left-6">
-          <span class="rounded-full border border-white/15 bg-black/35 px-3 py-1 text-xs">
-            Most Popular
-          </span>
+          {{ ctaHint(p.duration_days) }}
         </div>
       </div>
     </div>
 
     <div class="mt-6 text-sm opacity-70">
       After payment, your access updates automatically (via SSLCOMMERZ IPN + validation).
+    </div>
+
+    <div v-if="!loading && !plansLoading && plans.length === 0" class="mt-6 text-sm opacity-70">
+      No active plans found. Please contact admin.
     </div>
   </UContainer>
 </template>
