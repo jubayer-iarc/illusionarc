@@ -39,7 +39,7 @@ const plans = [
     days: 1,
     priceBdt: 50,
     desc: 'Great for a single tournament day.',
-    bullets: ['Tournament access', 'Instant activation', 'Stacks with remaining time']
+    bullets: ['Tournament access', 'Secure payment (SSLCOMMERZ)', 'Stacks with remaining time']
   },
   {
     code: '7d',
@@ -47,7 +47,7 @@ const plans = [
     days: 7,
     priceBdt: 199,
     desc: 'Best choice for weekly play.',
-    bullets: ['Tournament access', 'Instant activation', 'Stacks with remaining time'],
+    bullets: ['Tournament access', 'Secure payment (SSLCOMMERZ)', 'Stacks with remaining time'],
     featured: true
   },
   {
@@ -56,7 +56,7 @@ const plans = [
     days: 30,
     priceBdt: 499,
     desc: 'Monthly access, maximum convenience.',
-    bullets: ['Tournament access', 'Instant activation', 'Stacks with remaining time']
+    bullets: ['Tournament access', 'Secure payment (SSLCOMMERZ)', 'Stacks with remaining time']
   }
 ] as const
 
@@ -94,10 +94,14 @@ function ctaLabel() {
 function ctaHint(days: number) {
   if (!user.value) return 'Sign in required'
   return active.value
-    ? `Adds +${days} day${days > 1 ? 's' : ''} to your remaining time`
-    : `Access for ${days} day${days > 1 ? 's' : ''}`
+    ? `Adds +${days} day${days > 1 ? 's' : ''} after payment`
+    : `Starts after payment • ${days} day${days > 1 ? 's' : ''}`
 }
 
+/**
+ * ✅ REAL PAYMENT:
+ * Call /api/payments/start -> get gatewayUrl -> redirect user to SSLCOMMERZ
+ */
 async function activate(planCode: typeof plans[number]['code']) {
   okMsg.value = null
   errorMsg.value = null
@@ -109,22 +113,23 @@ async function activate(planCode: typeof plans[number]['code']) {
 
   activating.value = planCode
   try {
-    const res: any = await $fetch('/api/subscriptions/activate', {
+    const res: any = await $fetch('/api/payments/start', {
       method: 'POST',
       credentials: 'include',
       headers: serverCookieHeaders(),
       body: { planCode }
     })
 
-    okMsg.value = res?.rpc?.mode === 'extended'
-      ? 'Access extended successfully.'
-      : 'Subscription activated successfully.'
+    const gatewayUrl = res?.gatewayUrl
+    if (!gatewayUrl) throw new Error('No gatewayUrl returned')
 
-    state.value = res
-    await refresh()
+    okMsg.value = 'Redirecting to payment gateway…'
+
+    // ✅ redirect user to SSLCOMMERZ
+    if (import.meta.client) window.location.href = gatewayUrl
   } catch (e: any) {
-    errorMsg.value = e?.data?.message || e?.message || 'Activation failed'
-    toast.add({ title: 'Activation failed', description: errorMsg.value, color: 'error' })
+    errorMsg.value = e?.data?.message || e?.message || 'Payment start failed'
+    toast.add({ title: 'Payment error', description: errorMsg.value, color: 'error' })
   } finally {
     activating.value = null
   }
@@ -137,7 +142,7 @@ async function activate(planCode: typeof plans[number]['code']) {
     <div class="flex flex-col gap-2">
       <h1 class="text-3xl font-semibold tracking-tight">Tournament Passes</h1>
       <p class="text-sm opacity-75 max-w-2xl">
-        Unlock tournaments with a pass. Buying again extends your access if you still have time left.
+        Pay with SSLCOMMERZ to unlock tournaments. Buying again extends your access if you still have time left.
       </p>
     </div>
 
@@ -178,13 +183,7 @@ async function activate(planCode: typeof plans[number]['code']) {
         </div>
 
         <div class="flex items-center gap-3">
-          <UButton
-            class="!rounded-full"
-            size="md"
-            variant="soft"
-            :disabled="!user"
-            @click="refresh"
-          >
+          <UButton class="!rounded-full" size="md" variant="soft" :disabled="!user" @click="refresh">
             Refresh
           </UButton>
           <div class="hidden sm:block text-xs opacity-60">
@@ -221,7 +220,7 @@ async function activate(planCode: typeof plans[number]['code']) {
             <div class="mt-1 text-sm opacity-75">{{ p.desc }}</div>
           </div>
 
-          <!-- Better pill -->
+          <!-- duration pill -->
           <div
             class="shrink-0 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/25 px-3 py-1 text-xs"
           >
@@ -234,7 +233,7 @@ async function activate(planCode: typeof plans[number]['code']) {
         <div class="mt-6">
           <div class="text-3xl font-semibold tracking-tight">BDT {{ p.priceBdt }}</div>
           <div class="mt-1 text-xs opacity-60">
-            One-time pass • Code: <span class="font-medium">{{ p.code }}</span>
+            Secure checkout • Code: <span class="font-medium">{{ p.code }}</span>
           </div>
         </div>
 
@@ -246,10 +245,9 @@ async function activate(planCode: typeof plans[number]['code']) {
           </div>
         </div>
 
-        <!-- Spacer so buttons align -->
         <div class="flex-1" />
 
-        <!-- CTA (same style on all) -->
+        <!-- CTA -->
         <UButton
           class="mt-7 w-full !rounded-full"
           size="lg"
@@ -261,12 +259,11 @@ async function activate(planCode: typeof plans[number]['code']) {
           {{ ctaLabel() }}
         </UButton>
 
-        <!-- Hint (keeps height consistent) -->
         <div class="mt-3 text-center text-xs opacity-70 min-h-[18px]">
           {{ ctaHint(p.days) }}
         </div>
 
-        <!-- Most popular badge (clean) -->
+        <!-- Most popular badge -->
         <div v-if="p.featured" class="absolute -top-3 left-6">
           <span class="rounded-full border border-white/15 bg-black/35 px-3 py-1 text-xs">
             Most Popular
@@ -276,7 +273,7 @@ async function activate(planCode: typeof plans[number]['code']) {
     </div>
 
     <div class="mt-6 text-sm opacity-70">
-      Payments coming soon (bKash/SSLCommerz). For now, activation is dummy but stacking already works.
+      After payment, your access updates automatically (via SSLCOMMERZ IPN + validation).
     </div>
   </UContainer>
 </template>
