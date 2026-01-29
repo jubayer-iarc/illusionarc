@@ -10,6 +10,8 @@ const route = useRoute()
 const slug = computed(() => String(route.params.tournamentSlug || '').trim())
 
 const user = useSupabaseUser()
+const supabase = useSupabaseClient()
+
 const { bySlug } = useTournaments()
 const { getLeaderboard } = useTournamentLeaderboard()
 const { me } = useSubscription()
@@ -77,6 +79,21 @@ function safeName(name: any) {
   const s = String(name || '').trim()
   return s || 'Player'
 }
+function initials(name: any) {
+  const s = String(name || '').trim()
+  if (!s) return 'P'
+  const parts = s.split(/\s+/g).filter(Boolean)
+  const a = parts[0]?.[0] || 'P'
+  const b = parts.length > 1 ? (parts[1]?.[0] || '') : (parts[0]?.[1] || '')
+  return (a + b).toUpperCase()
+}
+/** ✅ phone mask: keep first 6, hide the rest with X (Bangladesh 11 digits -> 5 X) */
+function maskPhone(phone: any) {
+  const p = String(phone || '').trim().replace(/\s+/g, '')
+  if (!p) return '—'
+  const keep = Math.min(6, p.length)
+  return p.slice(0, keep) + 'X'.repeat(Math.max(0, p.length - keep))
+}
 
 /* ---------------- Prize helpers (new system) ---------------- */
 function getPrize1(x: AnyTournament) {
@@ -88,6 +105,11 @@ function getPrize2(x: AnyTournament) {
 function getPrize3(x: AnyTournament) {
   return String(x?.prize_3 ?? '').trim()
 }
+function getLegacyPrize(x: AnyTournament) {
+  return String(x?.prize ?? '').trim()
+}
+
+/** Keep your existing list (used before), but we’ll also always render 3 prize cards */
 const prizeList = computed(() => {
   if (!t.value) return []
   const p1 = getPrize1(t.value)
@@ -99,6 +121,26 @@ const prizeList = computed(() => {
     p3 ? { rank: 3 as const, label: '3rd Prize', value: p3 } : null
   ].filter(Boolean) as { rank: 1 | 2 | 3; label: string; value: string }[]
   return out
+})
+
+/** ✅ Always show 3 prizes (before start + after end) */
+const prizeTriplet = computed(() => {
+  if (!t.value) {
+    return [
+      { rank: 1 as const, label: '1st Prize', value: '—' },
+      { rank: 2 as const, label: '2nd Prize', value: '—' },
+      { rank: 3 as const, label: '3rd Prize', value: '—' }
+    ]
+  }
+  const p1 = getPrize1(t.value)
+  const p2 = getPrize2(t.value)
+  const p3 = getPrize3(t.value)
+  const legacy = getLegacyPrize(t.value)
+  return [
+    { rank: 1 as const, label: '1st Prize', value: p1 || legacy || '—' },
+    { rank: 2 as const, label: '2nd Prize', value: p2 || '—' },
+    { rank: 3 as const, label: '3rd Prize', value: p3 || '—' }
+  ]
 })
 
 /**
@@ -189,6 +231,58 @@ function podiumLabel(rank: 1 | 2 | 3) {
   return rank === 1 ? 'Champion' : rank === 2 ? 'Runner-up' : '3rd Place'
 }
 
+/* ✅ Winner profile enrich (avatar + phone) */
+const avatarMap = ref<Record<string, string>>({})
+const phoneMap = ref<Record<string, string>>({})
+
+function avatarFor(uid?: string | null) {
+  if (!uid) return ''
+  return avatarMap.value[uid] || ''
+}
+function phoneFor(uid?: string | null) {
+  if (!uid) return ''
+  return phoneMap.value[uid] || ''
+}
+function onAvatarError(uid?: string | null) {
+  if (!uid) return
+  avatarMap.value = { ...avatarMap.value, [uid]: '' }
+}
+
+async function fetchProfiles(ids: string[]) {
+  // Try common profile schemas without breaking if a column doesn't exist
+  const attempts: Array<{ select: string; idKey: 'user_id' | 'id'; phoneKey: 'phone' | 'phone_number' }> = [
+    { select: 'user_id, avatar_url, phone', idKey: 'user_id', phoneKey: 'phone' },
+    { select: 'user_id, avatar_url, phone_number', idKey: 'user_id', phoneKey: 'phone_number' },
+    { select: 'id, avatar_url, phone', idKey: 'id', phoneKey: 'phone' },
+    { select: 'id, avatar_url, phone_number', idKey: 'id', phoneKey: 'phone_number' }
+  ]
+
+  for (const a of attempts) {
+    try {
+      const { data, error } = await (supabase as any).from('profiles').select(a.select).in(a.idKey, ids)
+      if (error) throw error
+
+      const nextA: Record<string, string> = { ...avatarMap.value }
+      const nextP: Record<string, string> = { ...phoneMap.value }
+
+      for (const row of data || []) {
+        const uid = String(row?.[a.idKey] || '').trim()
+        if (!uid) continue
+        const av = String(row?.avatar_url || '').trim()
+        const ph = String(row?.[a.phoneKey] || '').trim()
+        if (av) nextA[uid] = av
+        if (ph) nextP[uid] = ph
+      }
+
+      avatarMap.value = nextA
+      phoneMap.value = nextP
+      return
+    } catch {
+      // try next schema
+    }
+  }
+}
+
 async function loadWinners() {
   winnersError.value = null
   winnersPending.value = true
@@ -197,7 +291,11 @@ async function loadWinners() {
       credentials: 'include',
       query: { slug: slug.value }
     })
-    winners.value = Array.isArray(res?.winners) ? (res.winners as WinnerRow[]) : []
+    const arr = Array.isArray(res?.winners) ? (res.winners as WinnerRow[]) : []
+    winners.value = arr
+
+    const ids = Array.from(new Set(arr.map((w) => w.user_id).filter(Boolean))) as string[]
+    if (ids.length) await fetchProfiles(ids)
   } catch (e: any) {
     winnersError.value = e?.data?.message || e?.message || 'Failed to load winners'
     winners.value = []
@@ -314,7 +412,11 @@ function playHard(tournamentSlug: string) {
             Play Now
           </UButton>
 
-          <UButton v-else-if="effectiveStatus === 'live' && user && sub && !sub.active" to="/subscribe" class="!rounded-full">
+          <UButton
+            v-else-if="effectiveStatus === 'live' && user && sub && !sub.active"
+            to="/subscribe"
+            class="!rounded-full"
+          >
             Subscribe to Play
           </UButton>
 
@@ -328,12 +430,12 @@ function playHard(tournamentSlug: string) {
         </div>
       </div>
 
-      <!-- ✅ Prizes (new system) -->
-      <div v-if="prizeList.length" class="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+      <!-- ✅ Prizes (ALWAYS show 3) -->
+      <div v-if="effectiveStatus === 'live'" class="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
         <div class="text-lg font-semibold">Prizes</div>
         <div class="mt-3 grid gap-3 md:grid-cols-3">
           <div
-            v-for="p in prizeList"
+            v-for="p in prizeTriplet"
             :key="p.rank"
             class="rounded-xl border border-white/10 bg-white/5 p-4"
           >
@@ -375,22 +477,48 @@ function playHard(tournamentSlug: string) {
 
         <div v-else class="mt-6">
           <div class="grid gap-4 md:grid-cols-3 items-end">
+            <!-- 2nd -->
             <div class="order-2 md:order-1">
               <div class="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
                 <div class="text-3xl">🥈</div>
                 <div class="mt-2 text-xs uppercase tracking-wider opacity-70">{{ podiumLabel(2) }}</div>
+
+                <!-- ✅ Avatar -->
+                <div class="mt-4 flex justify-center">
+                  <div class="h-14 w-14 rounded-full overflow-hidden border border-white/10 bg-black/20">
+                    <img
+                      v-if="avatarFor(winnerByRank(2)?.user_id)"
+                      :src="avatarFor(winnerByRank(2)?.user_id)"
+                      alt="avatar"
+                      class="h-full w-full object-cover"
+                      @error="onAvatarError(winnerByRank(2)?.user_id)"
+                    />
+                    <div v-else class="h-full w-full grid place-items-center text-sm font-semibold opacity-80">
+                      {{ initials(winnerByRank(2)?.player_name) }}
+                    </div>
+                  </div>
+                </div>
+
                 <div class="mt-2 text-lg font-semibold">{{ safeName(winnerByRank(2)?.player_name) }}</div>
+
+                <!-- ✅ Phone masked -->
+                <div class="mt-1 text-xs opacity-70">
+                  Phone: <b class="font-semibold">{{ maskPhone(phoneFor(winnerByRank(2)?.user_id)) }}</b>
+                </div>
+
                 <div class="mt-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-sm">
                   <UIcon name="i-heroicons-bolt" class="w-4 h-4 opacity-80" />
                   <span class="font-semibold">{{ winnerByRank(2)?.score ?? '—' }}</span>
                 </div>
+
                 <div v-if="winnerByRank(2)?.prize" class="mt-3 text-sm opacity-85">
                   <b>Prize:</b> {{ winnerByRank(2)?.prize }}
                 </div>
-                <div class="mt-4 h-12 rounded-xl bg-white/5 border border-white/10"></div>
+                <!-- <div class="mt-4 h-12 rounded-xl bg-white/5 border border-white/10"></div> -->
               </div>
             </div>
 
+            <!-- 1st -->
             <div class="order-1 md:order-2">
               <div class="rounded-2xl border border-amber-400/30 bg-gradient-to-b from-amber-500/15 to-white/5 p-6 text-center">
                 <div class="flex items-center justify-center gap-2">
@@ -398,7 +526,30 @@ function playHard(tournamentSlug: string) {
                   <span class="text-2xl">👑</span>
                 </div>
                 <div class="mt-2 text-xs uppercase tracking-wider text-amber-200/90">{{ podiumLabel(1) }}</div>
+
+                <!-- ✅ Avatar -->
+                <div class="mt-4 flex justify-center">
+                  <div class="h-16 w-16 rounded-full overflow-hidden border border-amber-400/20 bg-black/20">
+                    <img
+                      v-if="avatarFor(winnerByRank(1)?.user_id)"
+                      :src="avatarFor(winnerByRank(1)?.user_id)"
+                      alt="avatar"
+                      class="h-full w-full object-cover"
+                      @error="onAvatarError(winnerByRank(1)?.user_id)"
+                    />
+                    <div v-else class="h-full w-full grid place-items-center text-sm font-semibold text-amber-100/80">
+                      {{ initials(winnerByRank(1)?.player_name) }}
+                    </div>
+                  </div>
+                </div>
+
                 <div class="mt-2 text-2xl font-semibold">{{ safeName(winnerByRank(1)?.player_name) }}</div>
+
+                <!-- ✅ Phone masked -->
+                <div class="mt-1 text-xs text-amber-100/80">
+                  Phone: <b class="font-semibold">{{ maskPhone(phoneFor(winnerByRank(1)?.user_id)) }}</b>
+                </div>
+
                 <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-500/10 px-4 py-1 text-sm">
                   <UIcon name="i-heroicons-bolt" class="w-4 h-4 opacity-90" />
                   <span class="font-semibold">{{ winnerByRank(1)?.score ?? '—' }}</span>
@@ -406,15 +557,39 @@ function playHard(tournamentSlug: string) {
                 <div v-if="winnerByRank(1)?.prize" class="mt-3 text-sm text-amber-100/90">
                   <b>Prize:</b> {{ winnerByRank(1)?.prize }}
                 </div>
-                <div class="mt-5 h-16 rounded-xl bg-amber-500/10 border border-amber-400/20"></div>
+                <!--  <div class="mt-5 h-16 rounded-xl bg-amber-500/10 border border-amber-400/20"></div> -->
               </div>
             </div>
 
+            <!-- 3rd -->
             <div class="order-3">
               <div class="rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
                 <div class="text-3xl">🥉</div>
                 <div class="mt-2 text-xs uppercase tracking-wider opacity-70">{{ podiumLabel(3) }}</div>
+
+                <!-- ✅ Avatar -->
+                <div class="mt-4 flex justify-center">
+                  <div class="h-14 w-14 rounded-full overflow-hidden border border-white/10 bg-black/20">
+                    <img
+                      v-if="avatarFor(winnerByRank(3)?.user_id)"
+                      :src="avatarFor(winnerByRank(3)?.user_id)"
+                      alt="avatar"
+                      class="h-full w-full object-cover"
+                      @error="onAvatarError(winnerByRank(3)?.user_id)"
+                    />
+                    <div v-else class="h-full w-full grid place-items-center text-sm font-semibold opacity-80">
+                      {{ initials(winnerByRank(3)?.player_name) }}
+                    </div>
+                  </div>
+                </div>
+
                 <div class="mt-2 text-lg font-semibold">{{ safeName(winnerByRank(3)?.player_name) }}</div>
+
+                <!-- ✅ Phone masked -->
+                <div class="mt-1 text-xs opacity-70">
+                  Phone: <b class="font-semibold">{{ maskPhone(phoneFor(winnerByRank(3)?.user_id)) }}</b>
+                </div>
+
                 <div class="mt-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-sm">
                   <UIcon name="i-heroicons-bolt" class="w-4 h-4 opacity-80" />
                   <span class="font-semibold">{{ winnerByRank(3)?.score ?? '—' }}</span>
@@ -422,7 +597,7 @@ function playHard(tournamentSlug: string) {
                 <div v-if="winnerByRank(3)?.prize" class="mt-3 text-sm opacity-85">
                   <b>Prize:</b> {{ winnerByRank(3)?.prize }}
                 </div>
-                <div class="mt-4 h-10 rounded-xl bg-white/5 border border-white/10"></div>
+                <!-- <div class="mt-4 h-10 rounded-xl bg-white/5 border border-white/10"></div> -->
               </div>
             </div>
           </div>
@@ -434,14 +609,34 @@ function playHard(tournamentSlug: string) {
               class="rounded-2xl border border-white/10 bg-white/5 p-4"
             >
               <div class="flex items-center justify-between gap-3">
-                <div class="flex items-center gap-2">
-                  <div class="text-2xl">{{ medal(r.rank) }}</div>
+                <div class="flex items-center gap-3">
+                  <!-- ✅ Avatar (list) -->
+                  <div class="h-10 w-10 rounded-full overflow-hidden border border-white/10 bg-black/20">
+                    <img
+                      v-if="avatarFor(r.user_id)"
+                      :src="avatarFor(r.user_id)"
+                      alt="avatar"
+                      class="h-full w-full object-cover"
+                      @error="onAvatarError(r.user_id)"
+                    />
+                    <div v-else class="h-full w-full grid place-items-center text-xs font-semibold opacity-80">
+                      {{ initials(r.player_name) }}
+                    </div>
+                  </div>
+
                   <div>
-                    <div class="text-xs opacity-70">Rank #{{ r.rank }}</div>
+                    <div class="text-xs opacity-70">Rank #{{ r.rank }} • {{ medal(r.rank) }}</div>
                     <div class="font-semibold">{{ safeName(r.player_name) }}</div>
+
+                    <!-- ✅ Phone masked -->
+                    <div class="mt-0.5 text-[11px] opacity-70">
+                      Phone: <b class="font-semibold">{{ maskPhone(phoneFor(r.user_id)) }}</b>
+                    </div>
+
                     <div v-if="r.prize" class="mt-1 text-xs opacity-80">Prize: <b>{{ r.prize }}</b></div>
                   </div>
                 </div>
+
                 <div class="text-right">
                   <div class="text-xs opacity-70">Score</div>
                   <div class="text-lg font-semibold">{{ r.score }}</div>
@@ -471,12 +666,6 @@ function playHard(tournamentSlug: string) {
                 Ends in: <span class="font-mono">{{ msToClock(endsInMs) }}</span>
               </div>
             </div>
-          </div>
-
-          <!-- Legacy prize fallback (only if new prizes absent) -->
-          <div v-if="!prizeList.length && t.prize" class="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
-            <div class="text-xs opacity-70">Prize</div>
-            <div class="mt-1 text-sm font-medium">{{ t.prize }}</div>
           </div>
 
           <!-- Gate hint -->

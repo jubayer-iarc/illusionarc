@@ -3,6 +3,8 @@
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+      <!-- Global page transition loader -->
+    <!-- <PageLoader /> -->
   </UApp>
 </template>
 

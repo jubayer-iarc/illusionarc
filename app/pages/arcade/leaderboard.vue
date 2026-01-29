@@ -96,6 +96,9 @@ const rows = ref<Row[]>([])
 /** Avatar cache keyed by user_id */
 const avatarMap = ref<Record<string, string>>({})
 
+/** Phone cache keyed by user_id */
+const phoneMap = ref<Record<string, string>>({})
+
 function initials(name: string) {
   const s = String(name || '').trim()
   if (!s) return 'P'
@@ -110,32 +113,56 @@ function avatarFor(r: Row) {
   return id ? avatarMap.value[id] || '' : ''
 }
 
-/** Batch fetch avatars from profiles for visible leaderboard rows */
-async function loadAvatarsForRows(items: Row[]) {
+/** show only first 6 chars, rest X (e.g. +88017XXXXXXXX) */
+function maskPhone(raw?: string) {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+  const keep = 6
+  if (s.length <= keep) return s
+  return s.slice(0, keep) + 'X'.repeat(s.length - keep)
+}
+
+function maskedPhoneFor(r: Row) {
+  const id = r.userId || ''
+  const p = id ? phoneMap.value[id] || '' : ''
+  return maskPhone(p)
+}
+
+/** Batch fetch avatars + phones from profiles for visible leaderboard rows */
+async function loadProfilesForRows(items: Row[]) {
   const ids = Array.from(new Set(items.map((r) => r.userId).filter(Boolean))) as string[]
   if (!ids.length) return
 
   try {
     const { data, error } = await (supabase as any)
       .from('profiles')
-      .select('user_id, avatar_url')
+      .select('user_id, avatar_url, phone')
       .in('user_id', ids)
 
     if (error) {
-      // Non-fatal (RLS might block). We'll just show initials.
-      console.warn('Avatar fetch blocked:', error.message)
+      // Non-fatal (RLS might block). We'll just show initials and hide phone.
+      console.warn('Profile fetch blocked:', error.message)
       return
     }
 
-    const map: Record<string, string> = { ...avatarMap.value }
+    const aMap: Record<string, string> = { ...avatarMap.value }
+    const pMap: Record<string, string> = { ...phoneMap.value }
+
     for (const p of data || []) {
       const uid = p?.user_id
+      if (!uid) continue
+
       const url = String(p?.avatar_url || '').trim()
-      if (uid && url) map[uid] = url
+      const phone = String(p?.phone || '').trim()
+
+      if (url) aMap[uid] = url
+      if (phone) pMap[uid] = phone
     }
-    avatarMap.value = map
+
+    avatarMap.value = aMap
+    phoneMap.value = pMap
   } catch (e) {
-    console.warn('Avatar fetch failed:', e)
+    console.warn('Profile fetch failed:', e)
   }
 }
 
@@ -159,8 +186,8 @@ async function load() {
     const items: Row[] = Array.isArray(res?.items) ? res.items : []
     rows.value = items
 
-    // ✅ pull avatars after list loads
-    await loadAvatarsForRows(items)
+    // ✅ pull avatars + phones after list loads
+    await loadProfilesForRows(items)
   } catch (e: any) {
     errorMsg.value = e?.data?.message || e?.message || 'Failed to load leaderboard.'
   } finally {
@@ -306,6 +333,12 @@ function goWinners() {
             <div class="font-semibold text-black dark:text-white truncate">
               {{ r.player }}
             </div>
+
+            <!-- ✅ masked phone under name (nice for top3) -->
+            <div v-if="maskedPhoneFor(r)" class="mt-0.5 text-[11px] text-black/60 dark:text-white/60 truncate">
+              {{ maskedPhoneFor(r) }}
+            </div>
+
             <div class="text-xs text-black/60 dark:text-white/60">
               Achieved: {{ fmtDate(r.createdAt) }}
             </div>
@@ -342,6 +375,8 @@ function goWinners() {
             <tr class="text-left border-b border-black/10 dark:border-white/10">
               <th class="py-3 pr-3">#</th>
               <th class="py-3 pr-3">Player</th>
+              <!-- ✅ NEW: Phone column -->
+              <th class="py-3 pr-3">Phone</th>
               <th class="py-3 pr-3">Best score</th>
               <th class="py-3 pr-3">Achieved</th>
             </tr>
@@ -382,12 +417,18 @@ function goWinners() {
                 </div>
               </td>
 
+              <!-- ✅ masked phone cell -->
+              <td class="py-3 pr-3 text-black/70 dark:text-white/70 tabular-nums">
+                <span v-if="maskedPhoneFor(r)">{{ maskedPhoneFor(r) }}</span>
+                <span v-else class="text-black/40 dark:text-white/40">—</span>
+              </td>
+
               <td class="py-3 pr-3 font-semibold tabular-nums text-black dark:text-white">{{ r.score }}</td>
               <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ fmtDate(r.createdAt) }}</td>
             </tr>
 
             <tr v-if="!loading && rows.length === 0">
-              <td colspan="4" class="py-10 text-center text-black/60 dark:text-white/60">
+              <td colspan="5" class="py-10 text-center text-black/60 dark:text-white/60">
                 No scores found for this {{ period }} period yet.
               </td>
             </tr>

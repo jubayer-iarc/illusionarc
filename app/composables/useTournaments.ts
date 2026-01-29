@@ -8,8 +8,22 @@ export type Tournament = {
   starts_at: string
   ends_at: string
   status: TournamentStatus
+
+  // old
   prize: string | null
   description: string | null
+
+  // ✅ new columns (from your table)
+  finalized?: boolean | null
+  prize_1?: string | null
+  prize_2?: string | null
+  prize_3?: string | null
+  thumbnail_url?: string | null
+  thumbnail_path?: string | null
+  thumbnail_bucket?: string | null
+
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 export function useTournaments() {

@@ -1,3 +1,4 @@
+<!-- app/pages/tournaments/index.vue -->
 <script setup lang="ts">
 import { GAMES } from '~/data/games'
 import { TOURNAMENTS as FALLBACK } from '~/data/tournaments'
@@ -50,13 +51,14 @@ function getStartsAt(t: AnyTournament) {
 function getEndsAt(t: AnyTournament) {
   return String(t?.ends_at ?? t?.endsAt ?? '').trim()
 }
-
 function gameTitle(slug: string) {
-  return GAMES.find(g => g.slug === slug)?.name || slug
+  return GAMES.find((g) => g.slug === slug)?.name || slug
 }
 function fmt(dt: string) {
   if (!dt) return ''
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(dt))
+  const d = new Date(dt)
+  if (Number.isNaN(d.getTime())) return ''
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d)
 }
 function msToClock(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return '00:00:00'
@@ -73,12 +75,7 @@ function endsIn(t: AnyTournament) {
   return new Date(getEndsAt(t)).getTime() - now.value
 }
 
-/* ---------------- Thumbnail resolver (FIX) ----------------
-Supports:
-- t.thumbnail_url (full URL OR relative path)
-- t.thumbnail_path + (optional) t.thumbnail_bucket  -> Supabase Storage public url
-If the bucket is private, you must switch to a signed URL endpoint.
----------------------------------------------------------- */
+/* ---------------- Thumbnail resolver ---------------- */
 const DEFAULT_BUCKET = 'tournament-thumbs' // change to your real bucket name
 
 function rawThumb(t: AnyTournament) {
@@ -88,7 +85,6 @@ function thumbBucket(t: AnyTournament) {
   return String(t?.thumbnail_bucket || DEFAULT_BUCKET).trim() || DEFAULT_BUCKET
 }
 function thumbPath(t: AnyTournament) {
-  // optional db field if you store only object path in storage
   return String(t?.thumbnail_path ?? '').trim()
 }
 
@@ -97,11 +93,8 @@ const thumbMap = reactive<Record<string, string>>({})
 function normalizeMaybeUrl(x: string) {
   const s = String(x || '').trim()
   if (!s) return ''
-  // Already an absolute url
   if (/^https?:\/\//i.test(s)) return s
-  // Already a root path in your app
   if (s.startsWith('/')) return s
-  // Looks like a storage public URL path or relative - keep as is (we’ll try to convert below)
   return s
 }
 
@@ -109,10 +102,8 @@ async function resolveThumb(t: AnyTournament) {
   const slug = String(t?.slug || '').trim()
   if (!slug) return ''
 
-  // 1) Prefer thumbnail_url if present
   const direct = normalizeMaybeUrl(rawThumb(t))
   if (direct) {
-    // If it’s not http or /, it might be a storage object path. Try converting:
     if (!/^https?:\/\//i.test(direct) && !direct.startsWith('/')) {
       const bucket = thumbBucket(t)
       const { data } = supabase.storage.from(bucket).getPublicUrl(direct)
@@ -121,7 +112,6 @@ async function resolveThumb(t: AnyTournament) {
     return direct
   }
 
-  // 2) If thumbnail_path is provided → convert to public URL
   const p = thumbPath(t)
   if (p) {
     const bucket = thumbBucket(t)
@@ -159,26 +149,62 @@ function getThumb(t: AnyTournament) {
 function onThumbError(t: AnyTournament) {
   const slug = String(t?.slug || '').trim()
   const u = slug ? thumbMap[slug] : ''
-  console.warn('[TournamentThumb] Failed to load:', { slug, url: u, raw: rawThumb(t), path: thumbPath(t), bucket: thumbBucket(t) })
-  if (slug) thumbMap[slug] = '' // fallback to gradient
+  console.warn('[TournamentThumb] Failed to load:', {
+    slug,
+    url: u,
+    raw: rawThumb(t),
+    path: thumbPath(t),
+    bucket: thumbBucket(t)
+  })
+  if (slug) thumbMap[slug] = ''
 }
 
-/* ---------------- UI state ---------------- */
+/* ---------------- UI State ---------------- */
 const q = ref('')
-const tab = ref<'all' | 'live' | 'scheduled' | 'ended'>('all')
+const status = ref<'all' | 'live' | 'scheduled' | 'ended'>('all')
 const gameFilter = ref<string>('all')
 const onlyJoinable = ref(false)
+const sortBy = ref<'smart' | 'startsSoon' | 'newest'>('smart')
+const filtersOpen = ref(false)
+
+/* ---------------- Sorting / Filtering ---------------- */
+function statusRank(s: string) {
+  return s === 'live' ? 0 : s === 'scheduled' ? 1 : s === 'ended' ? 2 : 3
+}
 
 const normalized = computed(() => {
   const arr = [...(tournaments.value || [])]
-  // Sort: live first, then scheduled, then ended; within each, by start desc
-  const rank = (s: string) => (s === 'live' ? 0 : s === 'scheduled' ? 1 : s === 'ended' ? 2 : 3)
+
+  if (sortBy.value === 'smart') {
+    arr.sort((a, b) => {
+      const sa = getStatus(a)
+      const sb = getStatus(b)
+      const ra = statusRank(sa)
+      const rb = statusRank(sb)
+      if (ra !== rb) return ra - rb
+      const aa = new Date(getStartsAt(a)).getTime()
+      const bb = new Date(getStartsAt(b)).getTime()
+      return bb - aa
+    })
+    return arr
+  }
+
+  if (sortBy.value === 'startsSoon') {
+    arr.sort((a, b) => {
+      const sa = getStatus(a)
+      const sb = getStatus(b)
+      const ra = statusRank(sa)
+      const rb = statusRank(sb)
+      if (ra !== rb) return ra - rb
+
+      const da = Math.abs(new Date(getStartsAt(a)).getTime() - now.value)
+      const db = Math.abs(new Date(getStartsAt(b)).getTime() - now.value)
+      return da - db
+    })
+    return arr
+  }
+
   arr.sort((a, b) => {
-    const sa = getStatus(a)
-    const sb = getStatus(b)
-    const ra = rank(sa)
-    const rb = rank(sb)
-    if (ra !== rb) return ra - rb
     const aa = new Date(getStartsAt(a)).getTime()
     const bb = new Date(getStartsAt(b)).getTime()
     return bb - aa
@@ -199,88 +225,91 @@ const filtered = computed(() => {
     })
   }
 
-  if (tab.value !== 'all') {
-    arr = arr.filter(t => getStatus(t) === tab.value)
-  }
+  if (status.value !== 'all') arr = arr.filter((t) => getStatus(t) === status.value)
+  if (gameFilter.value !== 'all') arr = arr.filter((t) => getGameSlug(t) === gameFilter.value)
 
-  if (gameFilter.value !== 'all') {
-    arr = arr.filter(t => getGameSlug(t) === gameFilter.value)
-  }
-
-  if (onlyJoinable.value) {
-    arr = arr.filter(t => getStatus(t) === 'live' && canPlay.value)
-  }
+  if (onlyJoinable.value) arr = arr.filter((t) => getStatus(t) === 'live' && canPlay.value)
 
   return arr
 })
 
-const live = computed(() => filtered.value.filter(t => getStatus(t) === 'live'))
-const upcoming = computed(() => filtered.value.filter(t => getStatus(t) === 'scheduled'))
-const ended = computed(() => filtered.value.filter(t => getStatus(t) === 'ended'))
-
+const live = computed(() => filtered.value.filter((t) => getStatus(t) === 'live'))
 const counts = computed(() => {
-  const all = normalized.value
+  const all = tournaments.value || []
   return {
-    live: all.filter(t => getStatus(t) === 'live').length,
-    scheduled: all.filter(t => getStatus(t) === 'scheduled').length,
-    ended: all.filter(t => getStatus(t) === 'ended').length
+    all: all.length,
+    live: all.filter((t) => getStatus(t) === 'live').length,
+    scheduled: all.filter((t) => getStatus(t) === 'scheduled').length,
+    ended: all.filter((t) => getStatus(t) === 'ended').length
   }
 })
 
-function badgeClass(s: string) {
-  if (s === 'live') return 'bg-emerald-500/15 border-emerald-400/20 text-emerald-300'
-  if (s === 'scheduled') return 'bg-violet-500/15 border-violet-400/20 text-violet-300'
-  if (s === 'ended') return 'bg-white/10 border-white/10 text-white/70'
-  return 'bg-white/10 border-white/10 text-white/70'
+function chipClass(active: boolean) {
+  return active
+    ? 'border-black/15 bg-black/5 text-black dark:border-white/15 dark:bg-white/10 dark:text-white'
+    : 'border-black/10 bg-white text-black/70 hover:bg-black/5 hover:text-black dark:border-white/10 dark:bg-black/10 dark:text-white/70 dark:hover:bg-white/5 dark:hover:text-white'
 }
 
-function heroBg(s: string) {
-  if (s === 'live') return 'from-emerald-500/20 via-white/5 to-transparent'
-  if (s === 'scheduled') return 'from-violet-500/20 via-white/5 to-transparent'
-  return 'from-white/10 via-white/5 to-transparent'
+function statusPillClass(s: string) {
+  if (s === 'live') return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+  if (s === 'scheduled') return 'border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-200'
+  return 'border-black/10 bg-black/5 text-black/70 dark:border-white/10 dark:bg-white/5 dark:text-white/70'
 }
+
+function clearFilters() {
+  q.value = ''
+  status.value = 'all'
+  gameFilter.value = 'all'
+  onlyJoinable.value = false
+  sortBy.value = 'smart'
+}
+
 function playHard(slug: string) {
   if (!import.meta.client) return
   const url = `/tournaments/embed/${encodeURIComponent(slug)}?boot=${Date.now()}`
-  window.location.assign(url) // ✅ full refresh navigation every time
+  window.location.assign(url)
+}
+
+function windowText(t: AnyTournament) {
+  const s = fmt(getStartsAt(t))
+  const e = fmt(getEndsAt(t))
+  return s && e ? `${s} → ${e}` : ''
 }
 </script>
 
 <template>
   <UContainer class="py-8 sm:py-10">
-    <!-- HERO / HEADER -->
-    <div class="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-5 sm:p-8">
-      <div class="pointer-events-none absolute inset-0">
-        <div class="absolute -top-28 -left-28 h-80 w-80 rounded-full bg-violet-500/20 blur-3xl"></div>
-        <div class="absolute -bottom-28 -right-28 h-80 w-80 rounded-full bg-emerald-500/15 blur-3xl"></div>
-        <div class="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent"></div>
+    <!-- TOP: Header -->
+    <div
+      class="relative overflow-hidden rounded-3xl border border-black/10 bg-white p-5 sm:p-8
+             dark:border-white/10 dark:bg-white/5"
+    >
+      <div class="pointer-events-none absolute inset-0" aria-hidden="true">
+        <!-- Light blobs -->
+        <div class="absolute -top-28 left-1/3 h-80 w-80 rounded-full bg-violet-500/15 blur-3xl dark:bg-violet-500/15"></div>
+        <div class="absolute -bottom-28 right-1/4 h-80 w-80 rounded-full bg-emerald-500/10 blur-3xl dark:bg-emerald-500/10"></div>
+
+        <!-- Overlay: light vs dark -->
+        <div class="absolute inset-0 bg-gradient-to-b from-black/0 to-black/0 dark:from-white/10 dark:to-transparent"></div>
       </div>
 
       <div class="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div class="min-w-0">
-          <div class="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/70">
-            <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
-            Tournament Hub
+          <div
+            class="inline-flex items-center gap-2 rounded-full border border-black/10 bg-black/5 px-3 py-1.5 text-xs text-black/70
+                   dark:border-white/10 dark:bg-black/20 dark:text-white/75"
+          >
+            <UIcon name="i-heroicons-sparkles" class="h-4 w-4 opacity-80" />
+            <span>Illusion Arc • Competitive Events</span>
           </div>
 
-          <h1 class="mt-3 text-3xl sm:text-4xl font-extrabold tracking-tight">
-            Compete. Climb. Win.
+          <h1 class="mt-3 text-3xl sm:text-4xl font-extrabold tracking-tight text-black dark:text-white">
+            Tournament Dashboard
           </h1>
-          <p class="mt-2 max-w-2xl text-sm sm:text-base opacity-80">
-            Time-based events with separate leaderboards. Winners are locked once the window ends.
-          </p>
 
-          <div class="mt-4 flex flex-wrap gap-2 text-xs">
-            <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-              Live: <b class="font-semibold">{{ counts.live }}</b>
-            </span>
-            <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-              Upcoming: <b class="font-semibold">{{ counts.scheduled }}</b>
-            </span>
-            <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-              Ended: <b class="font-semibold">{{ counts.ended }}</b>
-            </span>
-          </div>
+          <p class="mt-2 max-w-2xl text-sm sm:text-base text-black/70 dark:text-white/75">
+            Discover live runs, upcoming windows, and ended results — all in one place.
+          </p>
         </div>
 
         <div class="flex items-center gap-2">
@@ -293,315 +322,360 @@ function playHard(slug: string) {
           <UButton v-else to="/login" variant="soft" class="!rounded-full">
             Login
           </UButton>
+
+          <UButton variant="soft" class="!rounded-full lg:hidden" @click="filtersOpen = !filtersOpen">
+            <UIcon name="i-heroicons-adjustments-horizontal" class="h-4 w-4" />
+            <span class="ml-1">Filters</span>
+          </UButton>
         </div>
       </div>
 
-      <!-- CONTROLS -->
-      <div class="relative mt-6 grid gap-3 lg:grid-cols-[1.3fr_.7fr_.7fr_.6fr]">
-        <!-- Search -->
-        <div class="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
-          <div class="flex items-center gap-2">
-            <UIcon name="i-heroicons-magnifying-glass" class="h-5 w-5 opacity-60" />
-            <input
-              v-model="q"
-              type="text"
-              placeholder="Search tournaments…"
-              class="w-full bg-transparent text-sm outline-none placeholder:text-white/40"
-            />
+      <!-- Stats row -->
+      <div class="relative mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="rounded-2xl border border-black/10 bg-black/5 p-4 dark:border-white/10 dark:bg-black/20">
+          <div class="text-xs text-black/60 dark:text-white/60">Total</div>
+          <div class="mt-1 text-2xl font-bold text-black dark:text-white">{{ counts.all }}</div>
+          <div class="mt-2 text-xs text-black/50 dark:text-white/55">All tournaments loaded</div>
+        </div>
+
+        <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+          <div class="text-xs text-emerald-700/80 dark:text-emerald-200/70">Live</div>
+          <div class="mt-1 text-2xl font-bold text-emerald-800 dark:text-emerald-100">{{ counts.live }}</div>
+          <div class="mt-2 text-xs text-emerald-700/60 dark:text-emerald-200/60">Join while timer runs</div>
+        </div>
+
+        <div class="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-4">
+          <div class="text-xs text-violet-700/80 dark:text-violet-200/70">Upcoming</div>
+          <div class="mt-1 text-2xl font-bold text-violet-800 dark:text-violet-100">{{ counts.scheduled }}</div>
+          <div class="mt-2 text-xs text-violet-700/60 dark:text-violet-200/60">Starts soon</div>
+        </div>
+
+        <div class="rounded-2xl border border-black/10 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5">
+          <div class="text-xs text-black/60 dark:text-white/60">Ended</div>
+          <div class="mt-1 text-2xl font-bold text-black dark:text-white">{{ counts.ended }}</div>
+          <div class="mt-2 text-xs text-black/50 dark:text-white/55">Results available</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BODY -->
+    <div class="mt-6 grid gap-5 lg:grid-cols-[320px_1fr]">
+      <!-- FILTERS -->
+      <aside class="lg:sticky lg:top-6 lg:self-start" :class="filtersOpen ? 'block' : 'hidden lg:block'">
+        <div class="rounded-3xl border border-black/10 bg-white p-4 dark:border-white/10 dark:bg-white/5">
+          <div class="flex items-center justify-between">
+            <div class="font-semibold text-black dark:text-white">Filters</div>
             <button
-              v-if="q"
-              class="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs opacity-80 hover:opacity-100"
-              @click="q = ''"
               type="button"
+              class="text-xs text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white lg:hidden"
+              @click="filtersOpen = false"
             >
-              Clear
+              Close
             </button>
           </div>
-        </div>
 
-        <!-- Tabs -->
-        <div class="rounded-2xl border border-white/10 bg-black/20 p-1.5">
-          <div class="grid grid-cols-4 gap-1">
-            <button
-              class="rounded-xl px-2 py-2 text-xs sm:text-sm transition"
-              :class="tab === 'all' ? 'bg-white/10' : 'opacity-70 hover:opacity-100'"
-              @click="tab = 'all'"
-              type="button"
-            >
-              All
-            </button>
-            <button
-              class="rounded-xl px-2 py-2 text-xs sm:text-sm transition"
-              :class="tab === 'live' ? 'bg-white/10' : 'opacity-70 hover:opacity-100'"
-              @click="tab = 'live'"
-              type="button"
-            >
-              Live
-            </button>
-            <button
-              class="rounded-xl px-2 py-2 text-xs sm:text-sm transition"
-              :class="tab === 'scheduled' ? 'bg-white/10' : 'opacity-70 hover:opacity-100'"
-              @click="tab = 'scheduled'"
-              type="button"
-            >
-              Upcoming
-            </button>
-            <button
-              class="rounded-xl px-2 py-2 text-xs sm:text-sm transition"
-              :class="tab === 'ended' ? 'bg-white/10' : 'opacity-70 hover:opacity-100'"
-              @click="tab = 'ended'"
-              type="button"
-            >
-              Ended
-            </button>
-          </div>
-        </div>
-
-        <!-- Game filter -->
-        <div class="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
-          <div class="text-xs opacity-70">Game</div>
-          <select v-model="gameFilter" class="mt-1 w-full bg-transparent text-sm outline-none">
-            <option value="all">All games</option>
-            <option v-for="g in GAMES" :key="g.slug" :value="g.slug">{{ g.name }}</option>
-          </select>
-        </div>
-
-        <!-- Only joinable -->
-        <button
-          type="button"
-          class="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5 text-left hover:bg-white/5 transition"
-          @click="onlyJoinable = !onlyJoinable"
-        >
-          <div class="flex items-center justify-between gap-2">
-            <div>
-              <div class="text-xs opacity-70">Quick filter</div>
-              <div class="mt-1 text-sm font-medium">
-                {{ onlyJoinable ? 'Only joinable' : 'Show all' }}
-              </div>
-            </div>
-            <div
-              class="h-6 w-11 rounded-full border border-white/10 p-1 transition"
-              :class="onlyJoinable ? 'bg-emerald-500/20' : 'bg-white/5'"
-            >
-              <div
-                class="h-4 w-4 rounded-full bg-white/80 transition"
-                :class="onlyJoinable ? 'translate-x-5' : 'translate-x-0'"
+          <!-- Search -->
+          <div class="mt-4 rounded-2xl border border-black/10 bg-black/5 px-3 py-2.5 dark:border-white/10 dark:bg-black/20">
+            <div class="flex items-center gap-2">
+              <UIcon name="i-heroicons-magnifying-glass" class="h-5 w-5 opacity-60" />
+              <input
+                v-model="q"
+                type="text"
+                placeholder="Search by title / slug / game…"
+                class="w-full bg-transparent text-sm outline-none placeholder:text-black/40 dark:placeholder:text-white/40"
               />
+              <button
+                v-if="q"
+                class="rounded-full border border-black/10 bg-white px-2 py-1 text-xs text-black/70 hover:text-black
+                       dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:text-white"
+                @click="q = ''"
+                type="button"
+              >
+                Clear
+              </button>
             </div>
           </div>
-          <div class="mt-1 text-xs opacity-60">Live + subscription</div>
-        </button>
-      </div>
-    </div>
 
-    <!-- LIVE FEATURED -->
-    <div v-if="live.length" class="mt-8 sm:mt-10">
-      <div class="flex items-end justify-between gap-3">
-        <h2 class="text-xl font-semibold">Live now</h2>
-        <div class="text-xs opacity-70">Play before time runs out.</div>
-      </div>
-
-      <div class="mt-4 grid gap-4 lg:grid-cols-2">
-        <div
-          v-for="t in live"
-          :key="t.slug"
-          class="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5"
-        >
-          <div class="absolute inset-0 bg-gradient-to-br" :class="heroBg('live')"></div>
-
-          <!-- Thumb -->
-          <div class="relative h-44 sm:h-52">
-            <img
-              v-if="getThumb(t)"
-              :src="getThumb(t)"
-              alt=""
-              class="absolute inset-0 h-full w-full object-cover"
-              @error="onThumbError(t)"
-            />
-            <div v-else class="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent"></div>
-            <div class="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent"></div>
-
-            <div class="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200">
-              <span class="relative flex h-2 w-2">
-                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60"></span>
-                <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
-              </span>
-              LIVE
+          <!-- Status chips -->
+          <div class="mt-4">
+            <div class="text-xs text-black/60 dark:text-white/60">Status</div>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <button type="button" class="rounded-full border px-3 py-1 text-xs transition" :class="chipClass(status==='all')" @click="status='all'">All</button>
+              <button type="button" class="rounded-full border px-3 py-1 text-xs transition" :class="chipClass(status==='live')" @click="status='live'">Live</button>
+              <button type="button" class="rounded-full border px-3 py-1 text-xs transition" :class="chipClass(status==='scheduled')" @click="status='scheduled'">Upcoming</button>
+              <button type="button" class="rounded-full border px-3 py-1 text-xs transition" :class="chipClass(status==='ended')" @click="status='ended'">Ended</button>
             </div>
+          </div>
 
-            <div class="absolute right-4 top-4 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-xs text-white/85">
-              Ends in <span class="font-mono font-semibold">{{ msToClock(endsIn(t)) }}</span>
+          <!-- Game -->
+          <div class="mt-4">
+            <div class="text-xs text-black/60 dark:text-white/60">Game</div>
+            <div class="mt-2 rounded-2xl border border-black/10 bg-black/5 px-3 py-2.5 dark:border-white/10 dark:bg-black/20">
+              <select v-model="gameFilter" class="w-full bg-transparent text-sm outline-none">
+                <option value="all">All games</option>
+                <option v-for="g in GAMES" :key="g.slug" :value="g.slug">{{ g.name }}</option>
+              </select>
             </div>
+          </div>
 
-            <div class="absolute bottom-4 left-4 right-4">
-              <div class="text-xl sm:text-2xl font-extrabold truncate">{{ t.title }}</div>
-              <div class="mt-1 text-sm opacity-90">
-                Game: <span class="font-medium">{{ gameTitle(getGameSlug(t)) }}</span>
+          <!-- Sort -->
+          <div class="mt-4">
+            <div class="text-xs text-black/60 dark:text-white/60">Sort</div>
+            <div class="mt-2 rounded-2xl border border-black/10 bg-black/5 px-3 py-2.5 dark:border-white/10 dark:bg-black/20">
+              <select v-model="sortBy" class="w-full bg-transparent text-sm outline-none">
+                <option value="smart">Smart</option>
+                <option value="startsSoon">Starts soon</option>
+                <option value="newest">Newest</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Joinable toggle -->
+          <button
+            type="button"
+            class="mt-4 w-full rounded-2xl border border-black/10 bg-black/5 px-3 py-3 text-left hover:bg-black/10 transition
+                   dark:border-white/10 dark:bg-black/20 dark:hover:bg-white/5"
+            @click="onlyJoinable = !onlyJoinable"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <div class="text-xs text-black/60 dark:text-white/60">Quick filter</div>
+                <div class="mt-1 text-sm font-medium text-black dark:text-white">
+                  {{ onlyJoinable ? 'Only joinable' : 'Show all' }}
+                </div>
+              </div>
+
+              <div
+                class="h-6 w-11 rounded-full border border-black/10 p-1 transition dark:border-white/10"
+                :class="onlyJoinable ? 'bg-emerald-500/20' : 'bg-white'"
+              >
+                <div
+                  class="h-4 w-4 rounded-full transition"
+                  :class="onlyJoinable ? 'translate-x-5 bg-emerald-600' : 'translate-x-0 bg-black/30 dark:bg-white/80'"
+                />
               </div>
             </div>
+            <div class="mt-1 text-xs text-black/50 dark:text-white/50">Live + subscription</div>
+          </button>
+
+          <!-- Actions -->
+          <div class="mt-4 flex gap-2">
+            <UButton variant="soft" class="flex-1 !rounded-full" @click="clearFilters">Reset</UButton>
+            <UButton class="flex-1 !rounded-full" @click="filtersOpen = false" v-if="filtersOpen">Apply</UButton>
           </div>
 
-          <div class="relative p-4 sm:p-5">
-            <div class="flex flex-wrap items-center gap-2 text-xs">
-              <span class="rounded-full border border-white/10 bg-black/20 px-3 py-1">
-                Window: {{ fmt(getStartsAt(t)) }} → {{ fmt(getEndsAt(t)) }}
-              </span>
-              <span v-if="t.prize" class="rounded-full border border-white/10 bg-black/20 px-3 py-1">
-                Prize: <b class="font-semibold">{{ t.prize }}</b>
-              </span>
-            </div>
-
-            <div class="mt-4 flex flex-wrap gap-2">
-              <UButton :to="`/tournaments/${t.slug}`" variant="soft" class="!rounded-full">
-                Details
-              </UButton>
-
-              <UButton v-if="canPlay" @click="playHard(t.slug)" class="!rounded-full">
-                Play Now
-              </UButton>
-
-              <UButton v-else to="/subscribe" class="!rounded-full">
-                Subscribe
-              </UButton>
-            </div>
+          <div class="mt-3 text-[11px] text-black/45 dark:text-white/45">
+            Tip: “Only joinable” requires login + active subscription.
           </div>
         </div>
-      </div>
-    </div>
+      </aside>
 
-    <!-- UPCOMING -->
-    <div v-if="upcoming.length" class="mt-8 sm:mt-10">
-      <div class="flex items-end justify-between gap-3">
-        <h2 class="text-xl font-semibold">Upcoming</h2>
-        <div class="text-xs opacity-70">Get ready for the next run.</div>
-      </div>
-
-      <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div
-          v-for="t in upcoming"
-          :key="t.slug"
-          class="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5"
+      <!-- CONTENT -->
+      <main class="min-w-0">
+        <!-- LIVE STRIP -->
+        <section
+          v-if="live.length"
+          class="rounded-3xl border border-black/10 bg-white p-4 sm:p-5 dark:border-white/10 dark:bg-white/5"
         >
-          <div class="absolute inset-0 bg-gradient-to-br" :class="heroBg('scheduled')"></div>
-
-          <div class="relative h-36">
-            <img
-              v-if="getThumb(t)"
-              :src="getThumb(t)"
-              alt=""
-              class="absolute inset-0 h-full w-full object-cover"
-              @error="onThumbError(t)"
-            />
-            <div v-else class="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent"></div>
-            <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
-
-            <div class="absolute left-4 top-4 text-xs rounded-full px-2.5 py-1 border" :class="badgeClass('scheduled')">
-              UPCOMING
+          <div class="flex items-end justify-between gap-3">
+            <div>
+              <div class="text-xs text-black/60 dark:text-white/60">Live right now</div>
+              <h2 class="mt-1 text-lg sm:text-xl font-semibold text-black dark:text-white">Jump in before it ends</h2>
             </div>
+            <div class="text-xs text-black/60 dark:text-white/60 hidden sm:block">Timers update live</div>
+          </div>
 
-            <div class="absolute bottom-3 left-4 right-4">
-              <div class="text-lg font-semibold truncate">{{ t.title }}</div>
-              <div class="mt-1 text-sm opacity-85 truncate">
-                Game: <span class="font-medium">{{ gameTitle(getGameSlug(t)) }}</span>
+          <div class="mt-4 flex gap-3 overflow-x-auto pb-2">
+            <article
+              v-for="t in live"
+              :key="t.slug"
+              class="min-w-[300px] sm:min-w-[360px] max-w-[420px] flex-1 overflow-hidden rounded-3xl border border-black/10 bg-black/5
+                     dark:border-white/10 dark:bg-black/20"
+            >
+              <div class="relative h-36">
+                <img
+                  v-if="getThumb(t)"
+                  :src="getThumb(t)"
+                  alt=""
+                  class="absolute inset-0 h-full w-full object-cover"
+                  @error="onThumbError(t)"
+                />
+                <div v-else class="absolute inset-0 bg-gradient-to-br from-black/10 via-black/5 to-transparent dark:from-white/10 dark:via-white/5"></div>
+                <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
+
+                <div class="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs"
+                     :class="'text-emerald-700 dark:text-emerald-200'">
+                  <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                  LIVE
+                </div>
+
+                <div class="absolute right-3 top-3 rounded-full border border-black/10 bg-white/70 px-3 py-1 text-xs text-black/90
+                            dark:border-white/10 dark:bg-black/45 dark:text-white/90">
+                  Ends in <span class="font-mono font-semibold">{{ msToClock(endsIn(t)) }}</span>
+                </div>
+
+                <div class="absolute bottom-3 left-3 right-3">
+                  <div class="text-base sm:text-lg font-bold text-white truncate">{{ t.title }}</div>
+                  <div class="mt-0.5 text-xs text-white/85 truncate">
+                    {{ gameTitle(getGameSlug(t)) }}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div class="relative p-4">
-            <div class="text-sm opacity-85">
-              Starts in: <span class="font-mono font-semibold">{{ msToClock(startsIn(t)) }}</span>
-            </div>
+              <div class="p-4">
+                <div class="flex flex-wrap items-center gap-2 text-[11px] text-black/60 dark:text-white/70">
+                  <span class="rounded-full border border-black/10 bg-white px-2.5 py-1 dark:border-white/10 dark:bg-white/5">
+                    {{ windowText(t) || '—' }}
+                  </span>
+                  <span
+                    v-if="t.prize"
+                    class="rounded-full border border-black/10 bg-white px-2.5 py-1 dark:border-white/10 dark:bg-white/5"
+                  >
+                    Prize: <b class="font-semibold text-black/90 dark:text-white/90">{{ t.prize }}</b>
+                  </span>
+                </div>
 
-            <div class="mt-2 text-xs opacity-70">
-              Window: {{ fmt(getStartsAt(t)) }} → {{ fmt(getEndsAt(t)) }}
-            </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <UButton :to="`/tournaments/${t.slug}`" variant="soft" class="!rounded-full">
+                    Details
+                  </UButton>
 
-            <div class="mt-4 flex flex-wrap gap-2">
-              <UButton :to="`/tournaments/${t.slug}`" class="!rounded-full">
-                View
-              </UButton>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+                  <UButton v-if="canPlay" class="!rounded-full" @click="playHard(t.slug)">
+                    Play
+                  </UButton>
 
-    <!-- ENDED -->
-    <div v-if="ended.length" class="mt-8 sm:mt-10">
-      <div class="flex items-end justify-between gap-3">
-        <h2 class="text-xl font-semibold">Ended</h2>
-        <div class="text-xs opacity-70">View results & winners.</div>
-      </div>
-
-      <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div
-          v-for="t in ended"
-          :key="t.slug"
-          class="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5"
-        >
-          <div class="absolute inset-0 bg-gradient-to-br" :class="heroBg('ended')"></div>
-
-          <div class="relative h-32">
-            <img
-              v-if="getThumb(t)"
-              :src="getThumb(t)"
-              alt=""
-              class="absolute inset-0 h-full w-full object-cover grayscale-[20%] opacity-95"
-              @error="onThumbError(t)"
-            />
-            <div v-else class="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent"></div>
-            <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
-
-            <div class="absolute left-4 top-4 text-xs rounded-full px-2.5 py-1 border" :class="badgeClass('ended')">
-              ENDED
-            </div>
-
-            <div class="absolute bottom-3 left-4 right-4">
-              <div class="text-lg font-semibold truncate">{{ t.title }}</div>
-              <div class="mt-1 text-sm opacity-85 truncate">
-                Game: <span class="font-medium">{{ gameTitle(getGameSlug(t)) }}</span>
+                  <UButton v-else to="/subscribe" class="!rounded-full">
+                    Subscribe
+                  </UButton>
+                </div>
               </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- GRID -->
+        <section class="mt-5">
+          <div class="flex items-end justify-between gap-3">
+            <div>
+              <div class="text-xs text-black/60 dark:text-white/60">Browse</div>
+              <h2 class="mt-1 text-lg sm:text-xl font-semibold text-black dark:text-white">Upcoming & Ended</h2>
+            </div>
+
+            <div class="text-xs text-black/60 dark:text-white/60">
+              Showing <b class="text-black/80 dark:text-white/85">{{ filtered.length }}</b>
             </div>
           </div>
 
-          <div class="relative p-4">
-            <div class="text-sm opacity-85">
-              Ended: <span class="font-medium">{{ fmt(getEndsAt(t)) }}</span>
-            </div>
+          <div class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <article
+              v-for="t in filtered"
+              :key="t.slug"
+              class="group overflow-hidden rounded-3xl border border-black/10 bg-white hover:bg-black/5 transition
+                     dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/7"
+            >
+              <div class="relative h-36">
+                <img
+                  v-if="getThumb(t)"
+                  :src="getThumb(t)"
+                  alt=""
+                  class="absolute inset-0 h-full w-full object-cover transition group-hover:scale-[1.02]"
+                  @error="onThumbError(t)"
+                />
+                <div v-else class="absolute inset-0 bg-gradient-to-br from-black/10 via-black/5 to-transparent dark:from-white/10 dark:via-white/5"></div>
 
-            <div class="mt-4 flex flex-wrap gap-2">
-              <UButton :to="`/tournaments/${t.slug}`" variant="soft" class="!rounded-full">
-                Results
-              </UButton>
-              <UButton :to="`/arcade/${getGameSlug(t)}`" variant="soft" class="!rounded-full">
-                Back in Arcade
+                <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
+
+                <div
+                  class="absolute left-3 top-3 inline-flex items-center rounded-full border px-2.5 py-1 text-xs"
+                  :class="statusPillClass(getStatus(t))"
+                >
+                  {{ getStatus(t) === 'scheduled' ? 'UPCOMING' : getStatus(t) === 'live' ? 'LIVE' : getStatus(t) === 'ended' ? 'ENDED' : '—' }}
+                </div>
+
+                <div
+                  v-if="getStatus(t) === 'scheduled'"
+                  class="absolute right-3 top-3 rounded-full border border-black/10 bg-white/70 px-2.5 py-1 text-xs text-black/85
+                         dark:border-white/10 dark:bg-black/45 dark:text-white/85"
+                >
+                  Starts in <span class="font-mono font-semibold">{{ msToClock(startsIn(t)) }}</span>
+                </div>
+
+                <div
+                  v-else-if="getStatus(t) === 'live'"
+                  class="absolute right-3 top-3 rounded-full border border-black/10 bg-white/70 px-2.5 py-1 text-xs text-black/85
+                         dark:border-white/10 dark:bg-black/45 dark:text-white/85"
+                >
+                  Ends in <span class="font-mono font-semibold">{{ msToClock(endsIn(t)) }}</span>
+                </div>
+
+                <div class="absolute bottom-3 left-3 right-3">
+                  <div class="text-base font-bold text-white truncate">{{ t.title }}</div>
+                  <div class="mt-0.5 text-xs text-white/85 truncate">
+                    {{ gameTitle(getGameSlug(t)) }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="p-4">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-[11px] text-black/60 dark:text-white/60 truncate">
+                    {{ windowText(t) || '—' }}
+                  </div>
+                  <div v-if="t.prize" class="text-[11px] text-black/70 dark:text-white/70 truncate">
+                    Prize: <b class="text-black/85 dark:text-white/90">{{ t.prize }}</b>
+                  </div>
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <UButton :to="`/tournaments/${t.slug}`" variant="soft" class="!rounded-full">
+                    {{ getStatus(t) === 'ended' ? 'Results' : 'View' }}
+                  </UButton>
+
+                  <UButton
+                    v-if="getStatus(t) === 'live'"
+                    class="!rounded-full"
+                    :disabled="!canPlay"
+                    @click="canPlay ? playHard(t.slug) : navigateTo('/subscribe')"
+                  >
+                    Play
+                  </UButton>
+
+                  <UButton
+                    v-else-if="getStatus(t) === 'ended'"
+                    :to="`/arcade/${getGameSlug(t)}`"
+                    variant="soft"
+                    class="!rounded-full"
+                  >
+                    Arcade
+                  </UButton>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <!-- Empty -->
+          <div
+            v-if="!filtered.length"
+            class="mt-6 rounded-3xl border border-black/10 bg-white p-10 text-center dark:border-white/10 dark:bg-white/5"
+          >
+            <div class="mx-auto h-12 w-12 rounded-2xl border border-black/10 bg-black/5 grid place-items-center dark:border-white/10 dark:bg-black/20">
+              <UIcon name="i-heroicons-calendar-days" class="h-6 w-6 opacity-70" />
+            </div>
+            <div class="mt-4 text-lg font-semibold text-black dark:text-white">No tournaments found</div>
+            <p class="mt-1 text-sm text-black/60 dark:text-white/60">Try a different status, game, or search term.</p>
+            <div class="mt-4 flex justify-center gap-2">
+              <UButton variant="soft" class="!rounded-full" @click="clearFilters">
+                Clear filters
               </UButton>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Empty -->
-    <div v-if="!filtered.length" class="mt-10 rounded-3xl border border-white/10 bg-white/5 p-8 text-center">
-      <div class="mx-auto h-12 w-12 rounded-2xl border border-white/10 bg-black/20 grid place-items-center">
-        <UIcon name="i-heroicons-calendar-days" class="h-6 w-6 opacity-70" />
-      </div>
-      <div class="mt-4 text-lg font-semibold">No tournaments found</div>
-      <p class="mt-1 text-sm opacity-70">Try clearing filters or searching again.</p>
-      <div class="mt-4 flex justify-center gap-2">
-        <UButton
-          variant="soft"
-          class="!rounded-full"
-          @click="q = ''; tab = 'all'; gameFilter = 'all'; onlyJoinable = false"
-        >
-          Clear filters
-        </UButton>
-      </div>
+        </section>
+      </main>
     </div>
   </UContainer>
 </template>
 
 <style scoped>
 select { color: inherit; }
+select option { color: #111; }
 </style>
