@@ -9,7 +9,6 @@ async function requireAdmin(event: any) {
   const user = auth?.user
   if (authErr || !user?.id) throw createError({ statusCode: 401, statusMessage: 'Login required' })
 
-  // ✅ profiles uses user_id (not id)
   const { data: prof, error: profErr } = await client
     .from('profiles')
     .select('user_id, role')
@@ -31,10 +30,9 @@ export default defineEventHandler(async (event) => {
   const id = String(body?.id || '').trim()
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing winner row id' })
 
-  // these columns MUST exist in tournament_winners:
-  // player_name, score, prize_bdt, rank (rank optional to update)
   const patch: any = {}
 
+  // ---- existing editable fields (keep if you still use them anywhere) ----
   if (body.player_name != null) patch.player_name = String(body.player_name || '').trim() || null
 
   if (body.score != null) {
@@ -47,10 +45,53 @@ export default defineEventHandler(async (event) => {
     patch.prize_bdt = Number.isFinite(n) ? n : 0
   }
 
-  // optional rank update if you want it editable
   if (body.rank != null) {
     const n = Number(body.rank)
     patch.rank = Number.isFinite(n) ? Math.max(1, Math.floor(n)) : 1
+  }
+
+  // ---- NEW: reward fulfillment fields ----
+  // Expected values:
+  // reward_status: 'pending' | 'given'
+  // reward_method: 'online' | 'offline' | null
+  // reward_txn_id: string | null (required if online + given)
+  if (body.reward_status != null) {
+    const v = String(body.reward_status || '').trim().toLowerCase()
+    patch.reward_status = v === 'given' ? 'given' : 'pending'
+  }
+
+  if (body.reward_method != null) {
+    const v = String(body.reward_method || '').trim().toLowerCase()
+    patch.reward_method = v ? v : null
+  }
+
+  if (body.reward_txn_id != null) {
+    const v = String(body.reward_txn_id || '').trim()
+    patch.reward_txn_id = v || null
+  }
+
+  // Validation: txn id required for online + given
+  const finalStatus = patch.reward_status ?? null
+  const finalMethod = patch.reward_method ?? null
+  const finalTxn = patch.reward_txn_id ?? null
+  if (finalStatus === 'given' && finalMethod === 'online' && !finalTxn) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Transaction ID required for online reward marked as given'
+    })
+  }
+
+  // Optional: track time of reward
+  if (patch.reward_status === 'given') {
+    patch.rewarded_at = new Date().toISOString()
+  }
+  if (patch.reward_status === 'pending') {
+    patch.rewarded_at = null
+  }
+
+  // IMPORTANT: prevent empty updates (this causes 0 rows and .single() crash)
+  if (Object.keys(patch).length === 0) {
+    throw createError({ statusCode: 400, statusMessage: 'No fields to update' })
   }
 
   const { data, error } = await adminDb
@@ -58,8 +99,10 @@ export default defineEventHandler(async (event) => {
     .update(patch)
     .eq('id', id)
     .select('*')
-    .single()
+    .maybeSingle() // ✅ avoids "Cannot coerce..." when 0 rows
 
   if (error) throw createError({ statusCode: 400, statusMessage: error.message })
+  if (!data) throw createError({ statusCode: 404, statusMessage: 'Winner row not found' })
+
   return { ok: true, row: data }
 })

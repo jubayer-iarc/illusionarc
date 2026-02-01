@@ -1,5 +1,7 @@
+<!-- app/pages/arcade/index.vue -->
 <script setup lang="ts">
 import { GAMES } from '@/data/games'
+import TournamentAdBanner from '~/components/tournaments/TournamentAdBanner.vue'
 
 useHead({ title: 'Arcade' })
 
@@ -87,10 +89,6 @@ const genres = computed(() => {
   return ['all', ...Array.from(set)]
 })
 
-/**
- * If current genre becomes invalid due to live filtering,
- * reset it to "all" so UI doesn't look broken.
- */
 watchEffect(() => {
   if (genre.value !== 'all' && !genres.value.includes(genre.value)) {
     genre.value = 'all'
@@ -116,6 +114,17 @@ const featured = computed(() => arcadeSource.value.filter(g => g.featured))
 
 <template>
   <UContainer class="py-12">
+    <!-- ✅ Top tournament ad (NOT sidebar) -->
+    <div class="mb-6">
+      <!--
+        Banner sizing rules:
+        - Uses full container width (matches your whitespace)
+        - Fixed aspect ratio via the component (we’ll enforce 21:9 there)
+        - No floating, no absolute outside the card
+      -->
+      <TournamentAdBanner slot="arcade_sidebar" />
+    </div>
+
     <!-- ✅ tiny cool gate overlay while checking (no layout shift) -->
     <div
       v-if="checkingPhone && authUser?.id"

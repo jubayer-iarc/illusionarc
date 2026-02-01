@@ -41,9 +41,26 @@ export default defineEventHandler(async (event) => {
 
   const tournamentSlug = String((t as any).slug || '').trim()
 
+  // ✅ IMPORTANT: include reward fields so UI doesn't default to pending after refresh
   const { data, error } = await adminDb
     .from('tournament_winners')
-    .select('id, tournament_slug, rank, user_id, player_name, score, prize, prize_bdt, created_at')
+    .select(
+      [
+        'id',
+        'tournament_slug',
+        'rank',
+        'user_id',
+        'player_name',
+        'score',
+        'prize',
+        'prize_bdt',
+        'reward_status',
+        'reward_method',
+        'reward_txn_id',
+        'rewarded_at',
+        'created_at'
+      ].join(',')
+    )
     .eq('tournament_slug', tournamentSlug)
     .order('rank', { ascending: true })
 

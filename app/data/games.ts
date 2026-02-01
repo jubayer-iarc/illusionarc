@@ -40,7 +40,7 @@ export const GAMES: ArcadeGame[] = [
     embed: { aspectRatio: '16/9', minHeight: 520, orientation: 'landscape' },
     leaderboard: true,
     rating: { value: 4.6, count: 1280 },
-    featured: true,
+    featured: false,
     genre: 'Shooter',
     difficulty: 'Medium',
     estTime: '60s'
@@ -67,7 +67,7 @@ export const GAMES: ArcadeGame[] = [
   {
     name: 'Neon Polarity',
     slug: 'neon-polarity',
-    thumbnail: '/img/neon-polarity/neon-polarity-thumbnail.png',
+    thumbnail: '/img/neon-polarity/neon-polarity-thumbnail-2.png',
     shortPitch: 'Neon reflex boss fights. Tap fast, survive longer, post score.',
     description:
       'Face fast-paced neon bosses with simple tap controls. Survive longer to increase score, dodge patterns, and climb the global leaderboard. Best experienced in landscape on mobile.',
@@ -97,7 +97,7 @@ export const GAMES: ArcadeGame[] = [
     embed: { aspectRatio: '16/9', minHeight: 520, orientation: 'portrait' },
     leaderboard: true,
     rating: { value: 4.5, count: 1050 },
-    featured: true,
+    featured: false,
     genre: 'Puzzle',
     difficulty: 'Medium',
     estTime: '60s'
