@@ -101,5 +101,21 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Puzzle',
     difficulty: 'Medium',
     estTime: '60s'
+  },
+  {
+    name: '2048',
+    slug: '2048',
+    thumbnail: '/img/2048/2048-thumbnail.png', // make one later
+    shortPitch: 'Join numbers and reach the 2048 tile.',
+    description: 'Classic 2048 puzzle.',
+    controls: ['Arrow keys / swipe'],
+    buildType: 'iframe',
+    sourceUrl: '/games/2048/index.html',
+    embedAllowed: true,
+    embed: { aspectRatio: '4/5', minHeight: 640, orientation: 'portrait' },
+    leaderboard: true,
+    genre: 'Puzzle',
+    difficulty: 'Easy',
+    estTime: '3–10m'
   }
 ]
