@@ -117,5 +117,22 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Puzzle',
     difficulty: 'Easy',
     estTime: '3–10m'
+  },
+  {
+    name: 'PAC-MAN',
+    slug: 'pacman',
+    thumbnail: '/img/pacman/pacman-thumbnail.png',
+    shortPitch: 'Classic PAC-MAN, fullscreen + swipe controls.',
+    description: 'Play PAC-MAN in fullscreen. Swipe on mobile, arrow keys on desktop.',
+    controls: ['Arrow keys', 'Swipe on mobile'],
+    buildType: 'iframe',
+    sourceUrl: '/games/pacman/index.html',
+    embedAllowed: true,
+    embed: { aspectRatio: '16/9', minHeight: 520, orientation: 'landscape' },
+    leaderboard: true,
+    genre: 'Arcade',
+    difficulty: 'Medium',
+    estTime: '3–5 min'
   }
+
 ]
