@@ -133,6 +133,20 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Arcade',
     difficulty: 'Medium',
     estTime: '3–5 min'
+  },
+  {
+    name: 'Snake',
+    slug: 'snake',
+    thumbnail: '/img/snake/snake-thumbnail.png',
+    shortPitch: 'Smooth fullscreen Snake — swipe or arrow keys.',
+    controls: ['Arrow keys / WASD', 'Swipe on mobile'],
+    buildType: 'iframe',
+    sourceUrl: '/games/snake/index.html',
+    embedAllowed: true,
+    embed: { aspectRatio: '16/9', minHeight: 520, orientation: 'any' },
+    leaderboard: true,
+    genre: 'Arcade',
+    difficulty: 'Easy',
+    estTime: '2–5m'
   }
-
 ]
