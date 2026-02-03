@@ -8,7 +8,7 @@ const AD_SLOTS = [
   { key: 'home_mid', label: 'Home — Middle Banner' },
   { key: 'home_bottom', label: 'Home — Bottom Banner' },
   { key: 'tournaments_top', label: 'Tournaments — Top Banner' },
-  { key: 'arcade_sidebar', label: 'Arcade — Sidebar Banner' }
+  { key: 'arcade_sidebar', label: 'Arcade — Top Banner' }
 ] as const
 type AdSlotKey = typeof AD_SLOTS[number]['key']
 
@@ -204,7 +204,7 @@ watch(
   }
 )
 
-/* ---------------- Thumbnail (kept as-is) ---------------- */
+/* ---------------- Thumbnail ---------------- */
 const THUMB_BUCKET = 'tournament-thumbnails'
 const thumbUploading = ref(false)
 const thumbFile = ref<File | null>(null)
@@ -261,13 +261,19 @@ async function uploadThumbAndPersist(tournamentId: string) {
 const ADS_BUCKET = 'tournament-banners'
 
 const adLoading = ref(false)
-const ads = ref<AdRow[]>([]) // ✅ all ads of selected tournament
+const ads = ref<AdRow[]>([]) // all ads of selected tournament
 
-// For slot availability (global active ads)
-const slotOwners = ref<Record<string, string>>({}) // slot -> tournament_id (for ACTIVE only)
+/**
+ * ✅ Global slot usage for ACTIVE ads
+ * slot -> { adId, tournamentId }
+ */
+const activeSlotUsage = ref<Record<string, { adId: string; tournamentId: string }>>({})
+
+/** quick helper: occupied slots set */
+const slotOccupied = computed(() => new Set(Object.keys(activeSlotUsage.value || {})))
 
 const adForm = reactive({
-  id: '' as string, // ✅ important: id means edit existing ad
+  id: '' as string, // id means edit existing ad
   enabled: false as boolean,
   slot: '' as AdSlotKey | '',
   alt: '' as string,
@@ -327,24 +333,29 @@ function pickAdForEdit(row: AdRow) {
   clearAdSelection()
 }
 
-async function loadSlotOwners() {
-  // all ACTIVE ads across site -> who owns each slot
-  const { data, error } = await supabase.from('tournament_ads').select('slot, tournament_id').eq('is_active', true)
+/** Load global active slot usage (ACTIVE ads only) */
+async function loadActiveSlotUsage() {
+  const { data, error } = await supabase
+    .from('tournament_ads')
+    .select('id, slot, tournament_id')
+    .eq('is_active', true)
+
   if (error) throw error
 
-  const map: Record<string, string> = {}
+  const map: Record<string, { adId: string; tournamentId: string }> = {}
   for (const r of data || []) {
     const slot = String((r as any).slot || '')
+    const adId = String((r as any).id || '')
     const tid = String((r as any).tournament_id || '')
-    if (slot && tid) map[slot] = tid
+    if (slot && adId && tid) map[slot] = { adId, tournamentId: tid }
   }
-  slotOwners.value = map
+  activeSlotUsage.value = map
 }
 
 async function loadAdsForTournament(tournamentId: string) {
   adLoading.value = true
   try {
-    await loadSlotOwners()
+    await loadActiveSlotUsage()
     const { data, error } = await supabase
       .from('tournament_ads')
       .select('id, tournament_id, slot, banner_url, banner_path, alt, is_active, starts_at, ends_at, created_at')
@@ -354,7 +365,6 @@ async function loadAdsForTournament(tournamentId: string) {
     if (error) throw error
 
     ads.value = (data || []) as any
-    // if currently editing an ad that no longer exists, reset
     if (adForm.id && !ads.value.some(a => a.id === adForm.id)) resetAdForm()
   } catch (e: any) {
     toast.add({ title: 'Failed to load ads', description: e?.message || 'Try again', color: 'error' })
@@ -364,38 +374,48 @@ async function loadAdsForTournament(tournamentId: string) {
   }
 }
 
+/** Slots already used by this tournament (any status) */
+const usedSlotsInThisTournament = computed(() => {
+  const set = new Set<string>()
+  for (const a of ads.value) {
+    const slot = String(a.slot || '')
+    if (slot) set.add(slot)
+  }
+  return set
+})
+
 /**
  * ✅ Slot dropdown rule:
- * - When creating a NEW ad (adForm.id is empty), hide occupied slots (owned by other tournaments).
- * - When editing an existing ad, always include its current slot so it remains selectable.
+ * - NEW ad (adForm.id empty): hide slots that are occupied globally (active ads) OR already used in this tournament.
+ * - EDIT ad: always keep its current slot visible; other slots must be free & not already used in this tournament.
  */
 const selectableSlots = computed(() => {
-  const myTid = form.id || ''
-  const currentSlot = String(adForm.slot || '')
   const isEditingAd = Boolean(adForm.id)
+  const currentSlot = String(adForm.slot || '')
 
   return AD_SLOTS.filter((s) => {
-    const owner = slotOwners.value[s.key]
-    const isTakenByOther = Boolean(owner && owner !== myTid)
+    const occupied = slotOccupied.value.has(s.key)
+    const usedHere = usedSlotsInThisTournament.value.has(s.key)
 
-    // new ad => hide anything taken by other tournament
-    if (!isEditingAd) return !isTakenByOther
+    // editing: keep current slot visible no matter what
+    if (isEditingAd && s.key === currentSlot) return true
 
-    // editing => allow current slot even if something weird happened
-    if (s.key === currentSlot) return true
+    // new: hide any occupied or already used in this tournament
+    if (!isEditingAd) return !occupied && !usedHere
 
-    // otherwise same rule: hide if taken by others
-    return !isTakenByOther
+    // editing: other slots must be free and not already used here
+    return !occupied && !usedHere
   })
 })
 
 const noVacantSlotsForNewAd = computed(() => {
-  const myTid = form.id || ''
   const isEditingAd = Boolean(adForm.id)
   if (isEditingAd) return false
+
   return AD_SLOTS.every((s) => {
-    const owner = slotOwners.value[s.key]
-    return Boolean(owner && owner !== myTid)
+    const occupied = slotOccupied.value.has(s.key)
+    const usedHere = usedSlotsInThisTournament.value.has(s.key)
+    return occupied || usedHere
   })
 })
 
@@ -422,12 +442,18 @@ async function uploadAdBanner(tournamentId: string) {
   }
 }
 
-function slotIsTakenByOther(slot: string, tournamentId: string) {
-  const owner = slotOwners.value[slot]
-  return owner && owner !== tournamentId
+/**
+ * ✅ Check if a slot is occupied by SOME OTHER active ad (not this ad)
+ * - If adForm.id exists and active slot is owned by same ad => not occupied for us
+ */
+function slotIsOccupiedByOtherActiveAd(slot: string) {
+  const usage = activeSlotUsage.value[slot]
+  if (!usage) return false
+  if (adForm.id && usage.adId === adForm.id) return false
+  return true
 }
 
-/** Create or Update ONE ad row (multi ads supported) */
+/** Create or Update ONE ad row */
 async function saveOneAd(tournamentId: string) {
   if (!tournamentId) throw new Error('Missing tournament id')
 
@@ -437,11 +463,17 @@ async function saveOneAd(tournamentId: string) {
     throw new Error('Missing slot')
   }
 
-  // if enabling => slot must not be occupied by another tournament
-  if (adForm.enabled && slotIsTakenByOther(slot, tournamentId)) {
+  // hard rule: prevent creating duplicate slot within this tournament (except editing the same ad)
+  if (!adForm.id && usedSlotsInThisTournament.value.has(slot)) {
+    toast.add({ title: 'Slot already used', description: 'This tournament already has an ad for that slot.', color: 'error' })
+    throw new Error('Slot used in tournament')
+  }
+
+  // if enabling => slot must not be occupied by another ACTIVE ad
+  if (adForm.enabled && slotIsOccupiedByOtherActiveAd(slot)) {
     toast.add({
       title: 'Slot occupied',
-      description: 'That slot is already used by another tournament (active). Choose another slot.',
+      description: 'That slot is already used by another ACTIVE ad. Choose another slot or deactivate the other one.',
       color: 'error'
     })
     throw new Error('Slot occupied')
@@ -459,7 +491,6 @@ async function saveOneAd(tournamentId: string) {
     clearAdSelection()
   }
 
-  // Require banner url
   if (!adForm.banner_url) {
     toast.add({ title: 'Banner required', description: 'Upload a banner image.', color: 'error' })
     throw new Error('Missing banner')
@@ -487,13 +518,11 @@ async function saveOneAd(tournamentId: string) {
     is_active: Boolean(adForm.enabled)
   }
 
-  // update existing
   if (adForm.id) {
     const { error } = await supabase.from('tournament_ads').update(payload).eq('id', adForm.id)
     if (error) throw error
     toast.add({ title: 'Ad updated', color: 'success' })
   } else {
-    // insert new
     const { data, error } = await supabase.from('tournament_ads').insert(payload).select('id').maybeSingle()
     if (error) throw error
     adForm.id = String((data as any)?.id || '')
@@ -501,7 +530,7 @@ async function saveOneAd(tournamentId: string) {
   }
 
   await loadAdsForTournament(tournamentId)
-  await loadSlotOwners()
+  await loadActiveSlotUsage()
 }
 
 /** Deactivate (keep row) */
@@ -511,7 +540,7 @@ async function deactivateAd(adId: string) {
   if (error) throw error
   toast.add({ title: 'Ad deactivated', color: 'success' })
   await loadAdsForTournament(form.id)
-  await loadSlotOwners()
+  await loadActiveSlotUsage()
 }
 
 /** Delete row + file */
@@ -532,7 +561,7 @@ async function deleteAd(adRow: AdRow) {
     if (adForm.id === adRow.id) resetAdForm()
     toast.add({ title: 'Ad deleted', color: 'success' })
     await loadAdsForTournament(form.id)
-    await loadSlotOwners()
+    await loadActiveSlotUsage()
   } catch (e: any) {
     toast.add({ title: 'Delete failed', description: e?.message || '', color: 'error' })
   }
@@ -720,7 +749,11 @@ async function finalize(force = false) {
   winnersErr.value = null
   winnersLoading.value = true
   try {
-    await $fetch('/api/admin/tournaments/finalize', { method: 'POST', credentials: 'include', body: { tournamentId: form.id, force } })
+    await $fetch('/api/admin/tournaments/finalize', {
+      method: 'POST',
+      credentials: 'include',
+      body: { tournamentId: form.id, force }
+    })
     toast.add({ title: force ? 'Re-finalized' : 'Finalized winners', color: 'success' })
     form.finalized = true
     await apiList()
@@ -736,7 +769,8 @@ function requiresTxnId(w: WinnerRow) {
   return (w.reward_method || '') === 'online' && (w.reward_status || '') === 'given'
 }
 function validateWinnerReward(w: WinnerRow) {
-  if (requiresTxnId(w) && !String(w.reward_txn_id || '').trim()) return 'Transaction ID is required for online rewards marked as GIVEN.'
+  if (requiresTxnId(w) && !String(w.reward_txn_id || '').trim())
+    return 'Transaction ID is required for online rewards marked as GIVEN.'
   return ''
 }
 
@@ -792,9 +826,9 @@ function resetForm() {
   winnersErr.value = null
   setThumbFile(null)
 
-  // ✅ Ads reset
+  // ads reset
   ads.value = []
-  slotOwners.value = {}
+  activeSlotUsage.value = {}
   resetAdForm()
 }
 
@@ -825,7 +859,6 @@ function selectTournament(id: string) {
   setThumbFile(null)
   loadWinners().catch(() => {})
 
-  // ✅ Load multi ads for this tournament
   if (t.id) {
     loadAdsForTournament(t.id).catch(() => {})
     resetAdForm()
@@ -1022,7 +1055,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- DETAILS TAB (kept minimal, same structure) -->
+      <!-- DETAILS TAB -->
       <div v-if="tab === 'details'" class="grid gap-4 lg:grid-cols-[1fr_360px]">
         <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
           <div class="font-semibold">Tournament Details</div>
@@ -1132,15 +1165,15 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ✅ ADS TAB (MULTI ADS UI) -->
+      <!-- ADS TAB -->
       <div v-else-if="tab === 'ads'" class="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <!-- LEFT: list + editor -->
+        <!-- LEFT -->
         <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
           <div class="flex items-start justify-between gap-3">
             <div>
               <div class="font-semibold">Tournament Ads</div>
               <div class="text-xs opacity-70">
-                This tournament can have multiple ads (different slots). Only one ACTIVE ad per slot globally.
+                Multiple ads per tournament (different slots). Only one ACTIVE ad per slot globally.
               </div>
             </div>
             <div class="text-xs opacity-70" v-if="adLoading">Loading…</div>
@@ -1155,12 +1188,17 @@ onMounted(async () => {
               <UButton variant="soft" class="!rounded-full" :loading="adLoading" @click="loadAdsForTournament(form.id)">
                 Refresh
               </UButton>
-              <UButton class="!rounded-full" @click="resetAdForm()">
+
+              <!-- ✅ refresh active slots when starting new -->
+              <UButton
+                class="!rounded-full"
+                @click="(async () => { resetAdForm(); await loadActiveSlotUsage() })()"
+              >
                 New Ad
               </UButton>
             </div>
 
-            <!-- Existing ads list -->
+            <!-- Existing ads -->
             <div class="mt-4 space-y-3">
               <div v-if="ads.length === 0" class="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm opacity-80">
                 No ads for this tournament yet.
@@ -1242,7 +1280,7 @@ onMounted(async () => {
                 </label>
 
                 <div v-if="noVacantSlotsForNewAd" class="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm">
-                  All slots are currently occupied by other tournaments. Deactivate an active ad elsewhere to free a slot.
+                  No slots available. (All are occupied globally or already used in this tournament.)
                 </div>
 
                 <div class="grid gap-2">
@@ -1253,20 +1291,14 @@ onMounted(async () => {
                     :disabled="!form.id"
                   >
                     <option value="">(choose)</option>
-
-                    <!-- ✅ Only show selectable slots (occupied ones hidden for NEW ads) -->
-                    <option
-                      v-for="s in selectableSlots"
-                      :key="s.key"
-                      :value="s.key"
-                    >
+                    <option v-for="s in selectableSlots" :key="s.key" :value="s.key">
                       {{ s.label }}
                     </option>
                   </select>
 
                   <div class="text-xs opacity-60">
-                    Occupied slots (active on another tournament) are hidden when creating a new ad.
-                    When editing an existing ad, its current slot remains visible.
+                    ✅ For NEW ads: occupied slots (active anywhere) + slots already used in this tournament are hidden.<br />
+                    ✅ For EDIT ads: current slot remains visible.
                   </div>
                 </div>
 
@@ -1324,7 +1356,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- RIGHT: preview + upload -->
+        <!-- RIGHT -->
         <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
           <div class="flex items-start justify-between">
             <div>
