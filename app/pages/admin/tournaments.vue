@@ -204,30 +204,59 @@ watch(
   }
 )
 
+/* ---------------- File preview helpers (Safari-safe) ---------------- */
+/**
+ * ✅ Fix for Safari/Blob URL preview issues:
+ * Use FileReader -> dataURL for preview instead of URL.createObjectURL(blob)
+ */
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.readAsDataURL(file)
+  })
+}
+
 /* ---------------- Thumbnail ---------------- */
 const THUMB_BUCKET = 'tournament-thumbnails'
 const thumbUploading = ref(false)
 const thumbFile = ref<File | null>(null)
-const thumbPreview = ref<string>('')
+const thumbPreview = ref<string>('') // ✅ dataURL preview
 
-function setThumbFile(file: File | null) {
-  if (thumbPreview.value) URL.revokeObjectURL(thumbPreview.value)
-  thumbPreview.value = ''
+const thumbInputEl = ref<HTMLInputElement | null>(null)
+
+async function setThumbFile(file: File | null) {
   thumbFile.value = file
-  if (file) thumbPreview.value = URL.createObjectURL(file)
+  thumbPreview.value = ''
+  if (file) {
+    try {
+      thumbPreview.value = await fileToDataUrl(file)
+    } catch {
+      thumbPreview.value = ''
+    }
+  }
 }
-function onThumbPick(e: Event) {
+
+async function onThumbPick(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input?.files?.[0] || null
-  setThumbFile(file)
+  await setThumbFile(file)
+
+  // allow re-picking the same file
+  if (input) input.value = ''
 }
+
 const effectiveThumbUrl = computed(() => {
+  // ✅ show immediately after selecting, even before saving
   if (thumbPreview.value) return thumbPreview.value
   if (form.thumbnail_url) return form.thumbnail_url
   return ''
 })
+
 function clearThumbSelection() {
   setThumbFile(null)
+  if (thumbInputEl.value) thumbInputEl.value.value = ''
 }
 
 async function uploadThumbAndPersist(tournamentId: string) {
@@ -236,6 +265,7 @@ async function uploadThumbAndPersist(tournamentId: string) {
   try {
     const safeName = thumbFile.value.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const path = `tournaments/${tournamentId}/${Date.now()}-${safeName}`
+
     const { error: upErr } = await supabase.storage.from(THUMB_BUCKET).upload(path, thumbFile.value, {
       upsert: true,
       contentType: thumbFile.value.type
@@ -248,9 +278,10 @@ async function uploadThumbAndPersist(tournamentId: string) {
     form.thumbnail_path = path
     form.thumbnail_url = publicUrl
 
+    // save url/path to DB without trying to upload again
     await apiUpsert({ saveOnlyMeta: true, skipThumbUpload: true })
 
-    setThumbFile(null)
+    clearThumbSelection()
     toast.add({ title: 'Thumbnail saved', color: 'success' })
   } finally {
     thumbUploading.value = false
@@ -261,19 +292,17 @@ async function uploadThumbAndPersist(tournamentId: string) {
 const ADS_BUCKET = 'tournament-banners'
 
 const adLoading = ref(false)
-const ads = ref<AdRow[]>([]) // all ads of selected tournament
+const ads = ref<AdRow[]>([])
 
 /**
  * ✅ Global slot usage for ACTIVE ads
  * slot -> { adId, tournamentId }
  */
 const activeSlotUsage = ref<Record<string, { adId: string; tournamentId: string }>>({})
-
-/** quick helper: occupied slots set */
 const slotOccupied = computed(() => new Set(Object.keys(activeSlotUsage.value || {})))
 
 const adForm = reactive({
-  id: '' as string, // id means edit existing ad
+  id: '' as string,
   enabled: false as boolean,
   slot: '' as AdSlotKey | '',
   alt: '' as string,
@@ -284,23 +313,36 @@ const adForm = reactive({
 })
 
 const adFile = ref<File | null>(null)
-const adPreview = ref<string>('')
+const adPreview = ref<string>('') // ✅ dataURL preview
 const adUploading = ref(false)
 
-function setAdFile(file: File | null) {
-  if (adPreview.value) URL.revokeObjectURL(adPreview.value)
-  adPreview.value = ''
+const adInputEl = ref<HTMLInputElement | null>(null)
+
+async function setAdFile(file: File | null) {
   adFile.value = file
-  if (file) adPreview.value = URL.createObjectURL(file)
+  adPreview.value = ''
+  if (file) {
+    try {
+      adPreview.value = await fileToDataUrl(file)
+    } catch {
+      adPreview.value = ''
+    }
+  }
 }
-function onAdPick(e: Event) {
+
+async function onAdPick(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input?.files?.[0] || null
-  setAdFile(file)
+  await setAdFile(file)
+
+  if (input) input.value = ''
 }
+
 const effectiveAdImg = computed(() => adPreview.value || adForm.banner_url || '')
+
 function clearAdSelection() {
   setAdFile(null)
+  if (adInputEl.value) adInputEl.value.value = ''
 }
 
 function toIsoFromLocalOrNull(dtLocal: string) {
@@ -335,11 +377,7 @@ function pickAdForEdit(row: AdRow) {
 
 /** Load global active slot usage (ACTIVE ads only) */
 async function loadActiveSlotUsage() {
-  const { data, error } = await supabase
-    .from('tournament_ads')
-    .select('id, slot, tournament_id')
-    .eq('is_active', true)
-
+  const { data, error } = await supabase.from('tournament_ads').select('id, slot, tournament_id').eq('is_active', true)
   if (error) throw error
 
   const map: Record<string, { adId: string; tournamentId: string }> = {}
@@ -386,8 +424,8 @@ const usedSlotsInThisTournament = computed(() => {
 
 /**
  * ✅ Slot dropdown rule:
- * - NEW ad (adForm.id empty): hide slots that are occupied globally (active ads) OR already used in this tournament.
- * - EDIT ad: always keep its current slot visible; other slots must be free & not already used in this tournament.
+ * - NEW: hide slots occupied globally (active ads) OR already used in this tournament.
+ * - EDIT: keep current slot visible; other slots must be free & not already used in this tournament.
  */
 const selectableSlots = computed(() => {
   const isEditingAd = Boolean(adForm.id)
@@ -397,26 +435,15 @@ const selectableSlots = computed(() => {
     const occupied = slotOccupied.value.has(s.key)
     const usedHere = usedSlotsInThisTournament.value.has(s.key)
 
-    // editing: keep current slot visible no matter what
     if (isEditingAd && s.key === currentSlot) return true
-
-    // new: hide any occupied or already used in this tournament
     if (!isEditingAd) return !occupied && !usedHere
-
-    // editing: other slots must be free and not already used here
     return !occupied && !usedHere
   })
 })
 
 const noVacantSlotsForNewAd = computed(() => {
-  const isEditingAd = Boolean(adForm.id)
-  if (isEditingAd) return false
-
-  return AD_SLOTS.every((s) => {
-    const occupied = slotOccupied.value.has(s.key)
-    const usedHere = usedSlotsInThisTournament.value.has(s.key)
-    return occupied || usedHere
-  })
+  if (adForm.id) return false
+  return AD_SLOTS.every((s) => slotOccupied.value.has(s.key) || usedSlotsInThisTournament.value.has(s.key))
 })
 
 /** Upload ad banner to storage and return {path, url} */
@@ -442,10 +469,6 @@ async function uploadAdBanner(tournamentId: string) {
   }
 }
 
-/**
- * ✅ Check if a slot is occupied by SOME OTHER active ad (not this ad)
- * - If adForm.id exists and active slot is owned by same ad => not occupied for us
- */
 function slotIsOccupiedByOtherActiveAd(slot: string) {
   const usage = activeSlotUsage.value[slot]
   if (!usage) return false
@@ -463,13 +486,11 @@ async function saveOneAd(tournamentId: string) {
     throw new Error('Missing slot')
   }
 
-  // hard rule: prevent creating duplicate slot within this tournament (except editing the same ad)
   if (!adForm.id && usedSlotsInThisTournament.value.has(slot)) {
     toast.add({ title: 'Slot already used', description: 'This tournament already has an ad for that slot.', color: 'error' })
     throw new Error('Slot used in tournament')
   }
 
-  // if enabling => slot must not be occupied by another ACTIVE ad
   if (adForm.enabled && slotIsOccupiedByOtherActiveAd(slot)) {
     toast.add({
       title: 'Slot occupied',
@@ -482,7 +503,6 @@ async function saveOneAd(tournamentId: string) {
   // Upload if new file chosen
   const uploaded = await uploadAdBanner(tournamentId)
   if (uploaded) {
-    // remove old file if present
     try {
       if (adForm.banner_path) await supabase.storage.from(ADS_BUCKET).remove([adForm.banner_path])
     } catch {}
@@ -533,7 +553,6 @@ async function saveOneAd(tournamentId: string) {
   await loadActiveSlotUsage()
 }
 
-/** Deactivate (keep row) */
 async function deactivateAd(adId: string) {
   if (!form.id) return
   const { error } = await supabase.from('tournament_ads').update({ is_active: false }).eq('id', adId)
@@ -543,7 +562,6 @@ async function deactivateAd(adId: string) {
   await loadActiveSlotUsage()
 }
 
-/** Delete row + file */
 async function deleteAd(adRow: AdRow) {
   if (!form.id) return
   const ok = confirm('Delete this ad permanently?')
@@ -661,6 +679,7 @@ async function apiUpsert(opts: UpsertOpts = {}) {
 
     if (!saveOnlyMeta) toast.add({ title: isEditing.value ? 'Tournament saved' : 'Tournament created', color: 'success' })
 
+    // upload thumbnail AFTER we have an id (works for create + edit)
     if (!skipThumbUpload) {
       try {
         await uploadThumbAndPersist(t.id)
@@ -769,8 +788,7 @@ function requiresTxnId(w: WinnerRow) {
   return (w.reward_method || '') === 'online' && (w.reward_status || '') === 'given'
 }
 function validateWinnerReward(w: WinnerRow) {
-  if (requiresTxnId(w) && !String(w.reward_txn_id || '').trim())
-    return 'Transaction ID is required for online rewards marked as GIVEN.'
+  if (requiresTxnId(w) && !String(w.reward_txn_id || '').trim()) return 'Transaction ID is required for online rewards marked as GIVEN.'
   return ''
 }
 
@@ -826,7 +844,6 @@ function resetForm() {
   winnersErr.value = null
   setThumbFile(null)
 
-  // ads reset
   ads.value = []
   activeSlotUsage.value = {}
   resetAdForm()
@@ -1108,13 +1125,24 @@ onMounted(async () => {
 
           <div class="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-white/5">
             <div class="aspect-[16/10] bg-black/20 grid place-items-center">
-              <img v-if="effectiveThumbUrl" :src="effectiveThumbUrl" class="h-full w-full object-cover" />
+              <!-- ✅ key forces refresh when src changes -->
+              <img
+                v-if="effectiveThumbUrl"
+                :key="effectiveThumbUrl"
+                :src="effectiveThumbUrl"
+                class="h-full w-full object-cover"
+                alt="Tournament thumbnail preview"
+              />
               <div v-else class="text-xs opacity-60">No image</div>
             </div>
           </div>
 
+          <div v-if="thumbFile" class="mt-2 text-xs opacity-70">
+            Selected: <span class="font-mono">{{ thumbFile.name }}</span>
+          </div>
+
           <div class="mt-4 space-y-3">
-            <input type="file" accept="image/*" @change="onThumbPick" />
+            <input ref="thumbInputEl" type="file" accept="image/*" @change="onThumbPick" />
             <div class="flex flex-wrap gap-2">
               <UButton variant="soft" class="!rounded-full" :disabled="!thumbFile" @click="clearThumbSelection">Clear</UButton>
             </div>
@@ -1172,9 +1200,7 @@ onMounted(async () => {
           <div class="flex items-start justify-between gap-3">
             <div>
               <div class="font-semibold">Tournament Ads</div>
-              <div class="text-xs opacity-70">
-                Multiple ads per tournament (different slots). Only one ACTIVE ad per slot globally.
-              </div>
+              <div class="text-xs opacity-70">Multiple ads per tournament (different slots). Only one ACTIVE ad per slot globally.</div>
             </div>
             <div class="text-xs opacity-70" v-if="adLoading">Loading…</div>
           </div>
@@ -1185,20 +1211,10 @@ onMounted(async () => {
 
           <div v-else class="mt-4">
             <div class="flex flex-wrap gap-2">
-              <UButton variant="soft" class="!rounded-full" :loading="adLoading" @click="loadAdsForTournament(form.id)">
-                Refresh
-              </UButton>
-
-              <!-- ✅ refresh active slots when starting new -->
-              <UButton
-                class="!rounded-full"
-                @click="(async () => { resetAdForm(); await loadActiveSlotUsage() })()"
-              >
-                New Ad
-              </UButton>
+              <UButton variant="soft" class="!rounded-full" :loading="adLoading" @click="loadAdsForTournament(form.id)">Refresh</UButton>
+              <UButton class="!rounded-full" @click="(async () => { resetAdForm(); await loadActiveSlotUsage() })()">New Ad</UButton>
             </div>
 
-            <!-- Existing ads -->
             <div class="mt-4 space-y-3">
               <div v-if="ads.length === 0" class="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm opacity-80">
                 No ads for this tournament yet.
@@ -1225,9 +1241,7 @@ onMounted(async () => {
                   <div class="shrink-0 flex flex-col items-end gap-2">
                     <span
                       class="px-2 py-1 rounded-full border text-[11px]"
-                      :class="a.is_active
-                        ? 'bg-emerald-500/15 border-emerald-400/20 text-emerald-300'
-                        : 'bg-white/10 border-white/10 text-white/70'"
+                      :class="a.is_active ? 'bg-emerald-500/15 border-emerald-400/20 text-emerald-300' : 'bg-white/10 border-white/10 text-white/70'"
                     >
                       {{ a.is_active ? 'ACTIVE' : 'INACTIVE' }}
                     </span>
@@ -1237,22 +1251,15 @@ onMounted(async () => {
               </button>
             </div>
 
-            <!-- Editor -->
             <div class="mt-6 rounded-2xl border border-white/10 bg-black/5 dark:bg-white/5 p-4">
               <div class="flex items-center justify-between gap-3">
-                <div class="font-semibold">
-                  {{ adForm.id ? 'Edit Ad' : 'Create New Ad' }}
-                </div>
+                <div class="font-semibold">{{ adForm.id ? 'Edit Ad' : 'Create New Ad' }}</div>
                 <div class="flex gap-2">
                   <UButton
                     variant="soft"
                     class="!rounded-full"
                     :disabled="!adForm.id"
-                    @click="(async () => {
-                      const row = ads.find(x => x.id === adForm.id)
-                      if (!row) return
-                      await deactivateAd(row.id)
-                    })()"
+                    @click="(async () => { const row = ads.find(x => x.id === adForm.id); if (!row) return; await deactivateAd(row.id) })()"
                   >
                     Deactivate
                   </UButton>
@@ -1262,11 +1269,7 @@ onMounted(async () => {
                     variant="soft"
                     class="!rounded-full"
                     :disabled="!adForm.id"
-                    @click="(async () => {
-                      const row = ads.find(x => x.id === adForm.id)
-                      if (!row) return
-                      await deleteAd(row)
-                    })()"
+                    @click="(async () => { const row = ads.find(x => x.id === adForm.id); if (!row) return; await deleteAd(row) })()"
                   >
                     Delete
                   </UButton>
@@ -1291,14 +1294,12 @@ onMounted(async () => {
                     :disabled="!form.id"
                   >
                     <option value="">(choose)</option>
-                    <option v-for="s in selectableSlots" :key="s.key" :value="s.key">
-                      {{ s.label }}
-                    </option>
+                    <option v-for="s in selectableSlots" :key="s.key" :value="s.key">{{ s.label }}</option>
                   </select>
 
                   <div class="text-xs opacity-60">
-                    ✅ For NEW ads: occupied slots (active anywhere) + slots already used in this tournament are hidden.<br />
-                    ✅ For EDIT ads: current slot remains visible.
+                    ✅ NEW: hides occupied + already-used slots<br />
+                    ✅ EDIT: current slot stays visible
                   </div>
                 </div>
 
@@ -1335,17 +1336,12 @@ onMounted(async () => {
                     class="!rounded-full"
                     :disabled="!form.id || (!adForm.id && noVacantSlotsForNewAd)"
                     :loading="adUploading"
-                    @click="(async () => {
-                      if (!form.id) return
-                      await saveOneAd(form.id)
-                    })()"
+                    @click="(async () => { if (!form.id) return; await saveOneAd(form.id) })()"
                   >
                     {{ adForm.id ? 'Save Changes' : 'Create Ad' }}
                   </UButton>
 
-                  <UButton variant="soft" class="!rounded-full" @click="resetAdForm()">
-                    Clear Form
-                  </UButton>
+                  <UButton variant="soft" class="!rounded-full" @click="resetAdForm()">Clear Form</UButton>
                 </div>
 
                 <div class="text-xs opacity-60">
@@ -1368,13 +1364,23 @@ onMounted(async () => {
 
           <div class="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-white/5">
             <div class="aspect-[16/6] bg-black/20 grid place-items-center">
-              <img v-if="effectiveAdImg" :src="effectiveAdImg" class="h-full w-full object-cover" />
+              <img
+                v-if="effectiveAdImg"
+                :key="effectiveAdImg"
+                :src="effectiveAdImg"
+                class="h-full w-full object-cover"
+                alt="Ad banner preview"
+              />
               <div v-else class="text-xs opacity-60">No banner</div>
             </div>
           </div>
 
+          <div v-if="adFile" class="mt-2 text-xs opacity-70">
+            Selected: <span class="font-mono">{{ adFile.name }}</span>
+          </div>
+
           <div class="mt-4 space-y-3">
-            <input type="file" accept="image/*" @change="onAdPick" :disabled="!form.id" />
+            <input ref="adInputEl" type="file" accept="image/*" @change="onAdPick" :disabled="!form.id" />
             <div class="flex flex-wrap gap-2">
               <UButton variant="soft" class="!rounded-full" :disabled="!adFile" @click="clearAdSelection">Clear</UButton>
             </div>
@@ -1387,9 +1393,7 @@ onMounted(async () => {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div class="font-semibold">Winners & Rewards</div>
-            <div class="text-xs opacity-70">
-              Finalize winners after end. Online + GIVEN requires transaction id.
-            </div>
+            <div class="text-xs opacity-70">Finalize winners after end. Online + GIVEN requires transaction id.</div>
           </div>
 
           <div class="flex items-center gap-2">
