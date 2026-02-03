@@ -329,11 +329,7 @@ function pickAdForEdit(row: AdRow) {
 
 async function loadSlotOwners() {
   // all ACTIVE ads across site -> who owns each slot
-  const { data, error } = await supabase
-    .from('tournament_ads')
-    .select('slot, tournament_id')
-    .eq('is_active', true)
-
+  const { data, error } = await supabase.from('tournament_ads').select('slot, tournament_id').eq('is_active', true)
   if (error) throw error
 
   const map: Record<string, string> = {}
@@ -367,6 +363,41 @@ async function loadAdsForTournament(tournamentId: string) {
     adLoading.value = false
   }
 }
+
+/**
+ * ✅ Slot dropdown rule:
+ * - When creating a NEW ad (adForm.id is empty), hide occupied slots (owned by other tournaments).
+ * - When editing an existing ad, always include its current slot so it remains selectable.
+ */
+const selectableSlots = computed(() => {
+  const myTid = form.id || ''
+  const currentSlot = String(adForm.slot || '')
+  const isEditingAd = Boolean(adForm.id)
+
+  return AD_SLOTS.filter((s) => {
+    const owner = slotOwners.value[s.key]
+    const isTakenByOther = Boolean(owner && owner !== myTid)
+
+    // new ad => hide anything taken by other tournament
+    if (!isEditingAd) return !isTakenByOther
+
+    // editing => allow current slot even if something weird happened
+    if (s.key === currentSlot) return true
+
+    // otherwise same rule: hide if taken by others
+    return !isTakenByOther
+  })
+})
+
+const noVacantSlotsForNewAd = computed(() => {
+  const myTid = form.id || ''
+  const isEditingAd = Boolean(adForm.id)
+  if (isEditingAd) return false
+  return AD_SLOTS.every((s) => {
+    const owner = slotOwners.value[s.key]
+    return Boolean(owner && owner !== myTid)
+  })
+})
 
 /** Upload ad banner to storage and return {path, url} */
 async function uploadAdBanner(tournamentId: string) {
@@ -410,7 +441,7 @@ async function saveOneAd(tournamentId: string) {
   if (adForm.enabled && slotIsTakenByOther(slot, tournamentId)) {
     toast.add({
       title: 'Slot occupied',
-      description: 'That slot is already used by another tournament (active). Disable theirs or choose another slot.',
+      description: 'That slot is already used by another tournament (active). Choose another slot.',
       color: 'error'
     })
     throw new Error('Slot occupied')
@@ -1210,6 +1241,10 @@ onMounted(async () => {
                   <span class="text-sm font-semibold">Active</span>
                 </label>
 
+                <div v-if="noVacantSlotsForNewAd" class="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm">
+                  All slots are currently occupied by other tournaments. Deactivate an active ad elsewhere to free a slot.
+                </div>
+
                 <div class="grid gap-2">
                   <label class="text-xs opacity-70">Slot</label>
                   <select
@@ -1218,19 +1253,20 @@ onMounted(async () => {
                     :disabled="!form.id"
                   >
                     <option value="">(choose)</option>
+
+                    <!-- ✅ Only show selectable slots (occupied ones hidden for NEW ads) -->
                     <option
-                      v-for="s in AD_SLOTS"
+                      v-for="s in selectableSlots"
                       :key="s.key"
                       :value="s.key"
                     >
                       {{ s.label }}
-                      <template v-if="slotOwners[s.key] && slotOwners[s.key] !== form.id">
-                        (occupied)
-                      </template>
                     </option>
                   </select>
+
                   <div class="text-xs opacity-60">
-                    If slot is occupied (active) by another tournament, you can still save as INACTIVE or pick a different slot.
+                    Occupied slots (active on another tournament) are hidden when creating a new ad.
+                    When editing an existing ad, its current slot remains visible.
                   </div>
                 </div>
 
@@ -1265,7 +1301,7 @@ onMounted(async () => {
                 <div class="flex flex-wrap gap-2">
                   <UButton
                     class="!rounded-full"
-                    :disabled="!form.id"
+                    :disabled="!form.id || (!adForm.id && noVacantSlotsForNewAd)"
                     :loading="adUploading"
                     @click="(async () => {
                       if (!form.id) return
@@ -1314,7 +1350,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- WINNERS TAB (kept as your original idea, shortened here intentionally) -->
+      <!-- WINNERS TAB -->
       <div v-else class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
