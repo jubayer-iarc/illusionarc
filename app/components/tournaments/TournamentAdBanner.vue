@@ -1,3 +1,4 @@
+<!-- components/TournamentAdBanner.vue -->
 <script setup lang="ts">
 type TournamentMini = {
   slug: string
@@ -13,24 +14,25 @@ type AdRow = {
   banner_url: string | null
   banner_path: string | null
   alt: string | null
-  // optional: if you keep schedule on ads
   starts_at?: string | null
   ends_at?: string | null
   tournaments: TournamentMini | null
 }
 
 const props = withDefaults(
-  defineProps<{
-    slot: string
-    variant?: 'banner' | 'sidebar'
-    ratio?: '21/9' | '16/9' | '3/1'
-    livePulse?: boolean
-  }>(),
-  {
-    variant: 'banner',
-    ratio: '21/9',
-    livePulse: true
-  }
+    defineProps<{
+      slot: string
+      variant?: 'banner' | 'sidebar'
+      ratio?: '21/9' | '16/9' | '3/1'
+      livePulse?: boolean
+      showLiveBadge?: boolean
+    }>(),
+    {
+      variant: 'banner',
+      ratio: '21/9',
+      livePulse: true,
+      showLiveBadge: true
+    }
 )
 
 const supabase = useSupabaseClient()
@@ -54,21 +56,20 @@ async function load() {
   const nowIso = new Date().toISOString()
 
   const { data, error } = await supabase
-    .from('tournament_ads')
-    .select(
-      `
+      .from('tournament_ads')
+      .select(
+          `
       slot, banner_url, banner_path, alt, starts_at, ends_at,
       tournaments:tournament_id (
         slug, title, thumbnail_url, starts_at, ends_at, status
       )
     `
-    )
-    .eq('slot', props.slot)
-    .eq('is_active', true)
-    // If tournament_ads doesn't have starts_at/ends_at, remove these 2 lines:
-    .or(`starts_at.is.null,starts_at.lte.${nowIso}`)
-    .or(`ends_at.is.null,ends_at.gte.${nowIso}`)
-    .maybeSingle()
+      )
+      .eq('slot', props.slot)
+      .eq('is_active', true)
+      .or(`starts_at.is.null,starts_at.lte.${nowIso}`)
+      .or(`ends_at.is.null,ends_at.gte.${nowIso}`)
+      .maybeSingle()
 
   ad.value = error ? null : ((data as any) || null)
 }
@@ -103,7 +104,6 @@ function toMs(v?: string | null) {
  */
 const isLive = computed(() => {
   if (!props.livePulse) return false
-
   const t = ad.value?.tournaments
   const now = nowTick.value
 
@@ -137,50 +137,46 @@ const timeLeft = computed(() => {
   if (m > 0) return `${m}m ${s}s`
   return `${s}s`
 })
+
+/** Accessible alt */
+const altText = computed(() => ad.value?.alt || ad.value?.tournaments?.title || 'Tournament')
 </script>
 
 <template>
   <NuxtLink
-    v-if="ad && href && img"
-    :to="href"
-    class="group relative block w-full overflow-hidden rounded-3xl
+      v-if="ad && href && img"
+      :to="href"
+      class="adCard group relative block w-full overflow-hidden rounded-3xl
            border border-black/10 dark:border-white/10
-           bg-white/70 dark:bg-white/5 backdrop-blur
-           transition will-change-transform
-           hover:-translate-y-[3px]
-           hover:shadow-[0_24px_70px_rgba(0,0,0,.20)]
-           dark:hover:shadow-[0_24px_70px_rgba(0,0,0,.55)]"
+           bg-white/60 dark:bg-white/5 backdrop-blur
+           transition-transform duration-300 will-change-transform
+           hover:-translate-y-[4px]
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-black/20"
   >
-    <!-- Ambient hover glow -->
+    <!-- Neon/ambient glow (only on hover) -->
     <div
-      aria-hidden="true"
-      class="pointer-events-none absolute -inset-10 opacity-0 group-hover:opacity-100 transition duration-500 blur-2xl"
-      :style="{
+        aria-hidden="true"
+        class="pointer-events-none absolute -inset-10 opacity-0 group-hover:opacity-100 transition duration-500 blur-2xl"
+        :style="{
         background: `
-          radial-gradient(520px 260px at 25% 35%, rgba(239,68,68,.16), transparent 60%),
-          radial-gradient(520px 260px at 55% 55%, rgba(34,211,238,.12), transparent 60%),
-          radial-gradient(520px 260px at 85% 30%, rgba(124,58,237,.14), transparent 60%)
+          radial-gradient(520px 260px at 18% 30%, rgba(34,211,238,.20), transparent 60%),
+          radial-gradient(520px 260px at 55% 55%, rgba(124,58,237,.22), transparent 60%),
+          radial-gradient(520px 260px at 85% 28%, rgba(239,68,68,.18), transparent 60%)
         `
       }"
     />
 
     <!-- ✅ SIDEBAR -->
     <div v-if="isSidebar" class="relative w-full h-[420px]">
-      <img
-        :src="img"
-        :alt="ad.alt || ad.tournaments?.title || 'Tournament'"
-        class="absolute inset-0 w-full h-full object-cover transition duration-700 group-hover:scale-[1.04]"
-      />
+      <img :src="img" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
 
-      <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+      <!-- subtle vignette for depth (no text) -->
+      <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-black/10" />
 
-      <!-- ✅ LIVE badge (top-right, bigger, red) -->
-      <div
-        v-if="isLive"
-        class="absolute right-4 top-4 z-10"
-      >
+      <!-- Optional LIVE badge (top-right) -->
+      <div v-if="showLiveBadge && isLive" class="absolute right-4 top-4 z-10">
         <div
-          class="inline-flex items-center gap-2 rounded-full
+            class="inline-flex items-center gap-2 rounded-full
                  border border-red-400/30 bg-red-500/20
                  px-4 py-2 text-sm font-extrabold tracking-wide text-red-50"
         >
@@ -189,62 +185,24 @@ const timeLeft = computed(() => {
           <span v-if="timeLeft" class="opacity-90 font-semibold">• {{ timeLeft }}</span>
         </div>
       </div>
-
-      <!-- small label top-left -->
-      <div class="absolute left-4 top-4 flex items-center gap-2">
-        <span class="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-3 py-1 text-[11px] text-white/85">
-          <span class="inline-flex h-1.5 w-1.5 rounded-full bg-white/70" />
-          TOURNAMENT
-        </span>
-      </div>
-
-      <div class="absolute inset-x-0 bottom-0 p-5">
-        <div class="text-lg font-extrabold text-white leading-tight line-clamp-2">
-          {{ ad.tournaments?.title }}
-        </div>
-
-        <div class="mt-3 inline-flex items-center gap-2 rounded-full bg-white/12 border border-white/20 px-3 py-1.5 text-xs text-white/90">
-          View details
-          <span class="opacity-80 group-hover:translate-x-[3px] transition">→</span>
-        </div>
-
-        <div class="mt-3 h-[2px] w-24 rounded-full bg-white/20 overflow-hidden">
-          <div class="h-full w-full translate-x-[-100%] group-hover:translate-x-0 transition duration-700 bg-white/45" />
-        </div>
-      </div>
     </div>
 
     <!-- ✅ BANNER -->
     <div v-else class="relative w-full" :class="ratioClass">
-      <img
-        :src="img"
-        :alt="ad.alt || ad.tournaments?.title || 'Tournament'"
-        class="absolute inset-0 w-full h-full object-cover transition duration-700 group-hover:scale-[1.03]"
-      />
+      <img :src="img" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
 
-      <div class="absolute inset-0 bg-gradient-to-r from-black/80 via-black/35 to-transparent" />
-      <div class="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
+      <!-- subtle depth (no text) -->
+      <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10" />
 
       <!-- Shimmer sweep -->
       <div aria-hidden="true" class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-700">
-        <div class="absolute -inset-y-10 -left-1/2 w-1/2 rotate-12 bg-white/10 blur-xl animate-[adSweep_1.2s_ease-in-out_1]" />
+        <div class="absolute -inset-y-10 -left-1/2 w-1/2 rotate-12 bg-white/12 blur-xl animate-[adSweep_1.2s_ease-in-out_1]" />
       </div>
 
-      <!-- top-left label -->
-      <div class="absolute left-4 top-4 flex items-center gap-2">
-        <span class="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-3 py-1 text-[11px] text-white/85">
-          <span class="inline-flex h-1.5 w-1.5 rounded-full bg-white/70" />
-          TOURNAMENT
-        </span>
-      </div>
-
-      <!-- ✅ LIVE badge (top-right, bigger, red) -->
-      <div
-        v-if="isLive"
-        class="absolute right-4 top-4 z-10"
-      >
+      <!-- Optional LIVE badge (top-right) -->
+      <div v-if="showLiveBadge && isLive" class="absolute right-4 top-4 z-10">
         <div
-          class="inline-flex items-center gap-2 rounded-full
+            class="inline-flex items-center gap-2 rounded-full
                  border border-red-400/30 bg-red-500/20
                  px-4 py-2 text-sm sm:text-base font-extrabold tracking-wide text-red-50"
         >
@@ -253,28 +211,14 @@ const timeLeft = computed(() => {
           <span v-if="timeLeft" class="opacity-90 font-semibold">• {{ timeLeft }}</span>
         </div>
       </div>
+    </div>
 
-      <!-- Content -->
-      <div class="absolute inset-0 flex items-center">
-        <div class="p-5 sm:p-7 max-w-[74%]">
-          <div class="text-[11px] sm:text-xs uppercase tracking-wider text-white/75">
-            Join now • Win prizes
-          </div>
-
-          <div class="mt-1 text-lg sm:text-2xl font-extrabold text-white leading-tight line-clamp-2 drop-shadow">
-            {{ ad.tournaments?.title }}
-          </div>
-
-          <div class="mt-3 inline-flex items-center gap-2 rounded-full bg-white/12 border border-white/20 px-3 py-1.5 text-xs text-white/90">
-            Tap to view
-            <span class="opacity-80 group-hover:translate-x-[3px] transition">→</span>
-          </div>
-
-          <div class="mt-4 h-[2px] w-28 rounded-full bg-white/20 overflow-hidden">
-            <div class="h-full w-full translate-x-[-100%] group-hover:translate-x-0 transition duration-700 bg-white/55" />
-          </div>
-        </div>
-      </div>
+    <!-- Gloss highlight (very subtle) -->
+    <div
+        aria-hidden="true"
+        class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-500"
+    >
+      <div class="absolute inset-0 bg-gradient-to-br from-white/18 via-white/0 to-white/0" />
     </div>
   </NuxtLink>
 </template>
@@ -286,13 +230,39 @@ const timeLeft = computed(() => {
   to { transform: translateX(220%) rotate(12deg); opacity: 0; }
 }
 
+/* ✅ "Pop + Bright" hover:
+   - scale slightly
+   - brighter, more saturated, a bit more contrast
+   - stronger shadow
+*/
+.adCard {
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.18);
+}
+.adCard:hover {
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.30);
+}
+.adImg {
+  transition: transform 650ms cubic-bezier(.2,.8,.2,1), filter 450ms ease;
+  will-change: transform, filter;
+}
+.adCard:hover .adImg {
+  transform: scale(1.05);
+  filter: brightness(1.14) saturate(1.22) contrast(1.06);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .adImg { transition: none; }
+  .adCard { transition: none; }
+}
+
 /* ✅ Bigger RED pulsing dot */
 .liveDot {
   position: relative;
   width: 10px;
   height: 10px;
   border-radius: 9999px;
-  background: rgba(248, 113, 113, 0.98); /* red-400-ish */
+  background: rgba(248, 113, 113, 0.98);
   box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55);
   animation: pulseRed 1.05s ease-out infinite;
 }
