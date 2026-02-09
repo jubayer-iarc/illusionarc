@@ -29,7 +29,7 @@ const props = withDefaults(
     }>(),
     {
       variant: 'banner',
-      ratio: '21/9',
+      ratio: '16/9',
       livePulse: true,
       showLiveBadge: true
     }
