@@ -1,3 +1,4 @@
+<!-- app/layouts/default.vue -->
 <template>
   <div class="min-h-dvh flex flex-col bg-[var(--app-bg)] text-[var(--app-fg)]">
     <!-- Header -->
@@ -15,25 +16,30 @@
         <!-- Header row -->
         <div class="flex items-center justify-between gap-3">
           <NuxtLink to="/" class="flex items-center gap-2">
-            <!--<UIcon name="i-heroicons-sparkles" class="text-xl" /> -->
-            <img src="/android-chrome-512x512.png" alt="illusion Arc Logo" class="h-8 w-8 object-contain" />
-            <span class="font-semibold tracking-wide">illusion Arc</span>
+            <img
+              :src="settings.brand_logo_url || '/android-chrome-512x512.png'"
+              :alt="`${settings.brand_name || 'illusion Arc'} Logo`"
+              class="h-8 w-8 object-contain"
+            />
+            <span class="font-semibold tracking-wide">{{ settings.brand_name || 'illusion Arc' }}</span>
           </NuxtLink>
 
+          <!-- Desktop nav (admin-managed) -->
           <nav class="hidden md:flex items-center gap-1">
-            <UButton variant="ghost" to="/work">Work</UButton>
-            <UButton variant="ghost" to="/services">Services</UButton>
-            <UButton variant="ghost" to="/arcade">Arcade</UButton>
-            <UButton variant="ghost" to="/tournaments">Tournaments</UButton>
-            <UButton variant="ghost" to="/apps">Apps</UButton>
-            <UButton variant="ghost" to="/about">About</UButton>
-            <UButton variant="ghost" to="/arcade/leaderboard">Leaderboard</UButton>
-            <UButton variant="ghost" to="/arcade/winners">Winners</UButton>
+            <UButton
+              v-for="n in desktopNav"
+              :key="n.label + n.to"
+              variant="ghost"
+              :to="n.to"
+            >
+              {{ n.label }}
+            </UButton>
           </nav>
 
           <div class="flex items-center gap-2">
+            <!-- Contact CTA (admin-managed if you want; keeping fixed to /contact but label is from settings if present) -->
             <UButton class="hidden md:inline-flex" color="primary" to="/contact">
-              Contact
+              {{ contactLabel }}
             </UButton>
 
             <!-- Avatar / Login (desktop) -->
@@ -112,15 +118,22 @@
             </UButton>
           </div>
 
-          <UButton variant="ghost" to="/work" @click="open=false">Work</UButton>
-          <UButton variant="ghost" to="/services" @click="open=false">Services</UButton>
-          <UButton variant="ghost" to="/arcade" @click="open=false">Arcade</UButton>
-          <UButton variant="ghost" to="/tournaments" @click="open=false">Tournaments</UButton>
-          <UButton variant="ghost" to="/apps" @click="open=false">Apps</UButton>
-          <UButton variant="ghost" to="/about" @click="open=false">About</UButton>
-          <UButton variant="ghost" to="/arcade/leaderboard" @click="open=false">Leaderboard</UButton>
-          <UButton variant="ghost" to="/arcade/winners" @click="open=false">Winners</UButton>
-          <UButton color="primary" to="/contact" @click="open=false">Contact</UButton>
+          <!-- Mobile nav (same as desktop; admin-managed) -->
+          <UButton
+            v-for="n in mobileNav"
+            :key="n.label + n.to"
+            variant="ghost"
+            :to="n.to"
+            @click="open = false"
+            class="justify-start"
+          >
+            {{ n.label }}
+          </UButton>
+
+          <!-- Contact CTA (always at bottom) -->
+          <UButton color="primary" to="/contact" @click="open = false" class="mt-1">
+            {{ contactLabel }}
+          </UButton>
 
           <!-- ✅ Theme control removed from drawer (as you requested) -->
         </div>
@@ -132,39 +145,66 @@
       <slot />
     </main>
 
-    <!-- Footer -->
+    <!-- Footer (admin-managed branding + links) -->
     <footer class="border-t border-black/10 dark:border-white/5 bg-white/50 dark:bg-black/10">
       <UContainer class="py-10 grid gap-6 md:grid-cols-3">
         <div>
-          <div class="font-semibold">illusion Arc</div>
+          <div class="font-semibold">{{ settings.brand_name || 'illusion Arc' }}</div>
           <div class="text-sm text-black/60 dark:text-white/60 mt-2">
-            Games • AR/VR • VFX/CGI • Animation
+            {{ settings.footer_tagline || 'Games • AR/VR • VFX/CGI • Animation' }}
           </div>
         </div>
 
         <div class="text-sm">
           <div class="text-black/60 dark:text-white/60 mb-2">Links</div>
           <div class="flex flex-col gap-1">
-            <NuxtLink to="/work" class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white">Work</NuxtLink>
-            <NuxtLink to="/arcade" class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white">Arcade</NuxtLink>
-            <NuxtLink to="/tournaments" class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white">Tournaments</NuxtLink>
-            <NuxtLink to="/contact" class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white">Contact</NuxtLink>
+            <NuxtLink
+              v-for="l in footerLinks"
+              :key="l.label + l.to"
+              :to="l.to"
+              class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
+            >
+              {{ l.label }}
+            </NuxtLink>
+
+            <!-- If admin accidentally empties links, keep UX safe -->
+            <NuxtLink
+              v-if="footerLinks.length === 0"
+              to="/"
+              class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
+            >
+              Home
+            </NuxtLink>
           </div>
         </div>
 
         <div class="text-sm">
           <div class="text-black/60 dark:text-white/60 mb-2">Legal</div>
           <div class="flex flex-col gap-1">
-            <NuxtLink to="/privacy-policy" class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white">Privacy Policy</NuxtLink>
-            <NuxtLink to="/terms" class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white">Terms & Conditions</NuxtLink>
+            <NuxtLink
+              v-for="l in footerLegal"
+              :key="l.label + l.to"
+              :to="l.to"
+              class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
+            >
+              {{ l.label }}
+            </NuxtLink>
+
+            <NuxtLink
+              v-if="footerLegal.length === 0"
+              to="/privacy-policy"
+              class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
+            >
+              Privacy Policy
+            </NuxtLink>
           </div>
         </div>
       </UContainer>
 
-      <!-- ✅ Footer bottom bar with theme button (good position) -->
+      <!-- ✅ Footer bottom bar with theme button -->
       <UContainer class="py-4 border-t border-black/10 dark:border-white/5 flex items-center justify-between gap-3">
         <div class="text-xs text-black/50 dark:text-white/50">
-          © {{ new Date().getFullYear() }} illusion Arc
+          © {{ new Date().getFullYear() }} {{ settings.brand_name || 'illusion Arc' }}
         </div>
 
         <ClientOnly>
@@ -191,21 +231,49 @@
 import UserMenu from '@/components/nav/UserMenu.vue'
 import LiveTournamentBanner from '~/components/tournaments/LiveTournamentBanner.vue'
 
+/* ---------------- Admin-managed site settings ---------------- */
+type NavItem = { label: string; to: string; enabled?: boolean }
+type LinkItem = { label: string; to: string }
+
+// Uses your composable (state + refresh)
+const { settings, refresh } = useSiteSettings()
+await refresh()
+
 const open = ref(false)
 
-// Mobile drawer user info
+/** filter enabled + remove contact from nav (we show it as CTA) */
+function normalizeNav(list: any): NavItem[] {
+  if (!Array.isArray(list)) return []
+  return list
+    .filter((x) => x && typeof x.label === 'string' && typeof x.to === 'string')
+    .filter((x) => x.enabled !== false)
+    .filter((x) => x.to !== '/contact')
+}
+
+const desktopNav = computed(() => normalizeNav((settings.value as any).header_nav))
+const mobileNav = computed(() => normalizeNav((settings.value as any).header_nav))
+
+const footerLinks = computed<LinkItem[]>(() => {
+  const list: any = (settings.value as any).footer_links
+  return Array.isArray(list) ? list.filter((x) => x?.label && x?.to) : []
+})
+
+const footerLegal = computed<LinkItem[]>(() => {
+  const list: any = (settings.value as any).footer_legal
+  return Array.isArray(list) ? list.filter((x) => x?.label && x?.to) : []
+})
+
+/** optional: label can be stored in settings later; safe fallback now */
+const contactLabel = computed(() => 'Contact')
+
+/* ---------------- Mobile drawer user info ---------------- */
 const user = useSupabaseUser()
 const supabase = useSupabaseClient()
 const toast = useToast()
 
 const displayName = computed(() => {
   const u: any = user.value
-  return (
-    u?.user_metadata?.display_name ||
-    u?.user_metadata?.full_name ||
-    u?.email?.split?.('@')?.[0] ||
-    'Player'
-  )
+  return u?.user_metadata?.display_name || u?.user_metadata?.full_name || u?.email?.split?.('@')?.[0] || 'Player'
 })
 
 const avatarUrl = computed(() => {
@@ -217,12 +285,14 @@ const initials = computed(() => {
   const n = (displayName.value || '').trim()
   return n ? n.slice(0, 1).toUpperCase() : 'U'
 })
+
 watch(
   () => user.value?.id,
   (id) => {
     if (!id) open.value = false
   }
 )
+
 async function logout() {
   try {
     // 1) close drawer instantly (UI feels responsive)
@@ -236,15 +306,13 @@ async function logout() {
     toast.add({ title: 'Logged out', color: 'success' })
 
     // 4) hard redirect (most reliable)
-    if (import.meta.client) {
-      window.location.assign('/login')
-    }
+    if (import.meta.client) window.location.assign('/login')
   } catch (e: any) {
     toast.add({ title: 'Logout failed', description: e?.message || '', color: 'error' })
   }
 }
 
-/* ✅ Color mode logic (kept here, button is ClientOnly in footer) */
+/* ---------------- Color mode logic (kept here) ---------------- */
 const colorMode = useColorMode()
 
 type Mode = 'system' | 'light' | 'dark'
