@@ -448,7 +448,6 @@ function statusLine() {
               <span class="inline-flex h-1.5 w-1.5 rounded-full" :class="statusBadge.dot" />
               {{ statusBadge.text }}
             </span>
-
             <span class="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-3 py-1 text-[11px] text-white/85">
               <span class="inline-flex h-1.5 w-1.5 rounded-full bg-white/70" />
               {{ game?.name || getGameSlug(t) }}
@@ -461,7 +460,7 @@ function statusLine() {
           </div>
 
           <div class="relative p-6 sm:p-7">
-            <h1 class="text-3xl sm:text-4xl font-semibold text-white drop-shadow">
+            <h1 class="mt-6 text-3xl sm:text-4xl font-semibold text-white drop-shadow">
               {{ t.title }}
             </h1>
 
