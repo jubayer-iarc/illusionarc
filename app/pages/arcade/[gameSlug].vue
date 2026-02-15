@@ -265,9 +265,19 @@ async function nativeShare() {
           <!-- Actions -->
           <div class="flex flex-wrap gap-2">
             <UButton color="primary" variant="solid" size="lg" @click="openPlay">
-              <UIcon name="i-heroicons-play-solid" class="w-5 h-5" />
+              <UIcon
+                v-if="game!.pro"
+                name="i-ph-crown-fill"
+                class="w-5 h-5 text-amber-400"
+              />
+              <UIcon
+                v-else
+                name="i-heroicons-play-solid"
+                class="w-5 h-5"
+              />
               Play
             </UButton>
+
 
             <UButton variant="soft" size="lg" @click="liked = !liked" :aria-pressed="liked">
               <UIcon :name="liked ? 'i-heroicons-heart-solid' : 'i-heroicons-heart'" class="w-5 h-5" />

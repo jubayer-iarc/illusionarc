@@ -1,5 +1,7 @@
 export default defineNuxtRouteMiddleware(async (to) => {
-  const slug = String(to.params.slug || '')
+  const slug = String(to.params.gameSlug || '')
+
+  if (!slug) return
 
   const { GAMES } = await import('@/data/games')
   const game = GAMES.find(g => g.slug === slug)
