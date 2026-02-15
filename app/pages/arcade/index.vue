@@ -275,7 +275,16 @@ const featured = computed(() => arcadeSource.value.filter(g => g.featured))
 
           <div class="p-4">
             <div class="flex items-center justify-between gap-2">
-              <div class="font-semibold text-black dark:text-white">{{ g.name }}</div>
+              <div class="flex items-center gap-2 font-semibold text-black dark:text-white">
+                <span>{{ g.name }}</span>
+
+                <UIcon
+                  v-if="g.pro"
+                  name="i-ph-crown-fill"
+                  class="w-4 h-4 text-amber-500"
+                />
+              </div>
+
               <span class="text-xs text-black/60 dark:text-white/60" v-if="g.estTime">{{ g.estTime }}</span>
             </div>
 

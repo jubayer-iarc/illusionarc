@@ -65,7 +65,7 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Puzzle',
     difficulty: 'Medium',
     estTime: '60s',
-    pro: false
+    pro: true
   },
   {
     name: 'Neon Polarity',
@@ -85,7 +85,7 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Shooter',
     difficulty: 'Medium',
     estTime: '60s',
-    pro: false
+    pro: true
   },
   {
     name: 'Block Smash',
