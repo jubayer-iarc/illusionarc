@@ -158,6 +158,9 @@ const featured = computed(() => arcadeSource.value.filter(g => g.featured))
         <UButton to="/arcade/leaderboard" variant="solid" color="primary">
           Leaderboard
         </UButton>
+        <UButton to="/subscribe" variant="solid" color="primary">
+          Pricing
+        </UButton>
       </div>
     </div>
 
