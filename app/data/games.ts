@@ -23,6 +23,7 @@ export type ArcadeGame = {
   difficulty?: 'Easy' | 'Medium' | 'Hard'
   featured?: boolean
   estTime?: string
+  pro?: boolean
 }
 
 export const GAMES: ArcadeGame[] = [
@@ -43,7 +44,8 @@ export const GAMES: ArcadeGame[] = [
     featured: false,
     genre: 'Shooter',
     difficulty: 'Medium',
-    estTime: '60s'
+    estTime: '60s',
+    pro: true
   },
   {
     name: 'Blink Maze',
@@ -62,7 +64,8 @@ export const GAMES: ArcadeGame[] = [
     featured: false,
     genre: 'Puzzle',
     difficulty: 'Medium',
-    estTime: '60s'
+    estTime: '60s',
+    pro: false
   },
   {
     name: 'Neon Polarity',
@@ -81,7 +84,8 @@ export const GAMES: ArcadeGame[] = [
     featured: false,
     genre: 'Shooter',
     difficulty: 'Medium',
-    estTime: '60s'
+    estTime: '60s',
+    pro: false
   },
   {
     name: 'Block Smash',
@@ -100,7 +104,8 @@ export const GAMES: ArcadeGame[] = [
     featured: false,
     genre: 'Puzzle',
     difficulty: 'Medium',
-    estTime: '60s'
+    estTime: '60s',
+    pro: true
   },
   {
     name: '2048',
@@ -116,7 +121,8 @@ export const GAMES: ArcadeGame[] = [
     leaderboard: true,
     genre: 'Puzzle',
     difficulty: 'Easy',
-    estTime: '3–10m'
+    estTime: '3–10m',
+    pro: false
   },
   {
     name: 'PAC-MAN',
@@ -132,7 +138,8 @@ export const GAMES: ArcadeGame[] = [
     leaderboard: true,
     genre: 'Arcade',
     difficulty: 'Medium',
-    estTime: '3–5 min'
+    estTime: '3–5 min',
+    pro: true
   },
   {
     name: 'Snake',
@@ -148,6 +155,7 @@ export const GAMES: ArcadeGame[] = [
     leaderboard: true,
     genre: 'Arcade',
     difficulty: 'Easy',
-    estTime: '2–5m'
+    estTime: '2–5m',
+    pro: false
   }
 ]

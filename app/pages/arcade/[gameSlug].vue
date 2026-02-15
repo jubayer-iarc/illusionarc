@@ -4,22 +4,19 @@ import GamePlayer from '@/components/arcade/GamePlayer.vue'
 import TopScoresPanel from '@/components/arcade/TopScoresPanel.vue'
 
 definePageMeta({
-  middleware: ['require-play-auth'] // ✅ only blocks when URL has ?play=1
+  middleware: ['require-play-auth'] // only blocks ?play=1
 })
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-
-const user = useSupabaseUser() // ✅
+const user = useSupabaseUser() // authenticated user
 
 const slug = computed(() => String(route.params.gameSlug || ''))
 
-/* ---------------------------------------------------------
-   EXCLUSIVE TOURNAMENT RULE:
-   If a tournament is LIVE for this game, redirect from Arcade
-   to the tournament details page.
----------------------------------------------------------- */
+/* ---------------- TOURNAMENT RULE ----------------
+   If a tournament is LIVE for this game, redirect to tournament page.
+-------------------------------------------------- */
 type LiveRow = { gameSlug: string; tournamentSlug: string }
 
 async function redirectIfLiveTournament() {
@@ -27,18 +24,13 @@ async function redirectIfLiveTournament() {
     const res = await $fetch<{ rows?: LiveRow[] }>('/api/tournaments/live-games')
     const match = (res?.rows || []).find((r) => r.gameSlug === slug.value)
     if (match?.tournamentSlug) {
-      // Redirect to tournament page (not embed)
-      return await navigateTo(`/tournaments/${match.tournamentSlug}`)
+      return navigateTo(`/tournaments/${match.tournamentSlug}`)
     }
-  } catch {
-    // If API fails, ignore and keep Arcade working.
-  }
+  } catch {}
 }
-
-// Run early on server + client navigation
 await redirectIfLiveTournament()
 
-const game = computed(() => GAMES.find((g) => g.slug === slug.value))
+const game = computed(() => GAMES.find(g => g.slug === slug.value))
 if (!game.value) throw createError({ statusCode: 404, statusMessage: 'Game not found' })
 
 useHead(() => ({
@@ -46,7 +38,24 @@ useHead(() => ({
   meta: [{ name: 'description', content: game.value!.shortPitch }]
 }))
 
-// iOS detection (also iPadOS)
+/* ---------------- PRO / Subscription Gate ----------------
+   Only allow Pro games if user has active subscription
+---------------------------------------------------------- */
+async function checkProAccess() {
+  if (!game.value?.pro) return true // free game
+  if (!user.value) return false // not logged in → blocked
+
+  try {
+    const state = await $fetch<{ active: boolean }>('/api/subscriptions/me', {
+      credentials: 'include'
+    })
+    return !!state.active
+  } catch {
+    return false
+  }
+}
+
+/* ---------------- iOS + fullscreen ---------------- */
 const isIOS = computed(() => {
   if (import.meta.server) return false
   const ua = navigator.userAgent || ''
@@ -56,6 +65,7 @@ const isIOS = computed(() => {
 })
 const showFullscreen = computed(() => !isIOS.value)
 
+/* ---------------- Player state ---------------- */
 const playerName = useState<string>('playerName', () => 'Player')
 const lastScore = ref<number | null>(null)
 const saving = ref(false)
@@ -67,10 +77,7 @@ async function onScore(score: number) {
     await $fetch('/api/leaderboard/submit', {
       method: 'POST',
       credentials: 'include',
-      body: {
-        gameSlug: game.value!.slug,
-        score
-      }
+      body: { gameSlug: game.value!.slug, score }
     })
     toast.add({ title: 'Score saved', color: 'success' })
   } catch (e: any) {
@@ -84,7 +91,7 @@ async function onScore(score: number) {
   }
 }
 
-// lobby state
+/* ---------------- Lobby state ---------------- */
 const liked = ref(false)
 const fav = ref(false)
 const showControls = ref(false)
@@ -96,13 +103,18 @@ onMounted(() => {
 watch(liked, (v) => localStorage.setItem(`like_${game.value!.slug}`, v ? '1' : '0'))
 watch(fav, (v) => localStorage.setItem(`fav_${game.value!.slug}`, v ? '1' : '0'))
 
-// play state
+/* ---------------- Play state ---------------- */
 const playing = computed(() => route.query.play === '1')
 const playerKey = ref(0)
 const playerRef = ref<InstanceType<typeof GamePlayer> | null>(null)
 
-function openPlay() {
-  // ✅ Only gate on clicking Play (and direct ?play=1 is gated by middleware)
+async function openPlay() {
+  // Pro game check
+  const hasAccess = await checkProAccess()
+  if (!hasAccess) {
+    return navigateTo(`/subscribe?redirect=${encodeURIComponent(route.fullPath)}`)
+  }
+
   if (!user.value) {
     const next = router.resolve({ path: route.path, query: { ...route.query, play: '1' } }).href
     toast.add({ title: 'Login required', description: 'Please login to play.', color: 'info' })
@@ -141,7 +153,6 @@ watch(
   { immediate: true }
 )
 
-// focus/visibility + iOS pagehide cleanup
 function onVisibilityChange() {
   if (!playing.value) return
   if (document.visibilityState === 'visible') playerRef.value?.start?.()
@@ -158,12 +169,12 @@ onBeforeUnmount(() => {
   window.removeEventListener('pagehide', onPageHide)
 })
 
-// rating display
+/* ---------------- Rating ---------------- */
 const ratingValue = computed(() => game.value?.rating?.value ?? 0)
 const ratingCount = computed(() => game.value?.rating?.count ?? 0)
 const fullStars = computed(() => Math.floor(ratingValue.value))
 
-// share / embed
+/* ---------------- Share / Embed ---------------- */
 const origin = computed(() => (import.meta.client ? window.location.origin : ''))
 const shareUrl = computed(() => `${origin.value}/arcade/${game.value!.slug}`)
 const embedUrl = computed(() => `${origin.value}/arcade/${game.value!.slug}?embed=1`)
@@ -185,9 +196,7 @@ async function copy(text: string) {
 async function nativeShare() {
   if (!import.meta.client) return
   const url = shareUrl.value
-  // @ts-ignore
   if (navigator.share) {
-    // @ts-ignore
     await navigator.share({ title: game.value!.name, text: game.value!.shortPitch, url })
   } else {
     await copy(url)
@@ -207,6 +216,7 @@ async function nativeShare() {
         <span v-if="game!.leaderboard" class="px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/20">Leaderboard</span>
         <span v-if="game!.embedAllowed" class="px-2 py-1 rounded-full bg-white/5 border border-white/10">Embeddable</span>
         <span v-if="game!.estTime" class="px-2 py-1 rounded-full bg-white/5 border border-white/10">{{ game!.estTime }}</span>
+        <span v-if="game!.pro" class="px-2 py-1 rounded-full border border-amber-400/30 bg-amber-400/15 text-amber-600 dark:text-amber-300">PRO</span>
       </div>
     </div>
 
@@ -238,7 +248,6 @@ async function nativeShare() {
                 class="w-5 h-5 opacity-90"
               />
             </div>
-
             <div class="flex-1">
               <div class="text-sm opacity-80">
                 <b class="opacity-100">{{ Number(ratingValue).toFixed(1) }}</b>
@@ -289,27 +298,18 @@ async function nativeShare() {
       <template #header>
         <div class="text-lg font-semibold">Share & Embed</div>
       </template>
-
       <div class="grid gap-4 md:grid-cols-2">
         <div class="space-y-3">
-          <div class="text-sm opacity-80">
-            Share this game link or embed it on your website.
-          </div>
-
+          <div class="text-sm opacity-80">Share this game link or embed it on your website.</div>
           <div class="flex flex-wrap gap-2">
             <UButton color="primary" variant="solid" @click="nativeShare">
-              <UIcon name="i-heroicons-share" class="w-5 h-5" />
-              Share
+              <UIcon name="i-heroicons-share" class="w-5 h-5" /> Share
             </UButton>
-
             <UButton variant="soft" @click="copy(shareUrl)">
-              <UIcon name="i-heroicons-link" class="w-5 h-5" />
-              Copy Link
+              <UIcon name="i-heroicons-link" class="w-5 h-5" /> Copy Link
             </UButton>
-
             <UButton variant="soft" @click="copy(embedCode)">
-              <UIcon name="i-heroicons-clipboard-document" class="w-5 h-5" />
-              Copy Embed Code
+              <UIcon name="i-heroicons-clipboard-document" class="w-5 h-5" /> Copy Embed Code
             </UButton>
           </div>
         </div>
@@ -321,7 +321,7 @@ async function nativeShare() {
       </div>
     </UCard>
 
-    <!-- Info + Leaderboard -->
+    <!-- How to play + Leaderboard -->
     <div class="mt-10 grid gap-6 md:grid-cols-3">
       <div class="md:col-span-2 grid gap-6">
         <UCard class="bg-white/5 border-white/10">
@@ -341,11 +341,8 @@ async function nativeShare() {
     <UModal v-model="showControls">
       <UCard class="mt-6 bg-white/5 border-white/10">
         <template #header>
-          <div class="flex items-center justify-between gap-3">
-            <div class="text-lg font-semibold">Controls</div>
-          </div>
+          <div class="text-lg font-semibold">Controls</div>
         </template>
-
         <ul class="space-y-2 opacity-85">
           <li v-for="(c, i) in game!.controls" :key="i">• {{ c }}</li>
         </ul>
@@ -355,34 +352,26 @@ async function nativeShare() {
     <!-- Fullscreen Overlay -->
     <Teleport to="body">
       <div v-if="playing" class="fixed inset-0 z-[200] bg-black">
-        <div
-          class="absolute left-0 right-0 top-0 z-[220] pointer-events-auto border-b border-white/10 bg-black/70 backdrop-blur"
-          :style="{ paddingTop: 'env(safe-area-inset-top)' }"
-        >
+        <div class="absolute left-0 right-0 top-0 z-[220] pointer-events-auto border-b border-white/10 bg-black/70 backdrop-blur"
+             :style="{ paddingTop: 'env(safe-area-inset-top)' }">
           <div class="h-14 px-3 flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="font-semibold">{{ game!.name }}</span>
               <span class="text-xs opacity-70">Play</span>
             </div>
-
             <div class="flex items-center gap-2">
               <UButton v-if="showFullscreen" variant="ghost" @click="requestFullscreen">
-                <UIcon name="i-heroicons-arrows-pointing-out" class="w-5 h-5" />
-                Fullscreen
+                <UIcon name="i-heroicons-arrows-pointing-out" class="w-5 h-5" /> Fullscreen
               </UButton>
-
               <UButton variant="ghost" @click="closePlay">
-                <UIcon name="i-heroicons-x-mark" class="w-5 h-5" />
-                Close
+                <UIcon name="i-heroicons-x-mark" class="w-5 h-5" /> Close
               </UButton>
             </div>
           </div>
         </div>
 
-        <div
-          class="absolute inset-0 z-[210]"
-          :style="{ paddingTop: 'calc(env(safe-area-inset-top) + 56px)', paddingBottom: 'env(safe-area-inset-bottom)' }"
-        >
+        <div class="absolute inset-0 z-[210]"
+             :style="{ paddingTop: 'calc(env(safe-area-inset-top) + 56px)', paddingBottom: 'env(safe-area-inset-bottom)' }">
           <div class="h-full p-2">
             <GamePlayer
               :key="playerKey"
