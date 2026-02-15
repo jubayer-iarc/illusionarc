@@ -168,7 +168,7 @@ function hardPlay(slug: string) {
     <!-- ✅ responsive: stacked on mobile -->
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
       <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
-        <span class="text-xs rounded-full px-2 py-1 bg-emerald-500/20 text-emerald-200 w-max">
+        <span class="text-xs rounded-full px-2 py-1 bg-emerald-500/20 text-black-200 dark:text-emerald-200 w-max">
           LIVE NOW
         </span>
 
