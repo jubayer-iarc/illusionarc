@@ -9,29 +9,26 @@ const supabase = useSupabaseClient()
 const authUser = useSupabaseUser()
 const toast = useToast()
 
-/* ---------------- Mandatory phone gate (after login) ----------------
-   If user is logged in but has no phone in profiles, force redirect to /profile
---------------------------------------------------------------------- */
+/* ---------------- Mandatory phone gate (after login) ---------------- */
 const checkingPhone = ref(true)
 
 async function requirePhoneOrRedirect() {
-  // only runs on client to avoid SSR redirects/hydration issues
   if (!import.meta.client) return
 
   checkingPhone.value = true
   try {
-    // reliable auth check
-    const { data: { user }, error: userErr } = await supabase.auth.getUser()
-    if (userErr || !user?.id) return // not logged in -> no gate here
+    const {
+      data: { user },
+      error: userErr
+    } = await supabase.auth.getUser()
+    if (userErr || !user?.id) return
 
-    // read phone from profiles (your schema: profiles.user_id PK -> auth.users.id)
     const { data, error } = await (supabase as any)
       .from('profiles')
       .select('phone')
       .eq('user_id', user.id)
       .maybeSingle()
 
-    // treat missing row / blocked select / empty phone as "missing"
     const phone = String(data?.phone || '').trim()
     if (error || !phone) {
       toast.add({
@@ -39,8 +36,6 @@ async function requirePhoneOrRedirect() {
         description: 'Please add your phone number to continue.',
         color: 'warning'
       })
-
-      // redirect to profile and lock the flow
       return navigateTo('/profile?needPhone=1&next=/arcade', { replace: true })
     }
   } finally {
@@ -50,12 +45,8 @@ async function requirePhoneOrRedirect() {
 
 onMounted(requirePhoneOrRedirect)
 
-/* ---------------- Tournament exclusivity ----------------
-   If a game is in a LIVE tournament, it must not show in Arcade.
-   Source: GET /api/tournaments/live-games
----------------------------------------------------------- */
+/* ---------------- Tournament exclusivity ---------------- */
 type LiveRow = { gameSlug: string; tournamentSlug: string }
-
 const liveRows = ref<LiveRow[]>([])
 const liveGameSet = computed(() => new Set(liveRows.value.map(r => r.gameSlug)))
 
@@ -68,17 +59,12 @@ async function loadLiveGames() {
   }
 }
 
-// No visible loader — just fetch once.
 await loadLiveGames()
 
-const arcadeSource = computed(() => {
-  // Only games NOT locked by a live tournament
-  return GAMES.filter(g => !liveGameSet.value.has(g.slug))
-})
-
+const arcadeSource = computed(() => GAMES.filter(g => !liveGameSet.value.has(g.slug)))
 const hasLiveTournaments = computed(() => liveRows.value.length > 0)
 
-/* ---------------- Existing filters ---------------- */
+/* ---------------- Filters ---------------- */
 const q = ref('')
 const genre = ref<string>('all')
 const onlyFeatured = ref(false)
@@ -90,9 +76,7 @@ const genres = computed(() => {
 })
 
 watchEffect(() => {
-  if (genre.value !== 'all' && !genres.value.includes(genre.value)) {
-    genre.value = 'all'
-  }
+  if (genre.value !== 'all' && !genres.value.includes(genre.value)) genre.value = 'all'
 })
 
 const filtered = computed(() => {
@@ -110,29 +94,30 @@ const filtered = computed(() => {
 })
 
 const featured = computed(() => arcadeSource.value.filter(g => g.featured))
+
+function accessLabel(isPro?: boolean) {
+  return isPro ? 'PRO' : 'FREE'
+}
 </script>
 
 <template>
-  <UContainer class="py-12">
-    <!-- ✅ Top tournament ad (NOT sidebar) -->
+  <UContainer class="py-10">
+    <!-- ✅ Top tournament ad -->
     <div class="mb-6">
-      <!--
-        Banner sizing rules:
-        - Uses full container width (matches your whitespace)
-        - Fixed aspect ratio via the component (we’ll enforce 21:9 there)
-        - No floating, no absolute outside the card
-      -->
       <TournamentAdBanner slot="arcade_sidebar" />
     </div>
 
-    <!-- ✅ tiny cool gate overlay while checking (no layout shift) -->
+    <!-- ✅ gate overlay -->
     <div
       v-if="checkingPhone && authUser?.id"
       class="mb-6 rounded-2xl border border-black/10 dark:border-white/10
              bg-white/70 dark:bg-white/5 backdrop-blur p-4"
     >
       <div class="flex items-center gap-3">
-        <div class="h-9 w-9 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-black/30 grid place-items-center">
+        <div
+          class="h-9 w-9 rounded-xl border border-black/10 dark:border-white/10
+                 bg-black/5 dark:bg-black/30 grid place-items-center"
+        >
           <UIcon name="i-heroicons-shield-check" class="h-5 w-5 opacity-80" />
         </div>
         <div class="min-w-0">
@@ -145,20 +130,25 @@ const featured = computed(() => arcadeSource.value.filter(g => g.featured))
       </div>
     </div>
 
-    <div class="flex flex-wrap items-end justify-between gap-4">
+    <!-- Header -->
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <h1 class="text-3xl font-semibold text-black dark:text-white">Arcade</h1>
         <p class="mt-2 text-black/70 dark:text-white/70">Play, score, and climb the leaderboard.</p>
       </div>
 
-      <div class="flex flex-wrap gap-2 items-center">
-        <UInput v-model="q" placeholder="Search games…" class="w-60" />
-        <USelect v-model="genre" :options="genres" class="w-40" />
-        <UCheckbox v-model="onlyFeatured" label="Featured" />
-        <UButton to="/arcade/leaderboard" variant="solid" color="primary">
+      <!-- Filters / actions (mobile stacks, desktop aligns) -->
+      <div class="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-[240px_160px_auto_auto_auto_auto] lg:items-center">
+        <UInput v-model="q" placeholder="Search games…" class="w-full" />
+        <USelect v-model="genre" :options="genres" class="w-full" />
+        <div class="flex items-center">
+          <UCheckbox v-model="onlyFeatured" label="Featured" />
+        </div>
+
+        <UButton to="/arcade/leaderboard" variant="solid" color="primary" class="w-full lg:w-auto justify-center">
           Leaderboard
         </UButton>
-        <UButton to="/subscribe" variant="solid" color="primary">
+        <UButton to="/subscribe" variant="solid" color="primary" class="w-full lg:w-auto justify-center">
           Pricing
         </UButton>
       </div>
@@ -170,80 +160,95 @@ const featured = computed(() => arcadeSource.value.filter(g => g.featured))
       class="mt-6 rounded-2xl border border-black/10 dark:border-white/10
              bg-white/70 dark:bg-white/5 backdrop-blur p-4"
     >
-      <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div class="text-sm text-black/70 dark:text-white/70">
           Some games are currently in a <span class="font-semibold">LIVE tournament</span> and are only playable from
           the <span class="font-semibold">Tournament</span> section.
         </div>
 
-        <div class="flex gap-2">
-          <UButton to="/tournaments" variant="solid" color="primary">
-            Go to Tournaments
-          </UButton>
-          <UButton variant="soft" @click="loadLiveGames">
-            Refresh
-          </UButton>
+        <div class="flex flex-wrap gap-2">
+          <UButton to="/tournaments" variant="solid" color="primary">Go to Tournaments</UButton>
+          <UButton variant="soft" @click="loadLiveGames">Refresh</UButton>
         </div>
       </div>
     </div>
 
-    <!-- Featured row -->
-    <div v-if="featured.length" class="mt-8">
+    <!-- Featured -->
+    <div v-if="featured.length" class="mt-10">
       <div class="text-sm uppercase tracking-wider text-black/60 dark:text-white/60">Featured</div>
 
-      <div class="mt-3 grid gap-4 md:grid-cols-3">
+      <div class="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 auto-rows-fr">
         <NuxtLink
           v-for="g in featured"
           :key="g.slug"
           :to="`/arcade/${g.slug}`"
-          class="group overflow-hidden rounded-2xl border border-black/10 dark:border-white/10
+          class="group h-full overflow-hidden rounded-2xl border border-black/10 dark:border-white/10
                  bg-white/70 dark:bg-white/5 backdrop-blur
                  hover:bg-white/90 dark:hover:bg-white/10 transition"
         >
-          <NuxtImg
-            :src="g.thumbnail"
-            :alt="g.name"
-            width="1600"
-            height="900"
-            sizes="(max-width: 768px) 100vw, 420px"
-            class="h-44 w-full object-cover bg-black/5 dark:bg-black/30"
-            loading="lazy"
-          />
+          <div class="flex h-full flex-col">
+            <NuxtImg
+              :src="g.thumbnail"
+              :alt="g.name"
+              width="1600"
+              height="900"
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 320px"
+              class="h-44 w-full object-cover bg-black/5 dark:bg-black/30"
+              loading="lazy"
+            />
 
-          <div class="p-4">
-            <div class="flex items-center justify-between gap-2">
-              <div class="font-semibold text-black dark:text-white">{{ g.name }}</div>
-              <span class="text-xs text-black/60 dark:text-white/60" v-if="g.estTime">{{ g.estTime }}</span>
-            </div>
+            <div class="flex h-full flex-col p-4">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0 font-semibold text-black dark:text-white truncate">
+                  {{ g.name }}
+                </div>
+                <span class="shrink-0 text-xs text-black/60 dark:text-white/60" v-if="g.estTime">
+                  {{ g.estTime }}
+                </span>
+              </div>
 
-            <div class="mt-1 text-sm text-black/70 dark:text-white/70">
-              {{ g.shortPitch }}
-            </div>
+              <!-- clamp pitch for uniform height -->
+              <div class="mt-1 text-sm text-black/70 dark:text-white/70 line-clamp-2">
+                {{ g.shortPitch }}
+              </div>
 
-            <div class="mt-3 flex flex-wrap gap-2 text-xs">
-              <span
-                v-if="g.genre"
-                class="px-2 py-1 rounded-full border border-black/10 dark:border-white/10
-                       bg-black/5 dark:bg-black/30 text-black/70 dark:text-white/70"
-              >
-                {{ g.genre }}
-              </span>
+              <!-- Pills stick to bottom -->
+              <div class="mt-auto pt-3 flex flex-wrap gap-2 text-xs">
+                <!-- PRO/FREE first -->
+                <span
+                  class="px-2 py-1 rounded-full border border-amber-500/40 bg-amber-400/15
+                         font-semibold tracking-wide text-amber-700 dark:text-amber-300"
+                >
+                  <span class="inline-flex items-center gap-1.5">
+                    <UIcon v-if="g.pro" name="i-ph-crown-fill" class="w-3.5 h-3.5" />
+                    <span>{{ accessLabel(g.pro) }}</span>
+                  </span>
+                </span>
 
-              <span
-                v-if="g.difficulty"
-                class="px-2 py-1 rounded-full border border-black/10 dark:border-white/10
-                       bg-black/5 dark:bg-black/30 text-black/70 dark:text-white/70"
-              >
-                {{ g.difficulty }}
-              </span>
+                <span
+                  v-if="g.genre"
+                  class="px-2 py-1 rounded-full border border-black/10 dark:border-white/10
+                         bg-black/5 dark:bg-black/30 text-black/70 dark:text-white/70"
+                >
+                  {{ g.genre }}
+                </span>
 
-              <span
-                v-if="g.leaderboard"
-                class="px-2 py-1 rounded-full border border-emerald-600/20 dark:border-emerald-400/20
-                       bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-              >
-                Leaderboard
-              </span>
+                <span
+                  v-if="g.difficulty"
+                  class="px-2 py-1 rounded-full border border-black/10 dark:border-white/10
+                         bg-black/5 dark:bg-black/30 text-black/70 dark:text-white/70"
+                >
+                  {{ g.difficulty }}
+                </span>
+
+                <span
+                  v-if="g.leaderboard"
+                  class="px-2 py-1 rounded-full border border-emerald-600/20 dark:border-emerald-400/20
+                         bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                >
+                  Leaderboard
+                </span>
+              </div>
             </div>
           </div>
         </NuxtLink>
@@ -251,79 +256,78 @@ const featured = computed(() => arcadeSource.value.filter(g => g.featured))
     </div>
 
     <!-- All games -->
-    <div class="mt-10">
+    <div class="mt-12">
       <div class="text-sm uppercase tracking-wider text-black/60 dark:text-white/60">All Games</div>
 
-      <div class="mt-3 grid gap-4 md:grid-cols-3">
+      <div class="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 auto-rows-fr">
         <NuxtLink
           v-for="g in filtered"
           :key="g.slug"
           :to="`/arcade/${g.slug}`"
-          class="group overflow-hidden rounded-2xl border border-black/10 dark:border-white/10
+          class="group h-full overflow-hidden rounded-2xl border border-black/10 dark:border-white/10
                  bg-white/70 dark:bg-white/5 backdrop-blur
                  hover:bg-white/90 dark:hover:bg-white/10 transition"
         >
-          <NuxtImg
-            :src="g.thumbnail"
-            :alt="g.name"
-            width="1600"
-            height="900"
-            sizes="(max-width: 768px) 100vw, 420px"
-            class="h-44 w-full object-cover bg-black/5 dark:bg-black/30"
-            loading="lazy"
-          />
+          <div class="flex h-full flex-col">
+            <NuxtImg
+              :src="g.thumbnail"
+              :alt="g.name"
+              width="1600"
+              height="900"
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 320px"
+              class="h-44 w-full object-cover bg-black/5 dark:bg-black/30"
+              loading="lazy"
+            />
 
-          <div class="p-4">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 font-semibold text-black dark:text-white">
-                <span>{{ g.name }}</span>
-
-                <UIcon
-                  v-if="g.pro"
-                  name="i-ph-crown-fill"
-                  class="w-4 h-4 text-amber-500"
-                />
+            <div class="flex h-full flex-col p-4">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0 font-semibold text-black dark:text-white truncate">
+                  {{ g.name }}
+                </div>
+                <span class="shrink-0 text-xs text-black/60 dark:text-white/60" v-if="g.estTime">
+                  {{ g.estTime }}
+                </span>
               </div>
 
-              <span class="text-xs text-black/60 dark:text-white/60" v-if="g.estTime">{{ g.estTime }}</span>
-            </div>
+              <div class="mt-1 text-sm text-black/70 dark:text-white/70 line-clamp-2">
+                {{ g.shortPitch }}
+              </div>
 
-            <div class="mt-1 text-sm text-black/70 dark:text-white/70">
-              {{ g.shortPitch }}
-            </div>
+              <div class="mt-auto pt-3 flex flex-wrap gap-2 text-xs">
+                <span
+                  class="px-2 py-1 rounded-full border border-amber-500/40 bg-amber-400/15
+                         font-semibold tracking-wide text-amber-700 dark:text-amber-300"
+                >
+                  <span class="inline-flex items-center gap-1.5">
+                    <UIcon v-if="g.pro" name="i-ph-crown-fill" class="w-3.5 h-3.5" />
+                    <span>{{ accessLabel(g.pro) }}</span>
+                  </span>
+                </span>
 
-            <div class="mt-3 flex flex-wrap gap-2 text-xs">
-              <span
-                v-if="g.genre"
-                class="px-2 py-1 rounded-full border border-black/10 dark:border-white/10
-                       bg-black/5 dark:bg-black/30 text-black/70 dark:text-white/70"
-              >
-                {{ g.genre }}
-              </span>
+                <span
+                  v-if="g.genre"
+                  class="px-2 py-1 rounded-full border border-black/10 dark:border-white/10
+                         bg-black/5 dark:bg-black/30 text-black/70 dark:text-white/70"
+                >
+                  {{ g.genre }}
+                </span>
 
-              <span
-                v-if="g.difficulty"
-                class="px-2 py-1 rounded-full border border-black/10 dark:border-white/10
-                       bg-black/5 dark:bg-black/30 text-black/70 dark:text-white/70"
-              >
-                {{ g.difficulty }}
-              </span>
+                <span
+                  v-if="g.difficulty"
+                  class="px-2 py-1 rounded-full border border-black/10 dark:border-white/10
+                         bg-black/5 dark:bg-black/30 text-black/70 dark:text-white/70"
+                >
+                  {{ g.difficulty }}
+                </span>
 
-              <span
-                v-if="g.leaderboard"
-                class="px-2 py-1 rounded-full border border-emerald-600/20 dark:border-emerald-400/20
-                       bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-              >
-                Leaderboard
-              </span>
-
-              <span
-                v-if="g.embedAllowed"
-                class="px-2 py-1 rounded-full border border-black/10 dark:border-white/10
-                       bg-white/60 dark:bg-white/5 text-black/70 dark:text-white/70"
-              >
-                Embeddable
-              </span>
+                <span
+                  v-if="g.leaderboard"
+                  class="px-2 py-1 rounded-full border border-emerald-600/20 dark:border-emerald-400/20
+                         bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                >
+                  Leaderboard
+                </span>
+              </div>
             </div>
           </div>
         </NuxtLink>
