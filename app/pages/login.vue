@@ -1,3 +1,4 @@
+<!-- app/pages/login.vue -->
 <script setup lang="ts">
 useHead({
   title: 'Login — illusion Arc',
@@ -151,7 +152,9 @@ function hardReloadTo(path: string) {
 }
 
 async function redirectAfterLogin() {
-  const { data: { session } } = await supabase.auth.getSession()
+  const {
+    data: { session }
+  } = await supabase.auth.getSession()
   if (!session) return
 
   const role = await getRole()
@@ -471,8 +474,9 @@ function continueBrowsing() {
               </div>
             </div>
 
+            <!-- ✅ FORM wrapper: Enter key submits -->
             <div class="cardBody">
-              <div class="grid gap-4">
+              <form class="grid gap-4" @submit.prevent="submit">
                 <UFormGroup label="Email" required>
                   <UInput
                     v-model="email"
@@ -493,7 +497,6 @@ function continueBrowsing() {
                       :ui="{ width: 'w-full' }"
                       :search-input="{ placeholder: 'Search…', icon: 'i-heroicons-magnifying-glass' }"
                     >
-                      <!-- ✅ Selected trigger -->
                       <template #label>
                         <span class="inline-flex items-center gap-2 tabular-nums whitespace-nowrap">
                           <span class="text-base leading-none">{{ isoToFlagEmoji(selectedCountry.iso) }}</span>
@@ -501,7 +504,6 @@ function continueBrowsing() {
                         </span>
                       </template>
 
-                      <!-- ✅ Dropdown options -->
                       <template #option="{ option }">
                         <span class="inline-flex items-center gap-2 tabular-nums whitespace-nowrap">
                           <span class="text-base leading-none">{{ isoToFlagEmoji(option.iso) }}</span>
@@ -536,7 +538,8 @@ function continueBrowsing() {
                     icon="i-heroicons-key"
                   />
                   <div class="mt-2 flex items-center justify-between">
-                    <UButton size="xs" variant="ghost" @click="showPass = !showPass">
+                    <!-- ✅ type="button" so Enter doesn't trigger this -->
+                    <UButton type="button" size="xs" variant="ghost" @click="showPass = !showPass">
                       <UIcon :name="showPass ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'" class="w-4 h-4" />
                       {{ showPass ? 'Hide' : 'Show' }}
                     </UButton>
@@ -545,20 +548,21 @@ function continueBrowsing() {
                 </UFormGroup>
 
                 <div class="grid gap-2 sm:grid-cols-2">
+                  <!-- ✅ submit button -->
                   <UButton
+                    type="submit"
                     class="w-full"
                     color="primary"
                     variant="solid"
                     size="lg"
                     :loading="loading"
                     :disabled="!canSubmit"
-                    @click="submit"
                   >
                     <UIcon name="i-heroicons-arrow-right-circle" class="w-5 h-5" />
                     {{ mode === 'signin' ? 'Login' : 'Create account' }}
                   </UButton>
 
-                  <UButton class="w-full" variant="soft" size="lg" @click="continueBrowsing">
+                  <UButton type="button" class="w-full" variant="soft" size="lg" @click="continueBrowsing">
                     <UIcon name="i-heroicons-home" class="w-5 h-5" />
                     Continue browsing
                   </UButton>
@@ -571,7 +575,7 @@ function continueBrowsing() {
                 <div class="text-xs opacity-70 leading-relaxed">
                   By continuing, you agree to basic fair-use rules for the Arcade.
                 </div>
-              </div>
+              </form>
             </div>
           </div>
 
