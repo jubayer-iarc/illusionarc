@@ -12,6 +12,14 @@ const AD_SLOTS = [
 ] as const
 type AdSlotKey = typeof AD_SLOTS[number]['key']
 
+/** ✅ Banner ratios (stored per ad) */
+const AD_RATIOS = [
+  { key: '16/9', label: '16:9 (standard)' },
+  { key: '21/9', label: '21:9 (ultrawide)' },
+  { key: '3/1', label: '3:1 (wide banner)' }
+] as const
+type AdRatioKey = typeof AD_RATIOS[number]['key']
+
 definePageMeta({
   layout: 'admin',
   middleware: ['admin']
@@ -67,6 +75,7 @@ type AdRow = {
   id: string
   tournament_id: string
   slot: string
+  ratio: AdRatioKey | string
   banner_url: string | null
   banner_path: string | null
   alt: string | null
@@ -205,10 +214,6 @@ watch(
 )
 
 /* ---------------- File preview helpers (Safari-safe) ---------------- */
-/**
- * ✅ Fix for Safari/Blob URL preview issues:
- * Use FileReader -> dataURL for preview instead of URL.createObjectURL(blob)
- */
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -223,7 +228,6 @@ const THUMB_BUCKET = 'tournament-thumbnails'
 const thumbUploading = ref(false)
 const thumbFile = ref<File | null>(null)
 const thumbPreview = ref<string>('') // ✅ dataURL preview
-
 const thumbInputEl = ref<HTMLInputElement | null>(null)
 
 async function setThumbFile(file: File | null) {
@@ -242,13 +246,10 @@ async function onThumbPick(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input?.files?.[0] || null
   await setThumbFile(file)
-
-  // allow re-picking the same file
   if (input) input.value = ''
 }
 
 const effectiveThumbUrl = computed(() => {
-  // ✅ show immediately after selecting, even before saving
   if (thumbPreview.value) return thumbPreview.value
   if (form.thumbnail_url) return form.thumbnail_url
   return ''
@@ -278,9 +279,7 @@ async function uploadThumbAndPersist(tournamentId: string) {
     form.thumbnail_path = path
     form.thumbnail_url = publicUrl
 
-    // save url/path to DB without trying to upload again
     await apiUpsert({ saveOnlyMeta: true, skipThumbUpload: true })
-
     clearThumbSelection()
     toast.add({ title: 'Thumbnail saved', color: 'success' })
   } finally {
@@ -294,10 +293,7 @@ const ADS_BUCKET = 'tournament-banners'
 const adLoading = ref(false)
 const ads = ref<AdRow[]>([])
 
-/**
- * ✅ Global slot usage for ACTIVE ads
- * slot -> { adId, tournamentId }
- */
+/** ✅ Global slot usage for ACTIVE ads */
 const activeSlotUsage = ref<Record<string, { adId: string; tournamentId: string }>>({})
 const slotOccupied = computed(() => new Set(Object.keys(activeSlotUsage.value || {})))
 
@@ -305,6 +301,7 @@ const adForm = reactive({
   id: '' as string,
   enabled: false as boolean,
   slot: '' as AdSlotKey | '',
+  ratio: '16/9' as AdRatioKey,
   alt: '' as string,
   starts_local: '' as string,
   ends_local: '' as string,
@@ -315,7 +312,6 @@ const adForm = reactive({
 const adFile = ref<File | null>(null)
 const adPreview = ref<string>('') // ✅ dataURL preview
 const adUploading = ref(false)
-
 const adInputEl = ref<HTMLInputElement | null>(null)
 
 async function setAdFile(file: File | null) {
@@ -334,11 +330,17 @@ async function onAdPick(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input?.files?.[0] || null
   await setAdFile(file)
-
   if (input) input.value = ''
 }
 
 const effectiveAdImg = computed(() => adPreview.value || adForm.banner_url || '')
+
+const previewRatioClass = computed(() => {
+  const r = String(adForm.ratio || '16/9')
+  if (r === '21/9') return 'aspect-[21/9]'
+  if (r === '3/1') return 'aspect-[3/1]'
+  return 'aspect-[16/9]'
+})
 
 function clearAdSelection() {
   setAdFile(null)
@@ -355,6 +357,7 @@ function resetAdForm() {
   adForm.id = ''
   adForm.enabled = true
   adForm.slot = ''
+  adForm.ratio = '16/9'
   adForm.alt = ''
   adForm.starts_local = ''
   adForm.ends_local = ''
@@ -367,6 +370,7 @@ function pickAdForEdit(row: AdRow) {
   adForm.id = row.id
   adForm.enabled = Boolean(row.is_active)
   adForm.slot = (row.slot as AdSlotKey) || ''
+  adForm.ratio = (String((row as any).ratio || '16/9') as AdRatioKey) || '16/9'
   adForm.alt = row.alt || ''
   adForm.banner_url = row.banner_url || ''
   adForm.banner_path = row.banner_path || ''
@@ -396,7 +400,7 @@ async function loadAdsForTournament(tournamentId: string) {
     await loadActiveSlotUsage()
     const { data, error } = await supabase
       .from('tournament_ads')
-      .select('id, tournament_id, slot, banner_url, banner_path, alt, is_active, starts_at, ends_at, created_at')
+      .select('id, tournament_id, slot, ratio, banner_url, banner_path, alt, is_active, starts_at, ends_at, created_at')
       .eq('tournament_id', tournamentId)
       .order('created_at', { ascending: false })
 
@@ -487,7 +491,11 @@ async function saveOneAd(tournamentId: string) {
   }
 
   if (!adForm.id && usedSlotsInThisTournament.value.has(slot)) {
-    toast.add({ title: 'Slot already used', description: 'This tournament already has an ad for that slot.', color: 'error' })
+    toast.add({
+      title: 'Slot already used',
+      description: 'This tournament already has an ad for that slot.',
+      color: 'error'
+    })
     throw new Error('Slot used in tournament')
   }
 
@@ -530,6 +538,7 @@ async function saveOneAd(tournamentId: string) {
   const payload = {
     tournament_id: tournamentId,
     slot,
+    ratio: (adForm.ratio || '16/9') as string,
     banner_url: adForm.banner_url || null,
     banner_path: adForm.banner_path || null,
     alt: adForm.alt?.trim() || null,
@@ -679,7 +688,6 @@ async function apiUpsert(opts: UpsertOpts = {}) {
 
     if (!saveOnlyMeta) toast.add({ title: isEditing.value ? 'Tournament saved' : 'Tournament created', color: 'success' })
 
-    // upload thumbnail AFTER we have an id (works for create + edit)
     if (!skipThumbUpload) {
       try {
         await uploadThumbAndPersist(t.id)
@@ -788,7 +796,8 @@ function requiresTxnId(w: WinnerRow) {
   return (w.reward_method || '') === 'online' && (w.reward_status || '') === 'given'
 }
 function validateWinnerReward(w: WinnerRow) {
-  if (requiresTxnId(w) && !String(w.reward_txn_id || '').trim()) return 'Transaction ID is required for online rewards marked as GIVEN.'
+  if (requiresTxnId(w) && !String(w.reward_txn_id || '').trim())
+    return 'Transaction ID is required for online rewards marked as GIVEN.'
   return ''
 }
 
@@ -1001,7 +1010,9 @@ onMounted(async () => {
             </div>
             <div class="mt-1 text-sm opacity-70" v-if="form.slug">
               Slug: <span class="font-mono opacity-100">{{ form.slug }}</span>
-              <span v-if="form.id" class="opacity-60">• ID: <span class="font-mono">{{ form.id.slice(0, 8) }}…</span></span>
+              <span v-if="form.id" class="opacity-60">
+                • ID: <span class="font-mono">{{ form.id.slice(0, 8) }}…</span>
+              </span>
             </div>
           </div>
 
@@ -1022,28 +1033,36 @@ onMounted(async () => {
         <div class="mt-4 flex flex-wrap gap-2">
           <button
             class="px-4 py-2 rounded-full border text-sm transition"
-            :class="tab === 'details' ? 'bg-black text-white dark:bg-white dark:text-black border-transparent' : 'bg-white/5 border-white/10 hover:bg-white/10'"
+            :class="tab === 'details'
+              ? 'bg-black text-white dark:bg-white dark:text-black border-transparent'
+              : 'bg-white/5 border-white/10 hover:bg-white/10'"
             @click="tab = 'details'"
           >
             Details
           </button>
           <button
             class="px-4 py-2 rounded-full border text-sm transition"
-            :class="tab === 'schedule' ? 'bg-black text-white dark:bg-white dark:text-black border-transparent' : 'bg-white/5 border-white/10 hover:bg-white/10'"
+            :class="tab === 'schedule'
+              ? 'bg-black text-white dark:bg-white dark:text-black border-transparent'
+              : 'bg-white/5 border-white/10 hover:bg-white/10'"
             @click="tab = 'schedule'"
           >
             Schedule
           </button>
           <button
             class="px-4 py-2 rounded-full border text-sm transition"
-            :class="tab === 'ads' ? 'bg-black text-white dark:bg-white dark:text-black border-transparent' : 'bg-white/5 border-white/10 hover:bg-white/10'"
+            :class="tab === 'ads'
+              ? 'bg-black text-white dark:bg-white dark:text-black border-transparent'
+              : 'bg-white/5 border-white/10 hover:bg-white/10'"
             @click="tab = 'ads'"
           >
             Ads
           </button>
           <button
             class="px-4 py-2 rounded-full border text-sm transition"
-            :class="tab === 'winners' ? 'bg-black text-white dark:bg-white dark:text-black border-transparent' : 'bg-white/5 border-white/10 hover:bg-white/10'"
+            :class="tab === 'winners'
+              ? 'bg-black text-white dark:bg-white dark:text-black border-transparent'
+              : 'bg-white/5 border-white/10 hover:bg-white/10'"
             @click="tab = 'winners'"
           >
             Winners
@@ -1059,7 +1078,14 @@ onMounted(async () => {
             Open
           </UButton>
 
-          <UButton v-if="form.id && !isCanceled" color="error" variant="soft" class="!rounded-full" :loading="loading" @click="cancelTournament">
+          <UButton
+            v-if="form.id && !isCanceled"
+            color="error"
+            variant="soft"
+            class="!rounded-full"
+            :loading="loading"
+            @click="cancelTournament"
+          >
             Cancel
           </UButton>
           <UButton v-if="form.id && isCanceled" variant="soft" class="!rounded-full" :loading="loading" @click="uncancelTournament">
@@ -1080,20 +1106,30 @@ onMounted(async () => {
           <div class="mt-4 grid gap-3">
             <div class="grid gap-2">
               <label class="text-xs opacity-70">Title</label>
-              <input v-model="form.title" class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none" />
+              <input
+                v-model="form.title"
+                class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
+              />
               <div class="text-xs opacity-60">Slug auto-generates from title (new tournaments only).</div>
             </div>
 
             <div class="grid gap-2">
               <label class="text-xs opacity-70">Game</label>
-              <select v-model="form.game_slug" class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none">
+              <select
+                v-model="form.game_slug"
+                class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
+              >
                 <option v-for="g in GAMES" :key="g.slug" :value="g.slug">{{ g.name }}</option>
               </select>
             </div>
 
             <div class="grid gap-2">
               <label class="text-xs opacity-70">Description</label>
-              <textarea v-model="form.description" rows="4" class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none" />
+              <textarea
+                v-model="form.description"
+                rows="4"
+                class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
+              />
             </div>
 
             <div class="grid gap-3 md:grid-cols-3">
@@ -1125,7 +1161,6 @@ onMounted(async () => {
 
           <div class="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-white/5">
             <div class="aspect-[16/10] bg-black/20 grid place-items-center">
-              <!-- ✅ key forces refresh when src changes -->
               <img
                 v-if="effectiveThumbUrl"
                 :key="effectiveThumbUrl"
@@ -1151,7 +1186,10 @@ onMounted(async () => {
       </div>
 
       <!-- SCHEDULE TAB -->
-      <div v-else-if="tab === 'schedule'" class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
+      <div
+        v-else-if="tab === 'schedule'"
+        class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5"
+      >
         <div class="flex items-start justify-between gap-3">
           <div>
             <div class="font-semibold">Schedule</div>
@@ -1166,13 +1204,21 @@ onMounted(async () => {
         <div class="mt-4 grid gap-3 md:grid-cols-2">
           <div class="grid gap-2">
             <label class="text-xs opacity-70">Starts (Dhaka)</label>
-            <input v-model="form.starts_local" type="datetime-local" class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none" />
+            <input
+              v-model="form.starts_local"
+              type="datetime-local"
+              class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
+            />
             <div class="text-xs opacity-60">UTC: <span class="font-mono">{{ startsIso }}</span></div>
           </div>
 
           <div class="grid gap-2">
             <label class="text-xs opacity-70">Ends (Dhaka)</label>
-            <input v-model="form.ends_local" type="datetime-local" class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none" />
+            <input
+              v-model="form.ends_local"
+              type="datetime-local"
+              class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
+            />
             <div class="text-xs opacity-60">UTC: <span class="font-mono">{{ endsIso }}</span></div>
           </div>
         </div>
@@ -1200,7 +1246,9 @@ onMounted(async () => {
           <div class="flex items-start justify-between gap-3">
             <div>
               <div class="font-semibold">Tournament Ads</div>
-              <div class="text-xs opacity-70">Multiple ads per tournament (different slots). Only one ACTIVE ad per slot globally.</div>
+              <div class="text-xs opacity-70">
+                Multiple ads per tournament (different slots). Only one ACTIVE ad per slot globally.
+              </div>
             </div>
             <div class="text-xs opacity-70" v-if="adLoading">Loading…</div>
           </div>
@@ -1211,8 +1259,12 @@ onMounted(async () => {
 
           <div v-else class="mt-4">
             <div class="flex flex-wrap gap-2">
-              <UButton variant="soft" class="!rounded-full" :loading="adLoading" @click="loadAdsForTournament(form.id)">Refresh</UButton>
-              <UButton class="!rounded-full" @click="(async () => { resetAdForm(); await loadActiveSlotUsage() })()">New Ad</UButton>
+              <UButton variant="soft" class="!rounded-full" :loading="adLoading" @click="loadAdsForTournament(form.id)">
+                Refresh
+              </UButton>
+              <UButton class="!rounded-full" @click="(async () => { resetAdForm(); await loadActiveSlotUsage() })()">
+                New Ad
+              </UButton>
             </div>
 
             <div class="mt-4 space-y-3">
@@ -1232,9 +1284,16 @@ onMounted(async () => {
                     <div class="font-semibold truncate">
                       {{ AD_SLOTS.find(s => s.key === a.slot)?.label || a.slot }}
                     </div>
+
+                    <div class="mt-1 text-xs opacity-70">
+                      Ratio:
+                      <span class="font-mono opacity-100">{{ (a as any).ratio || '16/9' }}</span>
+                    </div>
+
                     <div class="mt-1 text-xs opacity-70">
                       {{ a.starts_at ? fmt(a.starts_at) : 'No start' }} → {{ a.ends_at ? fmt(a.ends_at) : 'No end' }}
                     </div>
+
                     <div class="mt-1 text-xs opacity-60 truncate" v-if="a.alt">Alt: {{ a.alt }}</div>
                   </div>
 
@@ -1303,6 +1362,19 @@ onMounted(async () => {
                   </div>
                 </div>
 
+                <!-- ✅ NEW: Ratio per ad -->
+                <div class="grid gap-2">
+                  <label class="text-xs opacity-70">Banner ratio</label>
+                  <select
+                    v-model="adForm.ratio"
+                    class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
+                    :disabled="!form.id"
+                  >
+                    <option v-for="r in AD_RATIOS" :key="r.key" :value="r.key">{{ r.label }}</option>
+                  </select>
+                  <div class="text-xs opacity-60">This ratio is saved in <span class="font-mono">tournament_ads.ratio</span> and used on frontend.</div>
+                </div>
+
                 <div class="grid gap-2">
                   <label class="text-xs opacity-70">Alt text (optional)</label>
                   <input
@@ -1363,7 +1435,7 @@ onMounted(async () => {
           </div>
 
           <div class="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-white/5">
-            <div class="aspect-[16/6] bg-black/20 grid place-items-center">
+            <div class="bg-black/20 grid place-items-center" :class="previewRatioClass">
               <img
                 v-if="effectiveAdImg"
                 :key="effectiveAdImg"
@@ -1397,9 +1469,15 @@ onMounted(async () => {
           </div>
 
           <div class="flex items-center gap-2">
-            <UButton variant="soft" size="xs" class="!rounded-full" :loading="winnersLoading" :disabled="!form.id && !form.slug" @click="loadWinners()">Refresh</UButton>
-            <UButton size="xs" class="!rounded-full" :disabled="!form.id" :loading="winnersLoading" @click="finalize(false)">Finalize</UButton>
-            <UButton variant="soft" size="xs" class="!rounded-full" :disabled="!form.id" :loading="winnersLoading" @click="finalize(true)">Re-Finalize</UButton>
+            <UButton variant="soft" size="xs" class="!rounded-full" :loading="winnersLoading" :disabled="!form.id && !form.slug" @click="loadWinners()">
+              Refresh
+            </UButton>
+            <UButton size="xs" class="!rounded-full" :disabled="!form.id" :loading="winnersLoading" @click="finalize(false)">
+              Finalize
+            </UButton>
+            <UButton variant="soft" size="xs" class="!rounded-full" :disabled="!form.id" :loading="winnersLoading" @click="finalize(true)">
+              Re-Finalize
+            </UButton>
           </div>
         </div>
 

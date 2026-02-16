@@ -534,6 +534,10 @@ function statusLine() {
                 Subscribe to Play
               </UButton>
 
+              <UButton v-else :to="`/tournaments/embed/${t.slug}`" size="lg" variant="soft" class="!rounded-full">
+                <UIcon name="i-heroicons-arrow-top-right-on-square" class="h-5 w-5" />
+                Open
+              </UButton>
 
               <!-- Arcade (visible only before LIVE) -->
               <UButton v-if="showArcadeBtn" :to="`/arcade/${getGameSlug(t)}`" size="lg" variant="soft" class="!rounded-full">

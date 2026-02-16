@@ -1,4 +1,4 @@
-<!-- components/TournamentAdBanner.vue -->
+<!-- app/components/tournaments/TournamentAdBanner.vue -->
 <script setup lang="ts">
 type TournamentMini = {
   slug: string
@@ -10,7 +10,9 @@ type TournamentMini = {
 }
 
 type AdRow = {
+  id?: string
   slot: string
+  ratio?: string | null
   banner_url: string | null
   banner_path: string | null
   alt: string | null
@@ -20,19 +22,25 @@ type AdRow = {
 }
 
 const props = withDefaults(
-    defineProps<{
-      slot: string
-      variant?: 'banner' | 'sidebar'
-      ratio?: '21/9' | '16/9' | '3/1'
-      livePulse?: boolean
-      showLiveBadge?: boolean
-    }>(),
-    {
-      variant: 'banner',
-      ratio: '16/9',
-      livePulse: true,
-      showLiveBadge: true
-    }
+  defineProps<{
+    slot: string
+    variant?: 'banner' | 'sidebar'
+    ratio?: '21/9' | '16/9' | '3/1'
+    /** If you store ratio per ad (tournament_ads.ratio), set this true to prefer DB ratio */
+    preferDbRatio?: boolean
+    livePulse?: boolean
+    showLiveBadge?: boolean
+    /** refresh interval seconds (ad schedule changes without reload) */
+    refreshSec?: number
+  }>(),
+  {
+    variant: 'banner',
+    ratio: '16/9',
+    preferDbRatio: true,
+    livePulse: true,
+    showLiveBadge: true,
+    refreshSec: 60
+  }
 )
 
 const supabase = useSupabaseClient()
@@ -41,41 +49,60 @@ const ad = ref<AdRow | null>(null)
 /* ✅ reactive ticker so countdown updates */
 const nowTick = ref(Date.now())
 let timer: any = null
+let refreshTimer: any = null
 
 onMounted(() => {
   timer = setInterval(() => {
     nowTick.value = Date.now()
   }, 1000)
+
+  if (props.refreshSec > 0) {
+    refreshTimer = setInterval(() => load().catch(() => {}), props.refreshSec * 1000)
+  }
 })
 
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  if (refreshTimer) clearInterval(refreshTimer)
 })
 
+/** Pick best available active ad for slot at current time */
 async function load() {
   const nowIso = new Date().toISOString()
 
+  // We want:
+  // - active ads for slot
+  // - within schedule window (or null bounds)
+  // - prefer newest created_at (in case multiple exist but only one should be active)
   const { data, error } = await supabase
-      .from('tournament_ads')
-      .select(
-          `
-      slot, banner_url, banner_path, alt, starts_at, ends_at,
+    .from('tournament_ads')
+    .select(
+      `
+      id, slot, ratio, banner_url, banner_path, alt, starts_at, ends_at, created_at,
       tournaments:tournament_id (
         slug, title, thumbnail_url, starts_at, ends_at, status
       )
     `
-      )
-      .eq('slot', props.slot)
-      .eq('is_active', true)
-      .or(`starts_at.is.null,starts_at.lte.${nowIso}`)
-      .or(`ends_at.is.null,ends_at.gte.${nowIso}`)
-      .maybeSingle()
+    )
+    .eq('slot', props.slot)
+    .eq('is_active', true)
+    // time window (safe-ish: apply both bounds using AND via separate filters)
+    .or(`starts_at.is.null,starts_at.lte.${nowIso}`)
+    .or(`ends_at.is.null,ends_at.gte.${nowIso}`)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   ad.value = error ? null : ((data as any) || null)
 }
 
 onMounted(load)
+watch(
+  () => props.slot,
+  () => load().catch(() => {})
+)
 
+/* ---------- Derived ---------- */
 const href = computed(() => {
   const slug = ad.value?.tournaments?.slug
   return slug ? `/tournaments/${slug}` : null
@@ -84,10 +111,29 @@ const href = computed(() => {
 const img = computed(() => ad.value?.banner_url || ad.value?.tournaments?.thumbnail_url || null)
 const isSidebar = computed(() => props.variant === 'sidebar')
 
+function normalizeRatio(r?: string | null) {
+  const v = String(r || '').trim()
+  if (v === '16/9' || v === '21/9' || v === '3/1') return v as '16/9' | '21/9' | '3/1'
+  return null
+}
+
+/** ✅ Prefer DB ratio if present (tournament_ads.ratio), else fallback to prop ratio */
+const effectiveRatio = computed<'16/9' | '21/9' | '3/1'>(() => {
+  const db = props.preferDbRatio ? normalizeRatio(ad.value?.ratio ?? null) : null
+  return (db || props.ratio || '16/9') as any
+})
+
 const ratioClass = computed(() => {
-  if (props.ratio === '16/9') return 'aspect-[16/9]'
-  if (props.ratio === '3/1') return 'aspect-[3/1]'
+  if (effectiveRatio.value === '16/9') return 'aspect-[16/9]'
+  if (effectiveRatio.value === '3/1') return 'aspect-[3/1]'
   return 'aspect-[21/9]'
+})
+
+/* For sidebar, you usually want a tall fixed panel */
+const sidebarHeightClass = computed(() => {
+  // make it a bit taller for ultrawide banners so it doesn't look too thin
+  if (effectiveRatio.value === '21/9') return 'h-[440px]'
+  return 'h-[420px]'
 })
 
 function toMs(v?: string | null) {
@@ -140,13 +186,16 @@ const timeLeft = computed(() => {
 
 /** Accessible alt */
 const altText = computed(() => ad.value?.alt || ad.value?.tournaments?.title || 'Tournament')
+
+/** Allow rendering a graceful placeholder (optional) */
+const ready = computed(() => Boolean(ad.value && href.value && img.value))
 </script>
 
 <template>
   <NuxtLink
-      v-if="ad && href && img"
-      :to="href"
-      class="adCard group relative block w-full overflow-hidden rounded-3xl
+    v-if="ready"
+    :to="href!"
+    class="adCard group relative block w-full overflow-hidden rounded-3xl
            border border-black/10 dark:border-white/10
            bg-white/60 dark:bg-white/5 backdrop-blur
            transition-transform duration-300 will-change-transform
@@ -155,9 +204,9 @@ const altText = computed(() => ad.value?.alt || ad.value?.tournaments?.title || 
   >
     <!-- Neon/ambient glow (only on hover) -->
     <div
-        aria-hidden="true"
-        class="pointer-events-none absolute -inset-10 opacity-0 group-hover:opacity-100 transition duration-500 blur-2xl"
-        :style="{
+      aria-hidden="true"
+      class="pointer-events-none absolute -inset-10 opacity-0 group-hover:opacity-100 transition duration-500 blur-2xl"
+      :style="{
         background: `
           radial-gradient(520px 260px at 18% 30%, rgba(34,211,238,.20), transparent 60%),
           radial-gradient(520px 260px at 55% 55%, rgba(124,58,237,.22), transparent 60%),
@@ -167,8 +216,8 @@ const altText = computed(() => ad.value?.alt || ad.value?.tournaments?.title || 
     />
 
     <!-- ✅ SIDEBAR -->
-    <div v-if="isSidebar" class="relative w-full h-[420px]">
-      <img :src="img" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
+    <div v-if="isSidebar" class="relative w-full" :class="sidebarHeightClass">
+      <img :src="img!" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
 
       <!-- subtle vignette for depth (no text) -->
       <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-black/10" />
@@ -176,7 +225,7 @@ const altText = computed(() => ad.value?.alt || ad.value?.tournaments?.title || 
       <!-- Optional LIVE badge (top-right) -->
       <div v-if="showLiveBadge && isLive" class="absolute right-4 top-4 z-10">
         <div
-            class="inline-flex items-center gap-2 rounded-full
+          class="inline-flex items-center gap-2 rounded-full
                  border border-red-400/30 bg-red-500/20
                  px-4 py-2 text-sm font-extrabold tracking-wide text-red-50"
         >
@@ -189,7 +238,7 @@ const altText = computed(() => ad.value?.alt || ad.value?.tournaments?.title || 
 
     <!-- ✅ BANNER -->
     <div v-else class="relative w-full" :class="ratioClass">
-      <img :src="img" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
+      <img :src="img!" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
 
       <!-- subtle depth (no text) -->
       <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10" />
@@ -202,7 +251,7 @@ const altText = computed(() => ad.value?.alt || ad.value?.tournaments?.title || 
       <!-- Optional LIVE badge (top-right) -->
       <div v-if="showLiveBadge && isLive" class="absolute right-4 top-4 z-10">
         <div
-            class="inline-flex items-center gap-2 rounded-full
+          class="inline-flex items-center gap-2 rounded-full
                  border border-red-400/30 bg-red-500/20
                  px-4 py-2 text-sm sm:text-base font-extrabold tracking-wide text-red-50"
         >
@@ -214,13 +263,25 @@ const altText = computed(() => ad.value?.alt || ad.value?.tournaments?.title || 
     </div>
 
     <!-- Gloss highlight (very subtle) -->
-    <div
-        aria-hidden="true"
-        class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-500"
-    >
+    <div aria-hidden="true" class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-500">
       <div class="absolute inset-0 bg-gradient-to-br from-white/18 via-white/0 to-white/0" />
     </div>
   </NuxtLink>
+
+  <!-- Optional fallback (keeps layout stable if you want) -->
+  <div
+    v-else
+    class="rounded-3xl border border-black/10 dark:border-white/10
+           bg-white/60 dark:bg-white/5 backdrop-blur
+           overflow-hidden"
+  >
+    <div v-if="isSidebar" class="relative w-full" :class="sidebarHeightClass">
+      <div class="absolute inset-0 bg-black/10 dark:bg-white/5" />
+    </div>
+    <div v-else class="relative w-full" :class="ratioClass">
+      <div class="absolute inset-0 bg-black/10 dark:bg-white/5" />
+    </div>
+  </div>
 </template>
 
 <style scoped>

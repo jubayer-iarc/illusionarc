@@ -5,39 +5,36 @@
     <header
       class="sticky top-0 z-50 backdrop-blur
              border-b border-black/10 dark:border-white/5
-             bg-white/60 dark:bg-black/20"
+             bg-white/70 dark:bg-black/25"
     >
       <UContainer class="py-3 flex flex-col gap-3">
-        <!-- ✅ Live tournament banner (global) -->
+        <!-- Live tournament banner (global) -->
         <ClientOnly>
           <LiveTournamentBanner />
         </ClientOnly>
 
         <!-- Header row -->
         <div class="flex items-center justify-between gap-3">
-          <NuxtLink to="/" class="flex items-center gap-2">
+          <NuxtLink to="/" class="flex items-center gap-2 min-w-0">
             <img
               :src="settings.brand_logo_url || '/android-chrome-512x512.png'"
               :alt="`${settings.brand_name || 'illusion Arc'} Logo`"
               class="h-8 w-8 object-contain"
             />
-            <span class="font-semibold tracking-wide">{{ settings.brand_name || 'illusion Arc' }}</span>
+            <span class="font-semibold tracking-wide truncate">
+              {{ settings.brand_name || 'illusion Arc' }}
+            </span>
           </NuxtLink>
 
           <!-- Desktop nav (admin-managed) -->
           <nav class="hidden md:flex items-center gap-1">
-            <UButton
-              v-for="n in desktopNav"
-              :key="n.label + n.to"
-              variant="ghost"
-              :to="n.to"
-            >
+            <UButton v-for="n in desktopNav" :key="n.label + n.to" variant="ghost" :to="n.to">
               {{ n.label }}
             </UButton>
           </nav>
 
           <div class="flex items-center gap-2">
-            <!-- Contact CTA (admin-managed if you want; keeping fixed to /contact but label is from settings if present) -->
+            <!-- Contact CTA -->
             <UButton class="hidden md:inline-flex" color="primary" to="/contact">
               {{ contactLabel }}
             </UButton>
@@ -81,8 +78,12 @@
 
             <!-- Logged in -->
             <div v-else class="flex items-center justify-between gap-3">
-              <div class="flex items-center gap-3">
-                <div class="h-10 w-10 overflow-hidden rounded-full border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+              <div class="flex items-center gap-3 min-w-0">
+                <div
+                  class="h-10 w-10 overflow-hidden rounded-full border
+                         border-black/10 dark:border-white/10
+                         bg-black/5 dark:bg-white/5"
+                >
                   <img
                     v-if="avatarUrl"
                     :src="avatarUrl"
@@ -95,8 +96,8 @@
                   </div>
                 </div>
 
-                <div class="leading-tight">
-                  <div class="text-sm font-semibold text-black dark:text-white">{{ displayName }}</div>
+                <div class="leading-tight min-w-0">
+                  <div class="text-sm font-semibold text-black dark:text-white truncate">{{ displayName }}</div>
                   <div class="text-xs text-black/60 dark:text-white/60">Account</div>
                 </div>
               </div>
@@ -118,7 +119,7 @@
             </UButton>
           </div>
 
-          <!-- Mobile nav (same as desktop; admin-managed) -->
+          <!-- Mobile nav -->
           <UButton
             v-for="n in mobileNav"
             :key="n.label + n.to"
@@ -130,12 +131,10 @@
             {{ n.label }}
           </UButton>
 
-          <!-- Contact CTA (always at bottom) -->
+          <!-- Contact CTA -->
           <UButton color="primary" to="/contact" @click="open = false" class="mt-1">
             {{ contactLabel }}
           </UButton>
-
-          <!-- ✅ Theme control removed from drawer (as you requested) -->
         </div>
       </template>
     </USlideover>
@@ -145,11 +144,13 @@
       <slot />
     </main>
 
-    <!-- Footer (admin-managed branding + links) -->
+    <!-- Footer -->
     <footer class="border-t border-black/10 dark:border-white/5 bg-white/50 dark:bg-black/10">
       <UContainer class="py-10 grid gap-6 md:grid-cols-3">
         <div>
-          <div class="font-semibold">{{ settings.brand_name || 'illusion Arc' }}</div>
+          <div class="font-semibold text-black dark:text-white">
+            {{ settings.brand_name || 'illusion Arc' }}
+          </div>
           <div class="text-sm text-black/60 dark:text-white/60 mt-2">
             {{ settings.footer_tagline || 'Games • AR/VR • VFX/CGI • Animation' }}
           </div>
@@ -167,7 +168,6 @@
               {{ l.label }}
             </NuxtLink>
 
-            <!-- If admin accidentally empties links, keep UX safe -->
             <NuxtLink
               v-if="footerLinks.length === 0"
               to="/"
@@ -201,10 +201,10 @@
         </div>
       </UContainer>
 
-      <!-- ✅ Footer bottom bar with theme button -->
-      <UContainer class="py-4 border-t border-black/10 dark:border-white/5 flex items-center justify-between gap-3">
+      <!-- Footer bottom bar -->
+      <UContainer class="py-4 border-t border-black/10 dark:border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="text-xs text-black/50 dark:text-white/50">
-          © {{ new Date().getFullYear() }} {{ settings.brand_name || 'illusion Arc' }}
+          © {{ year }} {{ settings.brand_name || 'illusion Arc' }}
         </div>
 
         <ClientOnly>
@@ -263,7 +263,6 @@ const footerLegal = computed<LinkItem[]>(() => {
   return Array.isArray(list) ? list.filter((x) => x?.label && x?.to) : []
 })
 
-/** optional: label can be stored in settings later; safe fallback now */
 const contactLabel = computed(() => 'Contact')
 
 /* ---------------- Mobile drawer user info ---------------- */
@@ -295,24 +294,17 @@ watch(
 
 async function logout() {
   try {
-    // 1) close drawer instantly (UI feels responsive)
     open.value = false
-
-    // 2) sign out
     const { error } = await supabase.auth.signOut()
     if (error) throw error
-
-    // 3) toast (optional)
     toast.add({ title: 'Logged out', color: 'success' })
-
-    // 4) hard redirect (most reliable)
     if (import.meta.client) window.location.assign('/login')
   } catch (e: any) {
     toast.add({ title: 'Logout failed', description: e?.message || '', color: 'error' })
   }
 }
 
-/* ---------------- Color mode logic (kept here) ---------------- */
+/* ---------------- Color mode logic ---------------- */
 const colorMode = useColorMode()
 
 type Mode = 'system' | 'light' | 'dark'
@@ -323,12 +315,9 @@ function normalizeMode(v: unknown): Mode {
 }
 
 const pref = computed<Mode>(() => normalizeMode((colorMode as any).preference))
-
-// show what user is SEEING
 const effective = computed<'light' | 'dark'>(() => ((colorMode as any).value === 'dark' ? 'dark' : 'light'))
 
 const themeIcon = computed(() => (effective.value === 'dark' ? 'i-heroicons-moon' : 'i-heroicons-sun'))
-
 const themeLabel = computed(() => {
   if (pref.value === 'system') return `System (${effective.value})`
   return pref.value === 'dark' ? 'Dark' : 'Light'
@@ -339,4 +328,7 @@ function cycleTheme() {
   const next = order[(i + 1) % order.length]
   ;(colorMode as any).preference = next
 }
+
+/* ✅ Avoid new Date() in template (SSR hydration-safe) */
+const year = new Date().getFullYear()
 </script>
