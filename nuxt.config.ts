@@ -67,13 +67,6 @@ export default defineNuxtConfig({
     useSsrCookies: true,
     redirect: false
   },
-
-  /**
-   * IMPORTANT:
-   * - NEVER expose the Supabase service role / secret key to the client.
-   * - @nuxtjs/supabase uses SUPABASE_URL + SUPABASE_KEY (anon key) by default.
-   *   Service role key is for server-only usage. :contentReference[oaicite:0]{index=0}
-   */
   runtimeConfig: {
     // server-only
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -90,13 +83,6 @@ export default defineNuxtConfig({
     fallback: 'dark',
     classSuffix: ''
   },
-
-  /**
-   * SECURITY (nuxt-security)
-   * - nuxt-security already registers secure defaults globally.
-   * - Below is a “full hardening” baseline you can safely start with,
-   *   then tighten CSP sources as you confirm what your site actually needs. :contentReference[oaicite:1]{index=1}
-   */
   security: {
     // Strict CSP support (SSR uses nonces; SSG can use hashes/meta)
     nonce: true,
@@ -134,27 +120,14 @@ export default defineNuxtConfig({
 
     // Security headers (override defaults with stricter choices)
     headers: {
-      /**
-       * Clickjacking / framing:
-       * - Default: SAMEORIGIN via xFrameOptions :contentReference[oaicite:7]{index=7}
-       * - Also enforce with CSP frame-ancestors (more powerful) :contentReference[oaicite:8]{index=8}
-       */
-      xFrameOptions: 'SAMEORIGIN',
-
-      /**
-       * HSTS:
-       * Only enable preload if you are 100% HTTPS on root + subdomains.
-       * Default is already enabled by nuxt-security. :contentReference[oaicite:9]{index=9}
-       */
-      strictTransportSecurity: {
+        crossOriginEmbedderPolicy: false,
+        crossOriginOpenerPolicy: false,
+        xFrameOptions: 'SAMEORIGIN',
+        strictTransportSecurity: {
         maxAge: 31536000, // 1 year
         includeSubdomains: true,
         preload: false
       },
-
-      /**
-       * Privacy + API surface tightening
-       */
       referrerPolicy: 'strict-origin-when-cross-origin', // :contentReference[oaicite:10]{index=10}
       permissionsPolicy: {
         // Lock down powerful APIs unless you truly use them
@@ -166,21 +139,6 @@ export default defineNuxtConfig({
         'display-capture': [],
         fullscreen: ["self"] // if you need fullscreen, remove this line or set allowed origins
       }, // :contentReference[oaicite:11]{index=11}
-
-      /**
-       * Cross-origin isolation headers:
-       * Default COEP is "credentialless" in nuxt-security. :contentReference[oaicite:12]{index=12}
-       * Keep defaults unless you KNOW you need SharedArrayBuffer / crossOriginIsolated.
-       * (If you do, we’ll configure COOP/COEP carefully per-route.)
-       */
-      // crossOriginEmbedderPolicy: 'credentialless',
-      // crossOriginOpenerPolicy: 'same-origin',
-
-      /**
-       * CSP:
-       * This is a strong “Nuxt-friendly” baseline (strict-dynamic + nonce).
-       * Tighten connect-src/img-src/etc once you know every external domain you use. :contentReference[oaicite:13]{index=13}
-       */
       contentSecurityPolicy: {
         'base-uri': ["'none'"],
         'object-src': ["'none'"],
