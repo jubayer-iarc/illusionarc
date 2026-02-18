@@ -1,5 +1,6 @@
 <!-- app/layouts/default.vue -->
 <template>
+  <SpeedInsights />
   <div class="min-h-dvh flex flex-col bg-[var(--app-bg)] text-[var(--app-fg)]">
     <!-- Header -->
     <header
@@ -228,6 +229,7 @@
 </template>
 
 <script setup lang="ts">
+import { SpeedInsights } from '@vercel/speed-insights/vue';
 import UserMenu from '@/components/nav/UserMenu.vue'
 import LiveTournamentBanner from '~/components/tournaments/LiveTournamentBanner.vue'
 
