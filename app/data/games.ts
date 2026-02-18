@@ -45,7 +45,7 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Shooter',
     difficulty: 'Medium',
     estTime: '60s',
-    pro: true
+    pro: false
   },
   {
     name: 'Blink Maze',
@@ -65,7 +65,7 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Puzzle',
     difficulty: 'Medium',
     estTime: '60s',
-    pro: true
+    pro: false
   },
   {
     name: 'Neon Polarity',
@@ -85,7 +85,7 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Shooter',
     difficulty: 'Medium',
     estTime: '60s',
-    pro: true
+    pro: false
   },
   {
     name: 'Block Smash',
@@ -105,7 +105,7 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Puzzle',
     difficulty: 'Medium',
     estTime: '60s',
-    pro: true
+    pro: false
   },
   {
     name: '2048',
@@ -139,7 +139,7 @@ export const GAMES: ArcadeGame[] = [
     genre: 'Arcade',
     difficulty: 'Medium',
     estTime: '3–5 min',
-    pro: true
+    pro: false
   },
   {
     name: 'Snake',

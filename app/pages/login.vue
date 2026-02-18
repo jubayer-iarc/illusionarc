@@ -172,6 +172,10 @@ watch(
   { immediate: true }
 )
 
+definePageMeta({
+  middleware: ['guest-only']
+})
+
 /* ---------------- Server-side safe phone uniqueness check ----------------
    Requires SQL:
    create function public.phone_exists(p text) returns boolean security definer ...
