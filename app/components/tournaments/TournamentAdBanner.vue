@@ -32,6 +32,11 @@ const props = withDefaults(
     showLiveBadge?: boolean
     /** refresh interval seconds (ad schedule changes without reload) */
     refreshSec?: number
+    /**
+     * ✅ If true, show placeholder ONLY while loading.
+     * If false, show nothing when there is no ad.
+     */
+    showPlaceholderWhileLoading?: boolean
   }>(),
   {
     variant: 'banner',
@@ -39,12 +44,15 @@ const props = withDefaults(
     preferDbRatio: true,
     livePulse: true,
     showLiveBadge: true,
-    refreshSec: 60
+    refreshSec: 60,
+    showPlaceholderWhileLoading: false
   }
 )
 
 const supabase = useSupabaseClient()
+
 const ad = ref<AdRow | null>(null)
+const loading = ref(true) // ✅ real loading state
 
 /* ✅ reactive ticker so countdown updates */
 const nowTick = ref(Date.now())
@@ -68,35 +76,36 @@ onBeforeUnmount(() => {
 
 /** Pick best available active ad for slot at current time */
 async function load() {
-  const nowIso = new Date().toISOString()
+  loading.value = true
+  try {
+    const nowIso = new Date().toISOString()
 
-  // We want:
-  // - active ads for slot
-  // - within schedule window (or null bounds)
-  // - prefer newest created_at (in case multiple exist but only one should be active)
-  const { data, error } = await supabase
-    .from('tournament_ads')
-    .select(
+    const { data, error } = await supabase
+      .from('tournament_ads')
+      .select(
+        `
+        id, slot, ratio, banner_url, banner_path, alt, starts_at, ends_at, created_at,
+        tournaments:tournament_id (
+          slug, title, thumbnail_url, starts_at, ends_at, status
+        )
       `
-      id, slot, ratio, banner_url, banner_path, alt, starts_at, ends_at, created_at,
-      tournaments:tournament_id (
-        slug, title, thumbnail_url, starts_at, ends_at, status
       )
-    `
-    )
-    .eq('slot', props.slot)
-    .eq('is_active', true)
-    // time window (safe-ish: apply both bounds using AND via separate filters)
-    .or(`starts_at.is.null,starts_at.lte.${nowIso}`)
-    .or(`ends_at.is.null,ends_at.gte.${nowIso}`)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+      .eq('slot', props.slot)
+      .eq('is_active', true)
+      // window: (starts is null OR starts <= now) AND (ends is null OR ends >= now)
+      .or(`starts_at.is.null,starts_at.lte.${nowIso}`)
+      .or(`ends_at.is.null,ends_at.gte.${nowIso}`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-  ad.value = error ? null : ((data as any) || null)
+    ad.value = error ? null : ((data as any) || null)
+  } finally {
+    loading.value = false
+  }
 }
 
-onMounted(load)
+onMounted(() => load().catch(() => {}))
 watch(
   () => props.slot,
   () => load().catch(() => {})
@@ -131,7 +140,6 @@ const ratioClass = computed(() => {
 
 /* For sidebar, you usually want a tall fixed panel */
 const sidebarHeightClass = computed(() => {
-  // make it a bit taller for ultrawide banners so it doesn't look too thin
   if (effectiveRatio.value === '21/9') return 'h-[440px]'
   return 'h-[420px]'
 })
@@ -187,13 +195,17 @@ const timeLeft = computed(() => {
 /** Accessible alt */
 const altText = computed(() => ad.value?.alt || ad.value?.tournaments?.title || 'Tournament')
 
-/** Allow rendering a graceful placeholder (optional) */
-const ready = computed(() => Boolean(ad.value && href.value && img.value))
+/** ✅ True only when we actually have an ad to show */
+const hasAd = computed(() => Boolean(ad.value && href.value && img.value))
+
+/** ✅ Show placeholder ONLY while loading (if enabled) */
+const showPlaceholder = computed(() => props.showPlaceholderWhileLoading && loading.value)
 </script>
 
 <template>
+  <!-- ✅ Render ad ONLY when it exists -->
   <NuxtLink
-    v-if="ready"
+    v-if="hasAd"
     :to="href!"
     class="adCard group relative block w-full overflow-hidden rounded-3xl
            border border-black/10 dark:border-white/10
@@ -218,11 +230,8 @@ const ready = computed(() => Boolean(ad.value && href.value && img.value))
     <!-- ✅ SIDEBAR -->
     <div v-if="isSidebar" class="relative w-full" :class="sidebarHeightClass">
       <img :src="img!" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
-
-      <!-- subtle vignette for depth (no text) -->
       <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-black/10" />
 
-      <!-- Optional LIVE badge (top-right) -->
       <div v-if="showLiveBadge && isLive" class="absolute right-4 top-4 z-10">
         <div
           class="inline-flex items-center gap-2 rounded-full
@@ -239,16 +248,12 @@ const ready = computed(() => Boolean(ad.value && href.value && img.value))
     <!-- ✅ BANNER -->
     <div v-else class="relative w-full" :class="ratioClass">
       <img :src="img!" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
-
-      <!-- subtle depth (no text) -->
       <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10" />
 
-      <!-- Shimmer sweep -->
       <div aria-hidden="true" class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-700">
         <div class="absolute -inset-y-10 -left-1/2 w-1/2 rotate-12 bg-white/12 blur-xl animate-[adSweep_1.2s_ease-in-out_1]" />
       </div>
 
-      <!-- Optional LIVE badge (top-right) -->
       <div v-if="showLiveBadge && isLive" class="absolute right-4 top-4 z-10">
         <div
           class="inline-flex items-center gap-2 rounded-full
@@ -262,18 +267,17 @@ const ready = computed(() => Boolean(ad.value && href.value && img.value))
       </div>
     </div>
 
-    <!-- Gloss highlight (very subtle) -->
     <div aria-hidden="true" class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-500">
       <div class="absolute inset-0 bg-gradient-to-br from-white/18 via-white/0 to-white/0" />
     </div>
   </NuxtLink>
 
-  <!-- Optional fallback (keeps layout stable if you want) -->
+  <!-- ✅ Placeholder ONLY while loading (optional) -->
   <div
-    v-else
+    v-else-if="showPlaceholder"
     class="rounded-3xl border border-black/10 dark:border-white/10
            bg-white/60 dark:bg-white/5 backdrop-blur
-           overflow-hidden"
+           overflow-hidden animate-pulse"
   >
     <div v-if="isSidebar" class="relative w-full" :class="sidebarHeightClass">
       <div class="absolute inset-0 bg-black/10 dark:bg-white/5" />
@@ -282,28 +286,33 @@ const ready = computed(() => Boolean(ad.value && href.value && img.value))
       <div class="absolute inset-0 bg-black/10 dark:bg-white/5" />
     </div>
   </div>
+
+  <!-- ✅ When no ad and not loading: render NOTHING -->
 </template>
 
 <style scoped>
 @keyframes adSweep {
-  from { transform: translateX(-20%) rotate(12deg); opacity: 0; }
-  30% { opacity: 1; }
-  to { transform: translateX(220%) rotate(12deg); opacity: 0; }
+  from {
+    transform: translateX(-20%) rotate(12deg);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(220%) rotate(12deg);
+    opacity: 0;
+  }
 }
 
-/* ✅ "Pop + Bright" hover:
-   - scale slightly
-   - brighter, more saturated, a bit more contrast
-   - stronger shadow
-*/
 .adCard {
   box-shadow: 0 18px 55px rgba(0, 0, 0, 0.18);
 }
 .adCard:hover {
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.30);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.3);
 }
 .adImg {
-  transition: transform 650ms cubic-bezier(.2,.8,.2,1), filter 450ms ease;
+  transition: transform 650ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 450ms ease;
   will-change: transform, filter;
 }
 .adCard:hover .adImg {
@@ -311,13 +320,15 @@ const ready = computed(() => Boolean(ad.value && href.value && img.value))
   filter: brightness(1.14) saturate(1.22) contrast(1.06);
 }
 
-/* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  .adImg { transition: none; }
-  .adCard { transition: none; }
+  .adImg {
+    transition: none;
+  }
+  .adCard {
+    transition: none;
+  }
 }
 
-/* ✅ Bigger RED pulsing dot */
 .liveDot {
   position: relative;
   width: 10px;
@@ -329,8 +340,17 @@ const ready = computed(() => Boolean(ad.value && href.value && img.value))
 }
 
 @keyframes pulseRed {
-  0%   { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55); transform: scale(1); }
-  70%  { box-shadow: 0 0 0 12px rgba(248, 113, 113, 0.00); transform: scale(1.08); }
-  100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.00); transform: scale(1); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55);
+    transform: scale(1);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(248, 113, 113, 0);
+    transform: scale(1.08);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0);
+    transform: scale(1);
+  }
 }
 </style>
