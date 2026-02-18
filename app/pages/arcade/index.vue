@@ -295,11 +295,15 @@ function accessLabel(isPro?: boolean) {
 
               <div class="mt-auto pt-3 flex flex-wrap gap-2 text-xs">
                 <span
-                  class="px-2 py-1 rounded-full border border-amber-500/40 bg-amber-400/15
-                         font-semibold tracking-wide text-amber-700 dark:text-amber-300"
+                  :class="
+                    g.pro
+                      ? 'px-2 py-1 rounded-full border border-amber-500/40 bg-amber-400/15 font-semibold tracking-wide text-amber-700 dark:text-amber-300'
+                      : 'px-2 py-1 rounded-full border border-violet-500/35 bg-violet-500/15 font-semibold tracking-wide text-violet-700 dark:text-violet-300'
+                  "
                 >
                   <span class="inline-flex items-center gap-1.5">
                     <UIcon v-if="g.pro" name="i-ph-crown-fill" class="w-3.5 h-3.5" />
+                    <UIcon v-else name="i-heroicons-sparkles" class="w-3.5 h-3.5" />
                     <span>{{ accessLabel(g.pro) }}</span>
                   </span>
                 </span>
