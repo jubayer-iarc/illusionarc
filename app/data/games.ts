@@ -132,7 +132,7 @@ export const GAMES: ArcadeGame[] = [
     description: 'Guide the iconic yellow hero through neon mazes while avoiding relentless ghosts and collecting every pellet. Master patterns, grab power-ups, and turn the chase in your favor for big scores. Easy to pick up yet endlessly challenging, it’s a retro experience that still tests reflex and strategy.',
     controls: ['Arrow keys', 'Swipe on mobile'],
     buildType: 'iframe',
-    sourceUrl: '/games/pacman',
+    sourceUrl: '/games/pacman/index.html',
     embedAllowed: true,
     embed: { aspectRatio: '16/9', minHeight: 520, orientation: 'landscape' },
     leaderboard: true,
