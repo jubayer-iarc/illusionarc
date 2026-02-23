@@ -1,13 +1,7 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/daily?secret=@cron_secret",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/weekly?secret=@cron_secret",
-      "schedule": "0 0 * * 6"
-    }
+    { "path": "/api/cron/daily?secret=@cron_secret", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/weekly?secret=@cron_secret", "schedule": "0 0 * * 6" }
   ],
   "headers": [
     {
@@ -15,11 +9,9 @@
       "headers": [
         { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-
-        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
         {
           "key": "Content-Security-Policy",
-          "value": "frame-ancestors 'self' https://illusionarc.com https://www.illusionarc.com"
+          "value": "frame-ancestors 'self' https://illusionarc.com https://www.illusionarc.com;"
         }
       ]
     }

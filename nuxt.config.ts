@@ -1,4 +1,4 @@
-// https://nuxt.com/docs/api/configuration/nuxt-config
+// nuxt.config.ts
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
@@ -67,11 +67,9 @@ export default defineNuxtConfig({
     useSsrCookies: true,
     redirect: false
   },
-  runtimeConfig: {
-    // server-only
-    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
 
-    // client-exposed (safe: anon key + url)
+  runtimeConfig: {
+    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
     public: {
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseAnonKey: process.env.SUPABASE_KEY
@@ -83,8 +81,9 @@ export default defineNuxtConfig({
     fallback: 'dark',
     classSuffix: ''
   },
+
   security: {
-    // Strict CSP support (SSR uses nonces; SSG can use hashes/meta)
+    // CSP nonces + integrity
     nonce: true,
     sri: true,
     ssg: {
@@ -93,193 +92,190 @@ export default defineNuxtConfig({
       hashStyles: false,
       exportToPresets: true
     },
-    corsHandler: false, // Disable CORS handling; configure via proxy/CDN if needed
 
-    // Extra hardening utilities (enabled by default; keeping explicit)
-    hidePoweredBy: true, // :contentReference[oaicite:2]{index=2}
-    removeLoggers: true, // :contentReference[oaicite:3]{index=3}
+    corsHandler: false,
 
-    // Middleware protections
+    hidePoweredBy: true,
+    removeLoggers: true,
+
     rateLimiter: {
-      // Built-in limiter is “basic”; still useful as an app-layer brake. :contentReference[oaicite:4]{index=4}
       tokensPerInterval: 150,
       interval: 300000, // 5 min
       headers: false,
       throwError: true
-      // If you use Cloudflare, consider: ipHeader: 'cf-connecting-ip'
     },
+
     requestSizeLimiter: {
       maxRequestSizeInBytes: 2_000_000,
       maxUploadFileRequestInBytes: 8_000_000,
       throwError: true
-    }, // :contentReference[oaicite:5]{index=5}
+    },
 
-    // Optional “stronger” protections (safe to enable; may require small app changes)
     xssValidator: {},
-    csrf: false, // disabled by default; enabling is a security win :contentReference[oaicite:6]{index=6}
+    csrf: false,
 
-    // Security headers (override defaults with stricter choices)
     headers: {
-        crossOriginEmbedderPolicy: false,
-        crossOriginOpenerPolicy: false,
-        xFrameOptions: 'SAMEORIGIN',
-        strictTransportSecurity: {
-        maxAge: 31536000, // 1 year
+      // ✅ Keep these off unless you specifically need cross-origin isolation
+      crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: false,
+
+      /**
+       * ✅ IMPORTANT:
+       * Do NOT set X-Frame-Options to SAMEORIGIN globally,
+       * because it will block embedding from illusionarc.com on other origins.
+       * Use CSP frame-ancestors instead.
+       */
+      xFrameOptions: false,
+
+      strictTransportSecurity: {
+        maxAge: 31536000,
         includeSubdomains: true,
         preload: false
       },
-      referrerPolicy: 'strict-origin-when-cross-origin', // :contentReference[oaicite:10]{index=10}
+
+      referrerPolicy: 'strict-origin-when-cross-origin',
+
       permissionsPolicy: {
-        // Lock down powerful APIs unless you truly use them
         camera: [],
         microphone: [],
         geolocation: [],
         payment: [],
         usb: [],
         'display-capture': [],
-        fullscreen: ["self"] // if you need fullscreen, remove this line or set allowed origins
-      }, // :contentReference[oaicite:11]{index=11}
+        fullscreen: ['self']
+      },
+
+      // ✅ Global CSP (strict + allows your own domains to frame)
       contentSecurityPolicy: {
         'base-uri': ["'none'"],
         'object-src': ["'none'"],
-        'frame-ancestors': ["'self'"],
 
-        // Your pages
+        // ✅ allow framing by your own domains (and self)
+        'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com'],
+
         'default-src': ["'self'"],
-
-        // API / websocket (Supabase uses https + wss)
         'connect-src': ["'self'", 'https:', 'wss:'],
-
-        // Images / fonts (Nuxt Image often uses data: for placeholders; keep it)
         'img-src': ["'self'", 'data:', 'https:'],
         'font-src': ["'self'", 'data:', 'https:'],
-
-        // Styles: Nuxt UI / Tailwind often injects inline styles in dev.
-        // Keep 'unsafe-inline' ONLY in style-src (not script-src).
         'style-src': ["'self'", 'https:', "'unsafe-inline'"],
 
-        // ✅ The important part: SAFE script policy
-        'script-src': [
-          "'self'",
-          "'nonce-{{nonce}}'"
-        ],
+        'script-src': ["'self'", "'nonce-{{nonce}}'"],
         'script-src-attr': ["'none'"],
 
-        // Workers (some libraries use blob workers)
         'worker-src': ["'self'", 'blob:'],
 
-        // Optional extras
         'form-action': ["'self'"],
         'manifest-src': ["'self'"],
         'upgrade-insecure-requests': true
       }
-    },
+    }
   },
+
   routeRules: {
-    // ✅ Embeds: allow framing, avoid COOP/COEP issues
+    /**
+     * ✅ Embeds / Arcade / Tournaments / Games
+     * - keep COOP/COEP off (iframe friendly)
+     * - ensure framing is allowed (CSP frame-ancestors already global, but we keep explicit)
+     * - DO NOT reintroduce X-Frame-Options
+     */
     '/embed/**': {
       security: {
         headers: {
           xFrameOptions: false,
+          crossOriginEmbedderPolicy: false,
+          crossOriginOpenerPolicy: false,
           contentSecurityPolicy: {
             'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com']
-          },
-          crossOriginEmbedderPolicy: false,
-          crossOriginOpenerPolicy: false
+          }
         }
       }
     },
 
-    // ✅ Arcade: allow framing (same as embed)
     '/arcade/**': {
       security: {
         headers: {
           xFrameOptions: false,
+          crossOriginEmbedderPolicy: false,
+          crossOriginOpenerPolicy: false,
           contentSecurityPolicy: {
             'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com']
-          },
-          crossOriginEmbedderPolicy: false,
-          crossOriginOpenerPolicy: false
+          }
         }
       }
     },
+
     '/tournaments/**': {
       security: {
         headers: {
           xFrameOptions: false,
+          crossOriginEmbedderPolicy: false,
+          crossOriginOpenerPolicy: false,
           contentSecurityPolicy: {
             'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com']
-          },
-          crossOriginEmbedderPolicy: false,
-          crossOriginOpenerPolicy: false
+          }
         }
       }
     },
 
-
-    // ✅ Games: relaxed asset loading + allow framing
     '/games/**': {
       security: {
         headers: {
           xFrameOptions: false,
+          crossOriginEmbedderPolicy: false,
+          crossOriginOpenerPolicy: false,
+
+          // Only add what games actually need; do not weaken global script policy unless required
           contentSecurityPolicy: {
             'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com'],
             'img-src': ["'self'", 'data:', 'https:', 'blob:'],
             'media-src': ["'self'", 'data:', 'https:', 'blob:'],
-            'script-src': [
-              "'self'",
-              "'nonce-{{nonce}}'",
-              'https://cdnjs.cloudflare.com',
-              'https://cdn.jsdelivr.net'
-            ],
-            'style-src': ["'self'", 'https:', "'unsafe-inline'"]
-          },
-          crossOriginEmbedderPolicy: false,
-          crossOriginOpenerPolicy: false
+            'style-src': ["'self'", 'https:', "'unsafe-inline'"],
+
+            // If your games truly load scripts from CDNs, allow those CDNs
+            // Still keeps nonce for inline/SSR scripts
+            'script-src': ["'self'", "'nonce-{{nonce}}'", 'https://cdnjs.cloudflare.com', 'https://cdn.jsdelivr.net'],
+
+            'worker-src': ["'self'", 'blob:']
+          }
         }
       }
     },
 
-    // ✅ Apps: default strict (inherits global)
-    // But Panorama needs A-Frame => allow unsafe-eval ONLY there
+    // Panorama needs unsafe-eval (A-Frame / three builds sometimes)
     '/apps/panorama/**': {
       security: {
         headers: {
           contentSecurityPolicy: {
             'img-src': ["'self'", 'data:', 'https:', 'blob:'],
             'media-src': ["'self'", 'data:', 'https:', 'blob:'],
-            'script-src': ["'self'", "'nonce-{{nonce}}'", "'unsafe-eval'"],
-            'style-src': ["'self'", 'https:', "'unsafe-inline'"]
+            'style-src': ["'self'", 'https:', "'unsafe-inline'"],
+            'script-src': ["'self'", "'nonce-{{nonce}}'", "'unsafe-eval'"]
           }
         }
       }
     },
 
-    // ✅ Admin is client-only
+    // Admin is client-only
     '/admin/**': { ssr: false },
+
     '/apps/**': {
       security: {
         headers: {
           contentSecurityPolicy: {
-            // allow local uploads
             'img-src': ["'self'", 'data:', 'https:', 'blob:'],
             'media-src': ["'self'", 'data:', 'https:', 'blob:'],
-
-            // keep scripts strict; ONLY add unsafe-eval if you truly need A-Frame
-            'script-src': ["'self'", "'nonce-{{nonce}}'"],
-
-            // if Nuxt UI or inline styles need it
-            'style-src': ["'self'", 'https:', "'unsafe-inline'"]
+            'style-src': ["'self'", 'https:', "'unsafe-inline'"],
+            'script-src': ["'self'", "'nonce-{{nonce}}'"]
           }
         }
       }
     }
   },
+
   vite: {
     build: {
       rollupOptions: {
         onwarn(warning, warn) {
-          // Supabase internal bundle warning (harmless)
           if (
             warning.code === 'UNUSED_EXTERNAL_IMPORT' &&
             typeof warning.message === 'string' &&
@@ -288,12 +284,12 @@ export default defineNuxtConfig({
           ) {
             return
           }
-
           warn(warning)
         }
       }
     }
   },
+
   typescript: {
     tsConfig: {
       include: ['~/types/**/*.d.ts', '~/types/**/*.ts']
