@@ -340,8 +340,7 @@ function isHttpLink(v?: string) {
                         :disabled="!isHttpLink(g.thumbnailsLink)"
                         target="_blank"
                         rel="noopener"
-                        color="gray"
-                        variant="soft"
+                        color="secondary" variant="solid"
                       >
                         Thumbnails Link
                       </UButton>
