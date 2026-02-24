@@ -53,7 +53,7 @@ const games = ref<Game[]>([
     integrationNote:
       'HTML/Web build, iframe-friendly, fullscreen supported, ready for leaderboard/API integration',
     icon: '/img/boss-rush/boss-rush-icon.png',
-    thumbnailsLink: 'Boss-Rush Thumbnails',
+    thumbnailsLink: 'https://drive.google.com/drive/folders/1Y0SS6x6mew71XNcF1KF4epHief1V8E8u',
     featureGraphicsLink: '/img/boss-rush/boss-rush-thumbnail.png'
   },
   {
@@ -82,7 +82,7 @@ const games = ref<Game[]>([
     integrationNote:
       'HTML/Web build, iframe-friendly, lightweight, and ready for leaderboard/API integration',
     icon: '/img/block-smash/block-smash-icon.png',
-    thumbnailsLink: 'Block-Smash Thumbnails',
+    thumbnailsLink: 'https://drive.google.com/drive/folders/1paNZh3N65DTX5vb6BwLqwQ8rw80TH536',
     featureGraphicsLink: '/img/block-smash/block-smash-thumbnail.jpg'
   }
 ])
