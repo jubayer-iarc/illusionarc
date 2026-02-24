@@ -6,17 +6,16 @@ useHead({
     {
       name: 'description',
       content:
-        'Explore Illusion Arc games with full metadata, controls, platform info, and direct play links. Click a game to expand details.'
+          'Explore Illusion Arc games with full metadata, controls, platform info, and direct play links. Click a game to expand details.'
     }
   ]
 })
 
-definePageMeta({
-  layout: 'catalogue'
-})
+definePageMeta({ layout: 'catalogue' })
 
 type Game = {
   id: string
+  slug: string
   title: string
   url: string
   platform: string
@@ -24,72 +23,102 @@ type Game = {
   orientation: string
   description: string
   features: string[]
-  mechanics?: string[]
+  mechanics?: string[] | null
   controls: string
   integrationNote: string
-  thumbnailsLink?: string
-  featureGraphicsLink?: string
-  icon?: string // small icon shown when collapsed
+  thumbnailsLink?: string | null
+  featureGraphicsLink?: string | null
+  icon?: string | null
 }
 
-const games = ref<Game[]>([
-  {
-    id: 'boss-rush-neon-arena',
-    title: 'Boss Rush – Neon Arena',
-    url: 'https://boss-rush.illusionarc.com',
-    platform: 'HTML5 Web (Desktop + Mobile compatible)',
-    genre: ['Arcade', 'Action', 'Survival'],
-    orientation: 'Landscape / Portrait',
-    description:
-      'Boss Rush: Neon Arena is a high-speed bullet-hell reflex experience where a glowing stick-figure hero faces endless bosses inside a pulsing synthwave arena. With no minions and no traditional levels, the game focuses purely on rhythm, reaction, and survival through consecutive boss encounters.',
-    features: [
-      'Pure boss-fight gameplay: fast, skill-based, and intense',
-      'Tap-to-dodge mechanics with cinematic slow-motion bursts',
-      'Distinct boss personalities and attack patterns',
-      'Neon retro visual identity',
-      'Quick-play format suitable for mobile and streaming sessions'
-    ],
-    controls: 'Keyboard and touch movement (mobile supported)',
-    integrationNote:
-      'HTML/Web build, iframe-friendly, fullscreen supported, ready for leaderboard/API integration',
-    icon: '/img/boss-rush/boss-rush-icon.png',
-    thumbnailsLink: 'https://drive.google.com/drive/folders/1Y0SS6x6mew71XNcF1KF4epHief1V8E8u',
-    featureGraphicsLink: '/img/boss-rush/boss-rush-thumbnail.png'
-  },
-  {
-    id: 'block-smash',
-    title: 'Block Smash',
-    url: 'https://blocksmash.illusionarc.com',
-    platform: 'HTML5 Web (Desktop + Mobile compatible)',
-    genre: ['Puzzle', 'Casual'],
-    orientation: 'Portrait',
-    description:
-      'Block Smash is an engaging grid-based puzzle experience where players strategically place block shapes within a 9×9 board divided into 3×3 zones. By completing rows, columns, or zones, players clear space, accumulate points, trigger color transformations, and pursue bonus rewards through efficient spatial planning.',
-    mechanics: [
-      '9×9 grid with nine 3×3 zones',
-      'Drag-and-drop block placement',
-      'Line and zone clearing scoring system',
-      'Dynamic color transformation feedback',
-      'Color-based bonus clearing system'
-    ],
-    features: [
-      'Fast to learn, deep to master',
-      'Mobile-first puzzle loop',
-      'Satisfying clears with visual feedback',
-      'Perfect for quick sessions'
-    ],
-    controls: 'Drag-and-drop interaction (mobile-first supported)',
-    integrationNote:
-      'HTML/Web build, iframe-friendly, lightweight, and ready for leaderboard/API integration',
-    icon: '/img/block-smash/block-smash-icon.png',
-    thumbnailsLink: 'https://drive.google.com/drive/folders/1paNZh3N65DTX5vb6BwLqwQ8rw80TH536',
-    featureGraphicsLink: '/img/block-smash/block-smash-thumbnail.jpg'
-  }
-])
+const supabase = useSupabaseClient()
 
-/* UI: search + filter + expand */
+/** UI state */
 const q = ref('')
 const genreFilter = ref<string>('All')
+const openId = ref<string | null>(null)
+
+/** Data state */
+const loading = ref(true)
+const loadError = ref<string | null>(null)
+const games = ref<Game[]>([])
+
+function isHttpLink(v?: string | null) {
+  return !!v && /^https?:\/\//i.test(v)
+}
+
+function hostname(url: string) {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
+}
+
+async function fetchGames() {
+  loading.value = true
+  loadError.value = null
+  try {
+    const { data, error } = await (supabase as any)
+        .from('game_catalogue')
+        .select(
+            `
+        id,
+        slug,
+        title,
+        url,
+        platform,
+        genre,
+        orientation,
+        description,
+        features,
+        mechanics,
+        controls,
+        integration_note,
+        icon_url,
+        thumbnails_url,
+        feature_graphic_url,
+        sort_order
+      `
+        )
+        .eq('is_published', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true })
+
+    if (error) throw error
+
+    games.value =
+        (data ?? []).map((row: any) => ({
+          id: row.id,
+          slug: row.slug,
+          title: row.title,
+          url: row.url,
+          platform: row.platform,
+          genre: row.genre ?? [],
+          orientation: row.orientation,
+          description: row.description,
+          features: row.features ?? [],
+          mechanics: row.mechanics ?? null,
+          controls: row.controls,
+          integrationNote: row.integration_note,
+          icon: row.icon_url,
+          thumbnailsLink: row.thumbnails_url,
+          featureGraphicsLink: row.feature_graphic_url
+        })) ?? []
+  } catch (e: any) {
+    loadError.value = e?.message ?? 'Failed to load catalogue.'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  void fetchGames()
+})
+
+function toggle(id: string) {
+  openId.value = openId.value === id ? null : id
+}
 
 const allGenres = computed(() => {
   const set = new Set<string>()
@@ -101,34 +130,15 @@ const filtered = computed(() => {
   const query = q.value.trim().toLowerCase()
   return games.value.filter((g) => {
     const matchesQuery =
-      !query ||
-      g.title.toLowerCase().includes(query) ||
-      g.description.toLowerCase().includes(query) ||
-      g.genre.join(' ').toLowerCase().includes(query)
+        !query ||
+        g.title.toLowerCase().includes(query) ||
+        g.description.toLowerCase().includes(query) ||
+        g.genre.join(' ').toLowerCase().includes(query)
 
     const matchesGenre = genreFilter.value === 'All' || g.genre.includes(genreFilter.value)
     return matchesQuery && matchesGenre
   })
 })
-
-/** ✅ At landing no one will be expanded */
-const openId = ref<string | null>(null)
-
-function toggle(id: string) {
-  openId.value = openId.value === id ? null : id
-}
-
-function hostname(url: string) {
-  try {
-    return new URL(url).hostname
-  } catch {
-    return url
-  }
-}
-
-function isHttpLink(v?: string) {
-  return !!v && /^https?:\/\//i.test(v)
-}
 </script>
 
 <template>
@@ -148,9 +158,9 @@ function isHttpLink(v?: string) {
       <div class="mt-6 grid grid-cols-1 md:grid-cols-12 gap-3">
         <div class="md:col-span-8">
           <UInput
-            v-model="q"
-            icon="i-heroicons-magnifying-glass-20-solid"
-            placeholder="Search games (title, genre, description)..."
+              v-model="q"
+              icon="i-heroicons-magnifying-glass-20-solid"
+              placeholder="Search games (title, genre, description)..."
           />
         </div>
         <div class="md:col-span-4">
@@ -158,40 +168,62 @@ function isHttpLink(v?: string) {
         </div>
       </div>
 
+      <!-- Loading / Error -->
+      <div v-if="loading" class="mt-8 rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/20 p-6">
+        <div class="flex items-center gap-3">
+          <UIcon name="i-heroicons-arrow-path-20-solid" class="h-5 w-5 animate-spin text-black/60 dark:text-white/60" />
+          <p class="text-sm md:text-base text-black/60 dark:text-white/60">Loading catalogue…</p>
+        </div>
+      </div>
+
+      <div
+          v-else-if="loadError"
+          class="mt-8 rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/20 p-6"
+      >
+        <div class="flex items-start gap-3">
+          <UIcon name="i-heroicons-exclamation-triangle-20-solid" class="h-5 w-5 text-black/60 dark:text-white/60" />
+          <div>
+            <div class="text-base font-semibold">Could not load games</div>
+            <p class="text-sm text-black/60 dark:text-white/60 mt-1">{{ loadError }}</p>
+            <UButton class="mt-3" color="primary" variant="soft" @click="fetchGames()">Retry</UButton>
+          </div>
+        </div>
+      </div>
+
       <!-- List -->
-      <div class="mt-8 space-y-4">
+      <div v-else class="mt-8 space-y-4">
         <div
-          v-for="g in filtered"
-          :key="g.id"
-          class="rounded-2xl border border-black/10 dark:border-white/10
+            v-for="g in filtered"
+            :key="g.id"
+            class="rounded-2xl border border-black/10 dark:border-white/10
                  bg-white/60 dark:bg-black/20 backdrop-blur
                  overflow-hidden shadow-sm"
         >
           <!-- Card header -->
           <button
-            type="button"
-            class="w-full text-left px-5 py-4 flex items-center justify-between gap-4
+              type="button"
+              class="w-full text-left px-5 py-4 flex items-center justify-between gap-4
                    hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition"
-            @click="toggle(g.id)"
+              @click="toggle(g.id)"
           >
             <div class="min-w-0 flex items-center gap-3">
               <!-- Icon when collapsed -->
               <div v-if="openId !== g.id" class="shrink-0">
                 <div
-                  class="h-10 w-10 rounded-xl border border-black/10 dark:border-white/10
+                    class="h-10 w-10 rounded-xl border border-black/10 dark:border-white/10
                          bg-white/70 dark:bg-black/30 overflow-hidden flex items-center justify-center"
                 >
                   <img
-                    v-if="g.icon"
-                    :src="g.icon"
-                    :alt="`${g.title} icon`"
-                    class="h-full w-full object-cover"
-                    loading="lazy"
+                      v-if="g.icon"
+                      :src="g.icon"
+                      :alt="`${g.title} icon`"
+                      class="h-full w-full object-cover"
+                      loading="lazy"
                   />
                   <UIcon
-                    v-else
-                    name="i-heroicons-sparkles-20-solid"
-                    class="h-5 w-5 text-black/60 dark:text-white/60"
+                      v-else
+                      name="i-heroicons-sparkles-20-solid"
+                      class="h-5 w-5 text-black/60 dark:text-white/60"
                   />
                 </div>
               </div>
@@ -215,49 +247,49 @@ function isHttpLink(v?: string) {
 
             <div class="flex items-center gap-2 shrink-0">
               <UButton
-                :to="g.url"
-                target="_blank"
-                rel="noopener"
-                size="sm"
-                color="primary"
-                variant="soft"
-                @click.stop
+                  :to="g.url"
+                  target="_blank"
+                  rel="noopener"
+                  size="sm"
+                  color="primary"
+                  variant="soft"
+                  @click.stop
               >
                 Play
               </UButton>
 
               <UIcon
-                :name="openId === g.id ? 'i-heroicons-chevron-up-20-solid' : 'i-heroicons-chevron-down-20-solid'"
-                class="h-5 w-5 text-black/50 dark:text-white/60"
+                  :name="openId === g.id ? 'i-heroicons-chevron-up-20-solid' : 'i-heroicons-chevron-down-20-solid'"
+                  class="h-5 w-5 text-black/50 dark:text-white/60"
               />
             </div>
           </button>
 
           <!-- Expanded body -->
           <Transition
-            enter-active-class="transition duration-200 ease-out"
-            enter-from-class="opacity-0 -translate-y-1"
-            enter-to-class="opacity-100 translate-y-0"
-            leave-active-class="transition duration-150 ease-in"
-            leave-from-class="opacity-100 translate-y-0"
-            leave-to-class="opacity-0 -translate-y-1"
+              enter-active-class="transition duration-200 ease-out"
+              enter-from-class="opacity-0 -translate-y-1"
+              enter-to-class="opacity-100 translate-y-0"
+              leave-active-class="transition duration-150 ease-in"
+              leave-from-class="opacity-100 translate-y-0"
+              leave-to-class="opacity-0 -translate-y-1"
           >
             <div v-if="openId === g.id" class="px-5 pb-5">
               <!-- Feature graphic after expansion -->
               <div class="pt-4">
                 <div
-                  class="rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden
+                    class="rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden
                          bg-white/70 dark:bg-black/30"
                 >
                   <img
-                    v-if="g.featureGraphicsLink"
-                    :src="g.featureGraphicsLink"
-                    :alt="`${g.title} feature graphic`"
-                    class="w-full h-[180px] md:h-[260px] object-cover"
-                    loading="lazy"
+                      v-if="g.featureGraphicsLink"
+                      :src="g.featureGraphicsLink"
+                      :alt="`${g.title} feature graphic`"
+                      class="w-full h-[180px] md:h-[260px] object-cover"
+                      loading="lazy"
                   />
                   <div v-else class="p-6 text-sm text-black/50 dark:text-white/50">
-                    Add a feature graphic for this game (set <code>featureGraphicsLink</code>).
+                    Add a feature graphic for this game (set <code>featureGraphicUrl</code> in the database).
                   </div>
                 </div>
               </div>
@@ -290,7 +322,7 @@ function isHttpLink(v?: string) {
                 <!-- Right -->
                 <div class="lg:col-span-4">
                   <div
-                    class="rounded-2xl border border-black/10 dark:border-white/10
+                      class="rounded-2xl border border-black/10 dark:border-white/10
                            bg-white/70 dark:bg-black/30 p-4 space-y-3"
                   >
                     <div class="text-sm font-semibold">Metadata</div>
@@ -299,10 +331,10 @@ function isHttpLink(v?: string) {
                       <div class="flex items-start justify-between gap-3">
                         <span class="text-black/50 dark:text-white/50">URL</span>
                         <a
-                          :href="g.url"
-                          target="_blank"
-                          rel="noopener"
-                          class="text-right underline underline-offset-4 hover:opacity-80"
+                            :href="g.url"
+                            target="_blank"
+                            rel="noopener"
+                            class="text-right underline underline-offset-4 hover:opacity-80"
                         >
                           {{ g.url }}
                         </a>
@@ -335,21 +367,22 @@ function isHttpLink(v?: string) {
                       </UButton>
 
                       <UButton
-                        v-if="g.thumbnailsLink"
-                        :to="isHttpLink(g.thumbnailsLink) ? g.thumbnailsLink : undefined"
-                        :disabled="!isHttpLink(g.thumbnailsLink)"
-                        target="_blank"
-                        rel="noopener"
-                        color="secondary" variant="solid"
+                          v-if="g.thumbnailsLink"
+                          :to="isHttpLink(g.thumbnailsLink) ? g.thumbnailsLink : undefined"
+                          :disabled="!isHttpLink(g.thumbnailsLink)"
+                          target="_blank"
+                          rel="noopener"
+                          color="secondary"
+                          variant="solid"
                       >
                         Thumbnails Link
                       </UButton>
 
                       <div
-                        v-if="g.thumbnailsLink && !isHttpLink(g.thumbnailsLink)"
-                        class="text-xs text-black/50 dark:text-white/50"
+                          v-if="g.thumbnailsLink && !isHttpLink(g.thumbnailsLink)"
+                          class="text-xs text-black/50 dark:text-white/50"
                       >
-                        Replace “{{ g.thumbnailsLink }}” with a real URL (https://...) when you upload thumbnails.
+                        Please provide a valid thumbnails URL in the database.
                       </div>
                     </div>
                   </div>
@@ -375,8 +408,8 @@ function isHttpLink(v?: string) {
 
         <!-- Empty state -->
         <div
-          v-if="filtered.length === 0"
-          class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/20 p-8 text-center"
+            v-if="filtered.length === 0"
+            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/20 p-8 text-center"
         >
           <div class="text-base font-semibold">No games found</div>
           <p class="text-sm text-black/60 dark:text-white/60 mt-1">
@@ -385,18 +418,17 @@ function isHttpLink(v?: string) {
         </div>
 
         <!-- Note at the end -->
+        <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/20 p-5">
           <div class="flex items-start gap-3">
             <div class="mt-0.5">
-              <UIcon
-                name="i-heroicons-information-circle-20-solid"
-                class="h-5 w-5 text-black/60 dark:text-white/60"
-              />
+              <UIcon name="i-heroicons-information-circle-20-solid" class="h-5 w-5 text-black/60 dark:text-white/60" />
             </div>
             <p class="text-sm md:text-base text-black/60 dark:text-white/60 max-w-3xl">
               This catalogue will be expanded with additional games over time.
             </p>
           </div>
         </div>
+      </div>
     </UContainer>
   </div>
 </template>

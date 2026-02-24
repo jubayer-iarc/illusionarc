@@ -25,7 +25,8 @@ const nav: AdminNavItem[] = [
   { label: 'Works', to: '/admin/works' },
   { label: 'Tournaments', to: '/admin/tournaments' },
   { label: 'Payments', to: '/admin/payments' },
-  { label: 'Subscriptions', to: '/admin/subscriptions' }
+  { label: 'Subscriptions', to: '/admin/subscriptions' },
+  { label: 'Catalogue', to: '/admin/catalogue' },
 ]
 
 const isActive = (item: AdminNavItem) => {
