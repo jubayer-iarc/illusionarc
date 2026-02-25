@@ -8,7 +8,11 @@
       "source": "/games/blink-maze/(.*)",
       "headers": [
         { "key": "Cross-Origin-Embedder-Policy", "value": "unsafe-none" },
-        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'self' https://illusionarc.com https://www.illusionarc.com;"
+        }
       ]
     },
     {
