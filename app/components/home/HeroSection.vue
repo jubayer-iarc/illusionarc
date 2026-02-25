@@ -1,5 +1,6 @@
 <!-- app/components/home/HeroSection.vue -->
 <script setup lang="ts">
+const route = useRoute()
 type HeroCTA = {
   label: string
   to: string
@@ -90,7 +91,7 @@ function btnProps(cta: HeroCTA) {
         <!-- ORB -->
         <div class="relative order-1 md:order-2 min-w-0" data-reveal>
           <ClientOnly>
-            <HeroOrb />
+            <HeroOrb :key="route.fullPath" />
           </ClientOnly>
 
           <!-- Glow edge -->

@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { PLACEHOLDER_IMG } from '~/constants/media'
 
-const { works } = useContent()
 useHead({ title: 'Work' })
+
+const { works, worksPending, worksError, refreshWorks } = useContent()
+
+// ✅ Ensure the request is triggered on first entry (SSR + client nav)
+await refreshWorks()
 
 function imageSrc(w: any) {
   const src = String(w?.hero?.src || '').trim()
@@ -19,33 +23,62 @@ function imageSrc(w: any) {
       </div>
     </div>
 
-    <!-- Empty state only if truly no items -->
+    <!-- ✅ Error state (otherwise errors look like empty DB) -->
     <div
-      v-if="(works?.length || 0) === 0"
-      class="mt-10 rounded-3xl border border-white/10 bg-white/5 p-10 text-center"
-      data-reveal
+        v-if="worksError"
+        class="mt-10 rounded-3xl border border-red-500/20 bg-red-500/10 p-8"
+        data-reveal
+    >
+      <div class="text-lg font-semibold">Couldn’t load works</div>
+      <div class="mt-2 text-sm opacity-80">
+        {{ String((worksError as any)?.message || worksError) }}
+      </div>
+      <UButton class="mt-4" variant="soft" @click="refreshWorks()">
+        Retry
+      </UButton>
+    </div>
+
+    <!-- ✅ Loading skeleton -->
+    <div v-else-if="worksPending" class="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-reveal>
+      <div
+          v-for="i in 6"
+          :key="i"
+          class="rounded-3xl border border-white/10 bg-white/5 p-4"
+      >
+        <div class="h-44 w-full rounded-xl border border-white/10 bg-white/10 animate-pulse" />
+        <div class="mt-4 h-4 w-2/3 rounded bg-white/10 animate-pulse" />
+        <div class="mt-2 h-3 w-full rounded bg-white/10 animate-pulse" />
+        <div class="mt-2 h-3 w-5/6 rounded bg-white/10 animate-pulse" />
+      </div>
+    </div>
+
+    <!-- ✅ Empty state only after loading finished -->
+    <div
+        v-else-if="(works?.length || 0) === 0"
+        class="mt-10 rounded-3xl border border-white/10 bg-white/5 p-10 text-center"
+        data-reveal
     >
       <div class="text-lg font-semibold">No work yet</div>
       <div class="mt-2 text-sm opacity-70">Add items from Admin → Works.</div>
     </div>
 
-    <!-- Real grid -->
+    <!-- ✅ Real grid -->
     <div v-else class="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-reveal>
       <NuxtLink
-        v-for="w in works"
-        :key="w.slug"
-        :to="`/work/${w.slug}`"
-        class="block"
+          v-for="w in works"
+          :key="w.slug"
+          :to="`/work/${w.slug}`"
+          class="block"
       >
         <UCard class="press bg-white/5 border-white/10 hover:border-white/20 transition overflow-hidden">
           <NuxtImg
-            :src="imageSrc(w)"
-            :alt="w?.hero?.alt || w?.title || 'Work'"
-            width="1600"
-            height="900"
-            sizes="(max-width: 768px) 100vw, 360px"
-            class="h-44 w-full object-cover rounded-xl border border-white/10 mb-3 bg-white/5"
-            loading="lazy"
+              :src="imageSrc(w)"
+              :alt="w?.hero?.alt || w?.title || 'Work'"
+              width="1600"
+              height="900"
+              sizes="(max-width: 768px) 100vw, 360px"
+              class="h-44 w-full object-cover rounded-xl border border-white/10 mb-3 bg-white/5"
+              loading="lazy"
           />
 
           <template #header>

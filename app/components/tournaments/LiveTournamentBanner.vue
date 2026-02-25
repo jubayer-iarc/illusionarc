@@ -1,4 +1,3 @@
-<!-- app/components/tournaments/LiveTournamentBanner.vue -->
 <script setup lang="ts">
 import { GAMES } from '~/data/games'
 import { TOURNAMENTS as FALLBACK } from '~/data/tournaments'
@@ -10,6 +9,8 @@ const { bySlug } = useTournaments()
 
 type AnyTournament = any
 const t = ref<AnyTournament | null>(null)
+
+const loading = ref(true) // ✅ NEW
 
 const now = ref(Date.now())
 let tickTimer: any = null
@@ -68,7 +69,7 @@ const windowText = computed(() => {
   const e = getEndsAt(t.value)
   if (!s || !e) return ''
   const fmt = (dt: string) =>
-    new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(dt))
+      new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(dt))
   return `Window: ${fmt(s)} → ${fmt(e)}`
 })
 
@@ -87,7 +88,6 @@ async function pickTournament() {
     details = (FALLBACK as any).find((x: any) => x.slug === first.tournamentSlug) || null
   }
 
-  // ✅ Hard guard: never show ended / invalid
   if (details && isLiveByTime(details)) t.value = details
   else t.value = null
 }
@@ -107,30 +107,27 @@ function startRefreshInterval(ms: number) {
 }
 
 onMounted(async () => {
-  // initial
+  // ✅ show skeleton first, then swap to real banner
+  loading.value = true
   await doRefresh(true)
+  loading.value = false
 
-  // tick each second
   tickTimer = setInterval(() => {
     now.value = Date.now()
-
-    // ended? hide instantly and refresh quickly
     if (t.value && endsIn.value <= 0) {
       t.value = null
       doRefresh(false)
     }
   }, 1000)
 
-  // smart refresh: 20s normally, 5s near start/end (2 min)
   watch(
-    nearBoundary,
-    (isNear) => {
-      startRefreshInterval(isNear ? 5_000 : 20_000)
-    },
-    { immediate: true }
+      nearBoundary,
+      (isNear) => {
+        startRefreshInterval(isNear ? 5_000 : 20_000)
+      },
+      { immediate: true }
   )
 
-  // refresh when returning to tab
   const onVis = () => {
     if (document.visibilityState === 'visible') doRefresh(false)
   }
@@ -146,68 +143,94 @@ onBeforeUnmount(() => {
   if (refreshTimer) clearInterval(refreshTimer)
 })
 
-// also re-pick when the live list changes
 watch(
-  () => rows.value,
-  async () => {
-    await pickTournament()
-  }
+    () => rows.value,
+    async () => {
+      await pickTournament()
+    }
 )
+
 function hardPlay(slug: string) {
   if (!import.meta.client) return
   const url = `/tournaments/embed/${encodeURIComponent(slug)}?boot=${Date.now()}`
-  window.location.assign(url) // ✅ real refresh navigation
+  window.location.assign(url)
 }
 </script>
 
 <template>
-  <div
-    v-if="t"
-    class="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3"
-  >
-    <!-- ✅ responsive: stacked on mobile -->
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-      <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
-        <span class="text-xs rounded-full px-2 py-1 bg-emerald-500/20 text-black-200 dark:text-emerald-200 w-max">
-          LIVE NOW
-        </span>
-
-        <div class="min-w-0">
-          <div class="text-sm font-semibold truncate">
-            {{ t.title || 'Live Tournament' }}
-          </div>
-
-          <div class="mt-1 text-sm opacity-90 truncate">
-            <span class="opacity-80">Game:</span>
-            <b class="ml-1">{{ gameName }}</b>
-            <span class="mx-2 opacity-40 hidden sm:inline">•</span>
-            <span class="opacity-80"> Ends in:</span>
-            <span class="font-mono ml-1">{{ msToClock(endsIn) }}</span>
-          </div>
-
-          <div v-if="windowText" class="mt-1 text-xs opacity-70 truncate">
-            {{ windowText }}
+  <!-- ✅ Always reserve space to avoid "sudden" appearance / header jump -->
+  <div class="min-h-[76px]">
+    <!-- Loading skeleton (client) -->
+    <div
+        v-if="loading"
+        class="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3"
+        aria-label="Loading live tournament"
+    >
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
+          <div class="h-6 w-20 rounded-full bg-black/10 dark:bg-white/10 animate-pulse" />
+          <div class="min-w-0 flex-1">
+            <div class="h-4 w-56 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
+            <div class="mt-2 h-4 w-72 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
           </div>
         </div>
-      </div>
-
-      <!-- ✅ buttons full-width on mobile -->
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-        <UButton
-          :to="`/tournaments/${t.slug}`"
-          variant="soft"
-          class="!rounded-full w-full sm:w-auto"
-        >
-          Details
-        </UButton>
-
-        <UButton
-          @click="hardPlay(t.slug)"
-          class="!rounded-full w-full sm:w-auto"
-        >
-          Play
-        </UButton>
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div class="h-9 w-full sm:w-24 rounded-full bg-black/10 dark:bg-white/10 animate-pulse" />
+          <div class="h-9 w-full sm:w-20 rounded-full bg-black/10 dark:bg-white/10 animate-pulse" />
+        </div>
       </div>
     </div>
+
+    <!-- Live banner -->
+    <div
+        v-else-if="t"
+        class="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3"
+    >
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
+          <span class="text-xs rounded-full px-2 py-1 bg-emerald-500/20 text-black-200 dark:text-emerald-200 w-max">
+            LIVE NOW
+          </span>
+
+          <div class="min-w-0">
+            <div class="text-sm font-semibold truncate">
+              {{ t.title || 'Live Tournament' }}
+            </div>
+
+            <div class="mt-1 text-sm opacity-90 truncate">
+              <span class="opacity-80">Game:</span>
+              <b class="ml-1">{{ gameName }}</b>
+              <span class="mx-2 opacity-40 hidden sm:inline">•</span>
+              <span class="opacity-80"> Ends in:</span>
+              <span class="font-mono ml-1">{{ msToClock(endsIn) }}</span>
+            </div>
+
+            <div v-if="windowText" class="mt-1 text-xs opacity-70 truncate">
+              {{ windowText }}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <UButton
+              :to="`/tournaments/${t.slug}`"
+              variant="soft"
+              class="!rounded-full w-full sm:w-auto"
+          >
+            Details
+          </UButton>
+
+          <UButton
+              @click="hardPlay(t.slug)"
+              class="!rounded-full w-full sm:w-auto"
+          >
+            Play
+          </UButton>
+        </div>
+      </div>
+    </div>
+
+    <!-- No live tournament: keep space but show nothing (stable header) -->
+    <div v-else />
   </div>
 </template>
