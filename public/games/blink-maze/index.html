@@ -26,7 +26,7 @@
   <!-- Replace with your game URL -->
   <iframe
     id="game"
-    src="blink-maze.illusionarc.com"
+    src="https://blink-maze.illusionarc.com"
     allow="autoplay; fullscreen"
     allowfullscreen
     webkitallowfullscreen
@@ -35,7 +35,7 @@
 
   <script>
     // Only accept messages from the Vercel game
-    const GAME_ORIGIN = "blink-maze.illusionarc.com";
+    const GAME_ORIGIN = "https://blink-maze.illusionarc.com";
 
     window.addEventListener("message", (e) => {
       if (e.origin !== GAME_ORIGIN) return;

@@ -5,6 +5,13 @@
   ],
   "headers": [
     {
+      "source": "/games/blink-maze/(.*)",
+      "headers": [
+        { "key": "Cross-Origin-Embedder-Policy", "value": "unsafe-none" },
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }
+      ]
+    },
+    {
       "source": "/games/(.*)",
       "headers": [
         { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
