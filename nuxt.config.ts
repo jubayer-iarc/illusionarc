@@ -116,8 +116,8 @@ export default defineNuxtConfig({
 
     headers: {
       // ✅ Keep these off unless you specifically need cross-origin isolation
-      crossOriginEmbedderPolicy: false,
-      crossOriginOpenerPolicy: false,
+      // crossOriginEmbedderPolicy: false,
+      // crossOriginOpenerPolicy: false,
 
       /**
        * ✅ IMPORTANT:
