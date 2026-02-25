@@ -181,7 +181,7 @@ function hardPlay(slug: string) {
             <span class="opacity-80">Game:</span>
             <b class="ml-1">{{ gameName }}</b>
             <span class="mx-2 opacity-40 hidden sm:inline">•</span>
-            <span class="opacity-80">Ends in:</span>
+            <span class="opacity-80"> Ends in:</span>
             <span class="font-mono ml-1">{{ msToClock(endsIn) }}</span>
           </div>
 
