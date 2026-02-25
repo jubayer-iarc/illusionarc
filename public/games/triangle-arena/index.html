@@ -12,14 +12,14 @@
 <body>
   <iframe
     id="game"
-    src="https://neon-polarity.illusionarc.com"
+    src="https://triangle-arena.illusionarc.com"
     allow="autoplay; fullscreen"
     allowfullscreen
   ></iframe>
 
   <script>
     // Only accept messages from the actual game origin
-    const GAME_ORIGIN = "https://neon-polarity.illusionarc.com";
+    const GAME_ORIGIN = "https://triangle-arena.illusionarc.com";
 
     window.addEventListener("message", (e) => {
       if (e.origin !== GAME_ORIGIN) return;

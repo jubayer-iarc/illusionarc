@@ -157,5 +157,22 @@ export const GAMES: ArcadeGame[] = [
     difficulty: 'Easy',
     estTime: '2–5m',
     pro: false
+  },
+  {
+    name: 'Triangle Arena',
+    slug: 'triangle-arena',
+    thumbnail: '/img/triangle-arena/triangle-arena-thumbnail.jpeg',
+    shortPitch: 'Dice-based strategy game—connect dots to complete triangles and outscore your opponent.',
+    description: 'Roll the dice, draw that many lines between neighboring dots, and claim triangles the moment you close them. No crossing, no repeats—most triangles wins.',
+    controls: ['Drag and Click to draw lines', 'Complete triangles to score points'],
+    buildType: 'iframe',
+    sourceUrl: '/games/triangle-arena/index.html',
+    embedAllowed: true,
+    embed: { aspectRatio: '16/9', minHeight: 520, orientation: 'any' },
+    leaderboard: true,
+    genre: 'Arcade',
+    difficulty: 'Easy',
+    estTime: '2–5m',
+    pro: false
   }
 ]
