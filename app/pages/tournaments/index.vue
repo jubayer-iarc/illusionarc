@@ -60,14 +60,25 @@ function fmt(dt: string) {
   if (Number.isNaN(d.getTime())) return ''
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d)
 }
-function msToClock(ms: number) {
-  if (!Number.isFinite(ms) || ms <= 0) return '00:00:00'
-  const total = Math.floor(ms / 1000)
-  const h = String(Math.floor(total / 3600)).padStart(2, '0')
-  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0')
-  const s = String(total % 60).padStart(2, '0')
-  return `${h}:${m}:${s}`
+
+/** ✅ Day:Hour:Minute:Second format */
+function msToDHMS(ms: number) {
+  if (!Number.isFinite(ms) || ms <= 0) return '0D:00H:00M:00S'
+  const totalSeconds = Math.floor(ms / 1000)
+
+  const days = Math.floor(totalSeconds / 86400)
+  const remAfterDays = totalSeconds % 86400
+
+  const hours = Math.floor(remAfterDays / 3600)
+  const remAfterHours = remAfterDays % 3600
+
+  const minutes = Math.floor(remAfterHours / 60)
+  const seconds = remAfterHours % 60
+
+  const pad2 = (n: number) => String(n).padStart(2, '0')
+  return `${days}D:${pad2(hours)}H:${pad2(minutes)}M:${pad2(seconds)}S`
 }
+
 function startsIn(t: AnyTournament) {
   return new Date(getStartsAt(t)).getTime() - now.value
 }
@@ -244,6 +255,11 @@ const counts = computed(() => {
   }
 })
 
+/** ✅ mobile compact header counts */
+const countsText = computed(() => {
+  return `Total ${counts.value.all} • Live ${counts.value.live} • Upcoming ${counts.value.scheduled} • Ended ${counts.value.ended}`
+})
+
 function chipClass(active: boolean) {
   return active
     ? 'border-black/15 bg-black/5 text-black dark:border-white/15 dark:bg-white/10 dark:text-white'
@@ -310,6 +326,11 @@ function windowText(t: AnyTournament) {
           <p class="mt-2 max-w-2xl text-sm sm:text-base text-black/70 dark:text-white/75">
             Discover live runs, upcoming windows, and ended results — all in one place.
           </p>
+
+          <!-- ✅ Mobile compact counts (single line) -->
+          <div class="mt-3 sm:hidden text-[11px] text-black/60 dark:text-white/60">
+            {{ countsText }}
+          </div>
         </div>
 
         <div class="flex items-center gap-2">
@@ -330,8 +351,8 @@ function windowText(t: AnyTournament) {
         </div>
       </div>
 
-      <!-- Stats row -->
-      <div class="relative mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <!-- ✅ Desktop-only Stats row (unchanged) -->
+      <div class="relative mt-5 hidden sm:grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-2xl border border-black/10 bg-black/5 p-4 dark:border-white/10 dark:bg-black/20">
           <div class="text-xs text-black/60 dark:text-white/60">Total</div>
           <div class="mt-1 text-2xl font-bold text-black dark:text-white">{{ counts.all }}</div>
@@ -503,15 +524,14 @@ function windowText(t: AnyTournament) {
                 <div v-else class="absolute inset-0 bg-gradient-to-br from-black/10 via-black/5 to-transparent dark:from-white/10 dark:via-white/5"></div>
                 <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
 
-                <div class="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs"
-                     :class="'text-emerald-700 dark:text-emerald-200'">
+                <div class="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700 dark:text-emerald-200">
                   <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
                   LIVE
                 </div>
 
                 <div class="absolute right-3 top-3 rounded-full border border-black/10 bg-white/70 px-3 py-1 text-xs text-black/90
                             dark:border-white/10 dark:bg-black/45 dark:text-white/90">
-                  Ends in <span class="font-mono font-semibold">{{ msToClock(endsIn(t)) }}</span>
+                  Ends in <span class="font-mono font-semibold">{{ msToDHMS(endsIn(t)) }}</span>
                 </div>
 
                 <div class="absolute bottom-3 left-3 right-3">
@@ -597,7 +617,7 @@ function windowText(t: AnyTournament) {
                   class="absolute right-3 top-3 rounded-full border border-black/10 bg-white/70 px-2.5 py-1 text-xs text-black/85
                          dark:border-white/10 dark:bg-black/45 dark:text-white/85"
                 >
-                  Starts in <span class="font-mono font-semibold">{{ msToClock(startsIn(t)) }}</span>
+                  Starts in <span class="font-mono font-semibold">{{ msToDHMS(startsIn(t)) }}</span>
                 </div>
 
                 <div
@@ -605,7 +625,7 @@ function windowText(t: AnyTournament) {
                   class="absolute right-3 top-3 rounded-full border border-black/10 bg-white/70 px-2.5 py-1 text-xs text-black/85
                          dark:border-white/10 dark:bg-black/45 dark:text-white/85"
                 >
-                  Ends in <span class="font-mono font-semibold">{{ msToClock(endsIn(t)) }}</span>
+                  Ends in <span class="font-mono font-semibold">{{ msToDHMS(endsIn(t)) }}</span>
                 </div>
 
                 <div class="absolute bottom-3 left-3 right-3">
