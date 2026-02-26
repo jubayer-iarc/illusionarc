@@ -1,74 +1,123 @@
-export default defineNuxtPlugin(() => {
-    const isLoading = useState<boolean>('route:isLoading', () => false)
-    const progress = useState<number>('route:progress', () => 0)
+export default defineNuxtPlugin((nuxtApp) => {
+  if (!import.meta.client) return
 
-    let interval: number | null = null
-    let safety: number | null = null
+  const isLoading = useState<boolean>('route:isLoading', () => false)
+  const progress = useState<number>('route:progress', () => 0)
 
-    // increments on each nav so old timers can't "win"
-    let navId = 0
+  let timer: number | null = null
+  let showDelay: number | null = null
+  let safety: number | null = null
 
-    function clearAll() {
-        if (interval) window.clearInterval(interval)
-        if (safety) window.clearTimeout(safety)
-        interval = null
-        safety = null
+  // track both page loading and transition
+  let loadDepth = 0
+  let transitionDepth = 0
+
+  // min show time to prevent flash + “late swap” feeling
+  const MIN_VISIBLE_MS = 320
+  const SHOW_DELAY_MS = 120
+  let shownAt = 0
+
+  function clearAll() {
+    if (timer) window.clearInterval(timer)
+    if (showDelay) window.clearTimeout(showDelay)
+    if (safety) window.clearTimeout(safety)
+    timer = null
+    showDelay = null
+    safety = null
+  }
+
+  function startProgress() {
+    clearAll()
+
+    // delay showing (prevents flash on instant navigations)
+    showDelay = window.setTimeout(() => {
+      isLoading.value = true
+      shownAt = Date.now()
+      progress.value = Math.max(progress.value, 0.08)
+
+      // smooth fake progress until we finish
+      timer = window.setInterval(() => {
+        const p = progress.value
+        progress.value = Math.min(0.92, p + (0.92 - p) * 0.12)
+      }, 120)
+    }, SHOW_DELAY_MS)
+
+    // hard failsafe: never stuck forever
+    safety = window.setTimeout(() => {
+      forceFinish()
+    }, 20000)
+  }
+
+  function maybeFinish() {
+    // only finish when BOTH are done
+    if (loadDepth > 0 || transitionDepth > 0) return
+
+    // if not yet shown (still in showDelay), just cancel
+    if (!isLoading.value) {
+      clearAll()
+      progress.value = 0
+      return
     }
 
-    function startLoading() {
-        navId++
-        const myNav = navId
+    const elapsed = Date.now() - shownAt
+    const wait = Math.max(0, MIN_VISIBLE_MS - elapsed)
 
-        clearAll()
-        isLoading.value = true
-        progress.value = 0.08
+    window.setTimeout(() => {
+      // re-check in case a new nav started
+      if (loadDepth > 0 || transitionDepth > 0) return
 
-        // fake smooth progress up to ~92%
-        interval = window.setInterval(() => {
-            if (myNav !== navId) return
-            const p = progress.value
-            progress.value = Math.min(0.92, p + (0.92 - p) * 0.12)
-        }, 120)
+      clearAll()
+      progress.value = 1
 
-        // ✅ failsafe: even if events don't fire, never stay stuck forever
-        safety = window.setTimeout(() => {
-            if (myNav !== navId) return
-            finishLoading()
-        }, 15000) // 15s max
+      window.setTimeout(() => {
+        isLoading.value = false
+        progress.value = 0
+      }, 160)
+    }, wait)
+  }
+
+  function forceFinish() {
+    loadDepth = 0
+    transitionDepth = 0
+    if (!isLoading.value) {
+      clearAll()
+      progress.value = 0
+      return
     }
+    clearAll()
+    progress.value = 1
+    window.setTimeout(() => {
+      isLoading.value = false
+      progress.value = 0
+    }, 160)
+  }
 
-    function finishLoading() {
-        navId++
-        const myNav = navId
+  // ✅ Nuxt page loading hooks (best for asyncData/navigation)
+  nuxtApp.hook('page:loading:start', () => {
+    loadDepth++
+    if (loadDepth + transitionDepth === 1) startProgress()
+  })
 
-        clearAll()
-        progress.value = 1
+  nuxtApp.hook('page:loading:end', () => {
+    loadDepth = Math.max(0, loadDepth - 1)
+    maybeFinish()
+  })
 
-        window.setTimeout(() => {
-            // if another nav started, don't hide
-            if (myNav !== navId) return
-            isLoading.value = false
-            progress.value = 0
-        }, 180)
-    }
+  // ✅ Transition hooks (you use out-in transitions)
+  nuxtApp.hook('page:transition:start', () => {
+    transitionDepth++
+    if (loadDepth + transitionDepth === 1) startProgress()
+  })
 
-    const nuxtApp = useNuxtApp()
+  nuxtApp.hook('page:transition:finish', () => {
+    transitionDepth = Math.max(0, transitionDepth - 1)
+    maybeFinish()
+  })
 
-    // ✅ Nuxt v4 recommended hooks
-    nuxtApp.hook('page:loading:start', startLoading) // when new page setup starts
-    nuxtApp.hook('page:loading:end', finishLoading)  // after page resolved :contentReference[oaicite:1]{index=1}
-    nuxtApp.hook('page:transition:finish', finishLoading) // after leave transition :contentReference[oaicite:2]{index=2}
-    nuxtApp.hook('app:error', finishLoading) // don’t get stuck on errors :contentReference[oaicite:3]{index=3}
+  // ✅ errors/abort shouldn't leave loader weird
+  nuxtApp.hook('app:error', forceFinish)
 
-    // ✅ Extra fallback: router afterEach (covers odd cases)
-    const router = useRouter()
-    router.afterEach((_to, _from, failure) => {
-        if (!failure) finishLoading()
-    })
-
-    return {
-        provide: {
-            routeLoader: { isLoading, progress }
-        }
-    }
+  return {
+    provide: { routeLoader: { isLoading, progress } }
+  }
 })
