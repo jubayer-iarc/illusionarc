@@ -13,9 +13,9 @@ const { settings } = useSiteSettings()
 function normalizeNav(list: any): NavItem[] {
   if (!Array.isArray(list)) return []
   return list
-      .filter((x) => x && typeof x.label === 'string' && typeof x.to === 'string')
-      .filter((x) => x.enabled !== false)
-      .filter((x) => x.to !== '/contact')
+    .filter((x) => x && typeof x.label === 'string' && typeof x.to === 'string')
+    .filter((x) => x.enabled !== false)
+    .filter((x) => x.to !== '/contact')
 }
 
 const desktopNav = computed(() => normalizeNav((settings.value as any).header_nav))
@@ -66,21 +66,24 @@ const year = new Date().getFullYear()
   <div class="hidden md:flex min-h-dvh flex-col bg-[var(--app-bg)] text-[var(--app-fg)]">
     <!-- Header -->
     <header
-        class="sticky top-0 z-50 backdrop-blur
+      class="sticky top-0 z-50 backdrop-blur
              border-b border-black/10 dark:border-white/5
              bg-white/70 dark:bg-black/25"
     >
-      <UContainer class="py-3 flex flex-col gap-3">
-        <!-- Live tournament banner (global) -->
-        <LiveTournamentBanner />
+      <!-- ✅ No flex-col gap here; banner adds spacing only when it renders -->
+      <UContainer class="py-3">
+        <!-- Live tournament banner (global)
+             ✅ Give it margin, but it will only apply if the component actually renders a root element.
+             IMPORTANT: LiveTournamentBanner.vue must return NO DOM when not live (v-if on root). -->
+        <LiveTournamentBanner class="mb-3" />
 
         <!-- Header row -->
         <div class="flex items-center justify-between gap-3">
           <NuxtLink to="/" class="flex items-center gap-2 min-w-0">
             <img
-                :src="settings.brand_logo_url || '/android-chrome-512x512.png'"
-                :alt="`${settings.brand_name || 'illusion Arc'} Logo`"
-                class="h-8 w-8 object-contain"
+              :src="settings.brand_logo_url || '/android-chrome-512x512.png'"
+              :alt="`${settings.brand_name || 'illusion Arc'} Logo`"
+              class="h-8 w-8 object-contain"
             />
             <span class="font-semibold tracking-wide truncate">
               {{ settings.brand_name || 'illusion Arc' }}
@@ -128,18 +131,18 @@ const year = new Date().getFullYear()
           <div class="text-black/60 dark:text-white/60 mb-2">Links</div>
           <div class="flex flex-col gap-1">
             <NuxtLink
-                v-for="l in footerLinks"
-                :key="l.label + l.to"
-                :to="l.to"
-                class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
+              v-for="l in footerLinks"
+              :key="l.label + l.to"
+              :to="l.to"
+              class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
             >
               {{ l.label }}
             </NuxtLink>
 
             <NuxtLink
-                v-if="footerLinks.length === 0"
-                to="/"
-                class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
+              v-if="footerLinks.length === 0"
+              to="/"
+              class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
             >
               Home
             </NuxtLink>
@@ -150,18 +153,18 @@ const year = new Date().getFullYear()
           <div class="text-black/60 dark:text-white/60 mb-2">Legal</div>
           <div class="flex flex-col gap-1">
             <NuxtLink
-                v-for="l in footerLegal"
-                :key="l.label + l.to"
-                :to="l.to"
-                class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
+              v-for="l in footerLegal"
+              :key="l.label + l.to"
+              :to="l.to"
+              class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
             >
               {{ l.label }}
             </NuxtLink>
 
             <NuxtLink
-                v-if="footerLegal.length === 0"
-                to="/privacy-policy"
-                class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
+              v-if="footerLegal.length === 0"
+              to="/privacy-policy"
+              class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
             >
               Privacy Policy
             </NuxtLink>
@@ -171,7 +174,7 @@ const year = new Date().getFullYear()
 
       <!-- Footer bottom bar -->
       <UContainer
-          class="py-4 border-t border-black/10 dark:border-white/5
+        class="py-4 border-t border-black/10 dark:border-white/5
                flex flex-col sm:flex-row sm:items-center justify-between gap-3"
       >
         <div class="text-xs text-black/50 dark:text-white/50">
@@ -180,11 +183,11 @@ const year = new Date().getFullYear()
 
         <ClientOnly>
           <UButton
-              variant="soft"
-              size="sm"
-              class="rounded-full"
-              :title="`Theme: ${themeLabel} (click to change)`"
-              @click="cycleTheme"
+            variant="soft"
+            size="sm"
+            class="rounded-full"
+            :title="`Theme: ${themeLabel} (click to change)`"
+            @click="cycleTheme"
           >
             <UIcon :name="themeIcon" class="w-5 h-5" />
             <span class="ml-2">Theme: {{ themeLabel }}</span>

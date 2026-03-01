@@ -165,11 +165,14 @@ function hardPlay(slug: string) {
   const url = `/tournaments/embed/${encodeURIComponent(slug)}?boot=${Date.now()}`
   window.location.assign(url)
 }
+
+/* ✅ Only render a root element when needed */
+const showBanner = computed(() => loading.value || !!t.value)
 </script>
 
 <template>
-  <!-- Reserve LESS space on mobile, more on desktop -->
-  <div class="min-h-[44px] md:min-h-[76px]">
+  <!-- ✅ When nothing is live and not loading: render NOTHING (no reserved space) -->
+  <div v-if="showBanner">
     <!-- Loading skeleton -->
     <div
       v-if="loading"
@@ -259,25 +262,15 @@ function hardPlay(slug: string) {
         </div>
 
         <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <UButton
-            :to="`/tournaments/${t.slug}`"
-            variant="soft"
-            class="!rounded-full w-full sm:w-auto"
-          >
+          <UButton :to="`/tournaments/${t.slug}`" variant="soft" class="!rounded-full w-full sm:w-auto">
             Details
           </UButton>
 
-          <UButton
-            @click="hardPlay(t.slug)"
-            class="!rounded-full w-full sm:w-auto"
-          >
+          <UButton @click="hardPlay(t.slug)" class="!rounded-full w-full sm:w-auto">
             Play
           </UButton>
         </div>
       </div>
     </div>
-
-    <!-- No live tournament -->
-    <div v-else />
   </div>
 </template>
