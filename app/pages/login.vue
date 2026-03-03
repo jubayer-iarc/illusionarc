@@ -137,12 +137,6 @@ const canSubmit = computed(() => {
   return true
 })
 
-/* ---------------- Forgot password link ---------------- */
-const forgetPasswordUrl = computed(() => {
-  const e = email.value.trim()
-  return e ? `/forget-password?email=${encodeURIComponent(e)}` : '/forget-password'
-})
-
 async function getRole(): Promise<'admin' | 'user' | null> {
   try {
     const res = await $fetch<RoleResponse>('/api/auth/role')
@@ -547,23 +541,13 @@ function continueBrowsing() {
                     :autocomplete="mode === 'signin' ? 'current-password' : 'new-password'"
                     icon="i-heroicons-key"
                   />
-
                   <div class="mt-2 flex items-center justify-between">
                     <!-- ✅ type="button" so Enter doesn't trigger this -->
                     <UButton type="button" size="xs" variant="ghost" @click="showPass = !showPass">
                       <UIcon :name="showPass ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'" class="w-4 h-4" />
                       {{ showPass ? 'Hide' : 'Show' }}
                     </UButton>
-
-                    <!-- ✅ Forgot password (signin only) -->
-                    <NuxtLink
-                      v-if="mode === 'signin'"
-                      :to="forgetPasswordUrl"
-                      class="forgotLink"
-                      @click.prevent="navigateTo(forgetPasswordUrl)"
-                    >
-                      Forgot password?
-                    </NuxtLink>
+                    <div class="text-xs opacity-60">Min 6 chars</div>
                   </div>
                 </UFormGroup>
 
@@ -633,19 +617,4 @@ function continueBrowsing() {
 .divider { position: relative; padding: 0.6rem 0; display: flex; justify-content: center; }
 .divider::before { content: ''; position: absolute; inset: 50% 0 auto; height: 1px; background: rgba(255, 255, 255, 0.1); }
 .divider span { position: relative; padding: 0 0.75rem; background: rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 9999px; }
-
-/* ✅ tiny link style (keeps your look) */
-.forgotLink {
-  font-size: 0.75rem;
-  opacity: 0.75;
-  text-decoration: none;
-  padding: 0.25rem 0.35rem;
-  border-radius: 0.75rem;
-  transition: opacity 0.16s ease, background 0.16s ease, transform 0.16s ease;
-}
-.forgotLink:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.06);
-  transform: translateY(-1px);
-}
 </style>
