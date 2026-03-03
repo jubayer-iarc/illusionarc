@@ -34,7 +34,13 @@ export const GAMES: ArcadeGame[] = [
     shortPitch: 'A fast-paced neon bullet-hell where you dodge, react, and survive endless boss battles to the rhythm.',
     description:
       'Boss Rush: Neon Arena throws you into a pulse-pounding synthwave battlefield where every second tests your reflex. Face relentless bosses, dodge cinematic attacks, and master rhythm-driven survival with minimal controls. Experience glowing visuals, adaptive difficulty, and fast, intense gameplay built for quick mobile sessions. Survive. Adapt. Repeat.',
-    controls: ['Tap / click to dodge', 'Survive as long as possible'],
+    controls: [
+      'Tap / click left or right to dodge (quick dash).',
+      'Keyboard: Left Arrow / Right Arrow — dodge left/right.',
+      'Dodge boss bullets and survive as long as possible.',
+      'Collect power-ups: Slow Mo, Shield, Magnet (temporary boosts).',
+      'Collect as many coins as you can.'
+    ],
     buildType: 'iframe',
     sourceUrl: '/games/boss-rush/index.html',
     embedAllowed: true,

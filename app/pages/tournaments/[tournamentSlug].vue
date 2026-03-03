@@ -180,6 +180,30 @@ const statusBadge = computed(() => {
   }
 })
 
+/* ---------------- How to play (highlighted) ---------------- */
+const howToPlayTitle = computed(() => {
+  const g: any = game.value
+  return g?.name ? `How to Play — ${g.name}` : 'How to Play'
+})
+const howToPlaySteps = computed<string[]>(() => {
+  const g: any = game.value
+  const steps = Array.isArray(g?.controls) ? g.controls.map((x: any) => String(x).trim()).filter(Boolean) : []
+  return steps.length ? steps : ['Controls info coming soon.']
+})
+const howToPlaySummary = computed(() => {
+  const g: any = game.value
+  const d = String(g?.description || '').trim()
+  if (!d) return ''
+  return d.length > 220 ? d.slice(0, 220).trim() + '…' : d
+})
+const tournamentRules = computed(() => {
+  const rules: string[] = []
+  rules.push('Play only during the LIVE window.')
+  rules.push('You must be logged in to participate.')
+  rules.push('An active subscription is required to submit scores.')
+  return rules
+})
+
 /* ---------------- Thumbnail ---------------- */
 const fallbackThumb = '/img/placeholders/tournament.jpg'
 const thumb = computed(() => {
@@ -657,6 +681,85 @@ function statusLine() {
         </div>
       </div>
 
+      <!-- ===== Highlighted How to Play ===== -->
+      <div
+        class="mt-8 rounded-3xl border bg-gradient-to-br
+               border-violet-400/40 dark:border-violet-400/25
+               from-violet-500/15 via-fuchsia-500/10 to-emerald-500/10
+               p-1 shadow-sm shadow-black/10 dark:shadow-none"
+      >
+        <div class="rounded-[22px] bg-white/80 dark:bg-black/20 backdrop-blur p-6">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="inline-flex items-center gap-2 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-[11px] font-semibold text-violet-800 dark:text-violet-200">
+                <span class="inline-flex h-2 w-2 rounded-full bg-violet-500 animate-pulse" />
+                HIGHLIGHT
+              </div>
+
+              <h2 class="mt-3 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                {{ howToPlayTitle }}
+              </h2>
+
+              <p v-if="howToPlaySummary" class="mt-2 text-sm text-gray-700 dark:text-gray-300 max-w-3xl">
+                {{ howToPlaySummary }}
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <UIcon name="i-heroicons-academic-cap" class="h-6 w-6 text-violet-700 dark:text-violet-200" />
+              <UIcon name="i-heroicons-sparkles" class="h-6 w-6 text-emerald-700 dark:text-emerald-200" />
+            </div>
+          </div>
+
+          <div class="mt-5 grid gap-4 md:grid-cols-2">
+            <!-- Controls -->
+            <div class="rounded-2xl border border-gray-200/70 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">Controls</div>
+                <span class="text-[11px] text-gray-500 dark:text-gray-400">From games.ts</span>
+              </div>
+
+              <ul class="mt-4 space-y-2.5">
+                <li v-for="(c, i) in howToPlaySteps" :key="`ctl-${i}`" class="flex gap-3">
+                  <span class="mt-2 h-2 w-2 rounded-full bg-violet-500 shrink-0" />
+                  <span class="text-sm text-gray-700 dark:text-gray-300 leading-snug">{{ c }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Tournament rules -->
+            <div class="rounded-2xl border border-gray-200/70 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">Tournament rules</div>
+                <span class="text-[11px] text-gray-500 dark:text-gray-400">Participation</span>
+              </div>
+
+              <ul class="mt-4 space-y-2.5">
+                <li v-for="(r, i) in tournamentRules" :key="`rule-${i}`" class="flex gap-3">
+                  <span class="mt-2 h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span class="text-sm text-gray-700 dark:text-gray-300 leading-snug">{{ r }}</span>
+                </li>
+              </ul>
+
+              <div
+                v-if="isLive && !canPlay"
+                class="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100"
+              >
+                <template v-if="!user">Log in to play this tournament.</template>
+                <template v-else>Activate subscription to play & submit scores.</template>
+              </div>
+
+              <div
+                v-else-if="canPlay"
+                class="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-100"
+              >
+                You’re ready. Tap <b>Play Now</b> above and start your run.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Winners (ENDED only) -->
       <div
         v-if="isEnded"
@@ -899,7 +1002,6 @@ function statusLine() {
                 <UIcon name="i-heroicons-credit-card" class="h-5 w-5" />
                 View plans
               </UButton>
-
 
               <UButton v-if="showArcadeBtn" :to="`/arcade/${getGameSlug(t)}`" variant="soft" class="!rounded-full">
                 <UIcon name="i-heroicons-rectangle-group" class="h-5 w-5" />
