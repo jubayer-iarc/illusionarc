@@ -9,7 +9,7 @@ definePageMeta({
   layout: 'embed',
   ssr: false,
   keepalive: false,
-  middleware: 'subscription-required' // ✅ protect route here only
+  middleware: 'subscription-required'
 })
 
 const route = useRoute()
@@ -28,9 +28,11 @@ const loading = ref(true)
 const err = ref<string | null>(null)
 
 const now = ref(Date.now())
-let tick: any = null
-onMounted(() => (tick = setInterval(() => (now.value = Date.now()), 1000)))
-onBeforeUnmount(() => tick && clearInterval(tick))
+let tick: ReturnType<typeof setInterval> | null = null
+
+const rootEl = ref<HTMLElement | null>(null)
+const isFullscreen = ref(false)
+const fullscreenHistoryArmed = ref(false)
 
 /* ---------------- Helpers ---------------- */
 function getGameSlug(x: AnyTournament) {
@@ -97,13 +99,69 @@ const game = computed(() => {
 
 useHead(() => ({
   title: t.value ? `${t.value.title} — Play` : 'Tournament — Play',
-  meta: [{ name: 'robots', content: 'noindex' }]
+  meta: [
+    { name: 'robots', content: 'noindex' },
+    {
+      name: 'viewport',
+      content:
+        'width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no'
+    },
+    { name: 'mobile-web-app-capable', content: 'yes' },
+    { name: 'apple-mobile-web-app-capable', content: 'yes' }
+  ]
 }))
 
 /* ---------------- Force GamePlayer Remount ---------------- */
 const playerMountKey = ref(0)
 function refreshPlayerMount() {
   playerMountKey.value = Date.now()
+}
+
+/* ---------------- Fullscreen ---------------- */
+function syncFullscreenState() {
+  isFullscreen.value = !!document.fullscreenElement
+}
+
+function armMobileBackExit() {
+  if (fullscreenHistoryArmed.value) return
+  history.pushState({ tournamentFullscreen: true }, '')
+  fullscreenHistoryArmed.value = true
+}
+
+function disarmMobileBackExit() {
+  fullscreenHistoryArmed.value = false
+}
+
+async function enterFullscreen() {
+  try {
+    const el = rootEl.value || document.documentElement
+    if (!document.fullscreenElement) {
+      await el.requestFullscreen()
+    }
+    syncFullscreenState()
+    armMobileBackExit()
+  } catch (e: any) {
+    toast.add({
+      title: 'Fullscreen unavailable',
+      description: e?.message || 'Your browser blocked fullscreen mode.',
+      color: 'warning'
+    })
+  }
+}
+
+async function exitFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+    }
+  } catch {}
+  syncFullscreenState()
+  disarmMobileBackExit()
+}
+
+async function toggleFullscreen() {
+  if (isFullscreen.value) await exitFullscreen()
+  else await enterFullscreen()
 }
 
 /* ---------------- Load Tournament ---------------- */
@@ -114,6 +172,7 @@ async function loadTournamentSafe() {
     const api = await bySlug(tournamentSlug.value)
     if (api) return api
   } catch {}
+
   return (
     (FALLBACK as any).find(
       (x: any) => x.slug === tournamentSlug.value
@@ -152,32 +211,23 @@ async function init() {
   }
 }
 
-onMounted(async () => {
-  refreshPlayerMount()
-  await init()
-})
-
-watch(
-  () => tournamentSlug.value,
-  async () => {
-    refreshPlayerMount()
-    await init()
-  }
-)
-
-watch(isPlayable, (v, prev) => {
-  if (!prev && v) refreshPlayerMount()
-})
-
 /* ---------------- Navigation ---------------- */
-function goBack() {
-  if (history.length > 1) router.back()
-  else navigateTo(`/tournaments/${tournamentSlug.value}`)
+async function closePage() {
+  if (isFullscreen.value) {
+    await exitFullscreen()
+  }
+
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    await navigateTo(`/tournaments/${tournamentSlug.value}`)
+  }
 }
 
 /* ---------------- Score Submit ---------------- */
 async function onScore(score: number) {
   if (!isPlayable.value) return
+
   try {
     await $fetch('/api/tournaments/submit', {
       method: 'POST',
@@ -192,142 +242,213 @@ async function onScore(score: number) {
     })
   }
 }
+
+/* ---------------- Lifecycle ---------------- */
+function onFullscreenChange() {
+  syncFullscreenState()
+  if (!isFullscreen.value) {
+    disarmMobileBackExit()
+  }
+}
+
+async function onPopState() {
+  if (isFullscreen.value) {
+    await exitFullscreen()
+    history.pushState(null, '')
+  }
+}
+
+onMounted(async () => {
+  tick = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+
+  document.addEventListener('fullscreenchange', onFullscreenChange)
+  window.addEventListener('popstate', onPopState)
+
+  refreshPlayerMount()
+  await init()
+})
+
+onBeforeUnmount(() => {
+  if (tick) clearInterval(tick)
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  window.removeEventListener('popstate', onPopState)
+})
+
+watch(
+  () => tournamentSlug.value,
+  async () => {
+    refreshPlayerMount()
+    await init()
+  }
+)
+
+watch(isPlayable, (v, prev) => {
+  if (!prev && v) {
+    refreshPlayerMount()
+  }
+})
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black text-white">
-    <!-- Top bar -->
+  <div
+    ref="rootEl"
+    class="fixed inset-0 z-[9999] overflow-hidden bg-black text-white"
+  >
+    <!-- Top bar: hidden only when fullscreen is active -->
     <div
+      v-if="!isFullscreen"
       class="absolute left-0 right-0 top-0 z-[220] border-b border-white/10 bg-black/70 backdrop-blur"
       :style="{ paddingTop: 'env(safe-area-inset-top)' }"
     >
       <div class="h-14 px-3 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2 min-w-0">
-          <UButton variant="ghost" class="!rounded-full" @click="goBack">
-            <UIcon name="i-heroicons-arrow-left" class="w-5 h-5" />
-            <span class="hidden sm:inline">Back</span>
-          </UButton>
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-semibold truncate">
+            {{ t?.title || 'Tournament' }}
+          </div>
 
-          <div class="min-w-0">
-            <div class="text-sm font-semibold truncate">
-              {{ t?.title || 'Tournament' }}
-            </div>
+          <div v-if="t" class="text-xs opacity-70 truncate">
+            {{ game?.name || '' }}
+            <span class="mx-2 opacity-40">•</span>
 
-            <div class="text-xs opacity-70 truncate" v-if="t">
-              {{ game?.name || '' }}
-              <span class="mx-2 opacity-40">•</span>
+            <template v-if="isPlayable">
+              Ends in
+              <span class="font-mono">{{ msToClock(endsInMs) }}</span>
+            </template>
 
-              <template v-if="isPlayable">
-                Ends in
-                <span class="font-mono">
-                  {{ msToClock(endsInMs) }}
-                </span>
-              </template>
-
-              <template v-else>
-                Starts in
-                <span class="font-mono">
-                  {{ msToClock(startsInMs) }}
-                </span>
-              </template>
-            </div>
+            <template v-else>
+              Starts in
+              <span class="font-mono">{{ msToClock(startsInMs) }}</span>
+            </template>
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 shrink-0">
           <UButton
             variant="soft"
+            color="primary"
             class="!rounded-full"
-            @click="refreshPlayerMount"
+            @click="toggleFullscreen"
           >
-            <UIcon name="i-heroicons-arrow-path" class="w-5 h-5" />
-            <span class="hidden sm:inline">Reload</span>
+            <UIcon
+              :name="
+                isFullscreen
+                  ? 'i-heroicons-arrows-pointing-in'
+                  : 'i-heroicons-arrows-pointing-out'
+              "
+              class="w-5 h-5"
+            />
+            <span class="hidden sm:inline">
+              {{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
+            </span>
           </UButton>
 
           <UButton
             variant="soft"
+            color="primary"
             class="!rounded-full"
-            @click="init"
-            :loading="loading"
+            @click="closePage"
           >
-            Retry
+            <UIcon name="i-heroicons-x-mark" class="w-5 h-5" />
+            <span class="hidden sm:inline">Close</span>
           </UButton>
         </div>
       </div>
+    </div>
+
+    <!-- Floating controls while fullscreen -->
+    <div
+      v-if="isFullscreen"
+      class="absolute right-3 top-3 z-[230] flex items-center gap-2"
+      :style="{ top: 'calc(env(safe-area-inset-top) + 12px)' }"
+    >
+      <UButton
+        variant="soft"
+        color="primary"
+        class="!rounded-full bg-black/60 backdrop-blur"
+        @click="exitFullscreen"
+      >
+        <UIcon name="i-heroicons-arrows-pointing-in" class="w-5 h-5" />
+      </UButton>
+
+      <UButton
+        variant="soft"
+        color="primary"
+        class="!rounded-full bg-black/60 backdrop-blur"
+        @click="closePage"
+      >
+        <UIcon name="i-heroicons-x-mark" class="w-5 h-5" />
+      </UButton>
     </div>
 
     <!-- Body -->
     <div
       class="absolute inset-0 z-[210]"
       :style="{
-        paddingTop: 'calc(env(safe-area-inset-top) + 56px)',
-        paddingBottom: 'env(safe-area-inset-bottom)'
+        paddingTop: isFullscreen ? '0px' : 'calc(env(safe-area-inset-top) + 56px)',
+        paddingBottom: isFullscreen ? '0px' : 'env(safe-area-inset-bottom)'
       }"
     >
-      <div class="h-full p-2">
-        <ClientOnly>
-          <div
-            v-if="loading"
-            class="h-full grid place-items-center rounded-2xl border border-white/10 bg-white/5 p-6"
-          >
-            <div class="text-center">
-              <div class="text-lg font-semibold">Loading…</div>
-              <div class="mt-2 text-sm opacity-70">
-                Preparing tournament session
-              </div>
+      <ClientOnly>
+        <div
+          v-if="loading"
+          class="h-full w-full grid place-items-center bg-black"
+        >
+          <div class="text-center px-6">
+            <div class="text-lg font-semibold">Loading…</div>
+            <div class="mt-2 text-sm opacity-70">
+              Preparing tournament session
             </div>
           </div>
+        </div>
 
-          <div
-            v-else-if="err"
-            class="h-full grid place-items-center rounded-2xl border border-white/10 bg-white/5 p-6"
-          >
-            <div class="text-center max-w-md">
-              <div class="text-lg font-semibold">{{ err }}</div>
-              <div class="mt-4 flex justify-center gap-2">
-                <UButton
-                  class="!rounded-full"
-                  :to="`/tournaments/${tournamentSlug}`"
-                >
-                  Back to details
-                </UButton>
-                <UButton
-                  variant="soft"
-                  class="!rounded-full"
-                  to="/tournaments"
-                >
-                  All tournaments
-                </UButton>
-              </div>
+        <div
+          v-else-if="err"
+          class="h-full w-full grid place-items-center bg-black p-6"
+        >
+          <div class="text-center max-w-md">
+            <div class="text-lg font-semibold">{{ err }}</div>
+            <div class="mt-4 flex justify-center gap-2">
+              <UButton
+                class="!rounded-full"
+                :to="`/tournaments/${tournamentSlug}`"
+              >
+                Back to details
+              </UButton>
+              <UButton
+                variant="soft"
+                class="!rounded-full"
+                to="/tournaments"
+              >
+                All tournaments
+              </UButton>
             </div>
           </div>
+        </div>
 
-          <div
-            v-else-if="!isPlayable"
-            class="h-full grid place-items-center rounded-2xl border border-white/10 bg-white/5 p-6"
-          >
-            <div class="text-center max-w-md">
-              <div class="text-lg font-semibold">
-                Tournament is not live
-              </div>
-              <p class="mt-2 text-sm opacity-80">
-                You can’t play outside the tournament window.
-              </p>
-            </div>
+        <div
+          v-else-if="!isPlayable"
+          class="h-full w-full grid place-items-center bg-black p-6"
+        >
+          <div class="text-center max-w-md">
+            <div class="text-lg font-semibold">Tournament is not live</div>
+            <p class="mt-2 text-sm opacity-80">
+              You can’t play outside the tournament window.
+            </p>
           </div>
+        </div>
 
-          <!-- Playable -->
-          <div v-else class="h-full">
-            <GamePlayer
-              :key="`${tournamentSlug}-${playerMountKey}`"
-              :game="game!"
-              :defer="false"
-              :fullscreen="true"
-              @score="e => onScore(e.score)"
-            />
-          </div>
-        </ClientOnly>
-      </div>
+        <div v-else class="h-full w-full bg-black">
+          <GamePlayer
+            :key="`${tournamentSlug}-${playerMountKey}`"
+            :game="game!"
+            :defer="false"
+            :fullscreen="true"
+            @score="e => onScore(e.score)"
+          />
+        </div>
+      </ClientOnly>
     </div>
   </div>
 </template>
