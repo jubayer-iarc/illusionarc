@@ -33,6 +33,7 @@ let tick: ReturnType<typeof setInterval> | null = null
 const rootEl = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
 const fullscreenHistoryArmed = ref(false)
+const canUseFullscreen = ref(false)
 
 /* ---------------- Helpers ---------------- */
 function getGameSlug(x: AnyTournament) {
@@ -62,6 +63,33 @@ function msToClock(ms: number) {
   const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0')
   const s2 = String(total % 60).padStart(2, '0')
   return `${h}:${m}:${s2}`
+}
+
+function getFullscreenRequestEl(el: any) {
+  if (!el) return null
+  return (
+    el.requestFullscreen ||
+    el.webkitRequestFullscreen ||
+    el.webkitEnterFullscreen ||
+    null
+  )
+}
+
+function getFullscreenExitDoc(doc: any) {
+  if (!doc) return null
+  return doc.exitFullscreen || doc.webkitExitFullscreen || null
+}
+
+function detectFullscreenSupport() {
+  if (typeof document === 'undefined') return false
+  const el: any = rootEl.value || document.documentElement
+  const requestFn = getFullscreenRequestEl(el)
+  const enabled =
+    typeof document.fullscreenEnabled === 'boolean'
+      ? document.fullscreenEnabled
+      : true
+
+  return !!requestFn && enabled
 }
 
 /* ---------------- Time Logic ---------------- */
@@ -119,11 +147,12 @@ function refreshPlayerMount() {
 
 /* ---------------- Fullscreen ---------------- */
 function syncFullscreenState() {
-  isFullscreen.value = !!document.fullscreenElement
+  const d: any = document
+  isFullscreen.value = !!(d.fullscreenElement || d.webkitFullscreenElement)
 }
 
 function armMobileBackExit() {
-  if (fullscreenHistoryArmed.value) return
+  if (fullscreenHistoryArmed.value || !canUseFullscreen.value) return
   history.pushState({ tournamentFullscreen: true }, '')
   fullscreenHistoryArmed.value = true
 }
@@ -133,17 +162,24 @@ function disarmMobileBackExit() {
 }
 
 async function enterFullscreen() {
+  if (!canUseFullscreen.value) return
+
   try {
-    const el = rootEl.value || document.documentElement
+    const el: any = rootEl.value || document.documentElement
+    const requestFn = getFullscreenRequestEl(el)
+
+    if (!requestFn) return
+
     if (!document.fullscreenElement) {
-      await el.requestFullscreen()
+      await requestFn.call(el)
     }
+
     syncFullscreenState()
     armMobileBackExit()
   } catch (e: any) {
     toast.add({
       title: 'Fullscreen unavailable',
-      description: e?.message || 'Your browser blocked fullscreen mode.',
+      description: 'Fullscreen is not supported on this browser/device.',
       color: 'warning'
     })
   }
@@ -151,15 +187,20 @@ async function enterFullscreen() {
 
 async function exitFullscreen() {
   try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen()
+    const doc: any = document
+    const exitFn = getFullscreenExitDoc(doc)
+
+    if (doc.fullscreenElement && exitFn) {
+      await exitFn.call(doc)
     }
   } catch {}
+
   syncFullscreenState()
   disarmMobileBackExit()
 }
 
 async function toggleFullscreen() {
+  if (!canUseFullscreen.value) return
   if (isFullscreen.value) await exitFullscreen()
   else await enterFullscreen()
 }
@@ -263,7 +304,10 @@ onMounted(async () => {
     now.value = Date.now()
   }, 1000)
 
+  canUseFullscreen.value = detectFullscreenSupport()
+
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
   window.addEventListener('popstate', onPopState)
 
   refreshPlayerMount()
@@ -273,6 +317,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (tick) clearInterval(tick)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
   window.removeEventListener('popstate', onPopState)
 })
 
@@ -296,7 +341,6 @@ watch(isPlayable, (v, prev) => {
     ref="rootEl"
     class="fixed inset-0 z-[9999] overflow-hidden bg-black text-white"
   >
-    <!-- Top bar: hidden only when fullscreen is active -->
     <div
       v-if="!isFullscreen"
       class="absolute left-0 right-0 top-0 z-[220] border-b border-white/10 bg-black/70 backdrop-blur"
@@ -326,6 +370,7 @@ watch(isPlayable, (v, prev) => {
 
         <div class="flex items-center gap-2 shrink-0">
           <UButton
+            v-if="canUseFullscreen"
             variant="soft"
             color="primary"
             class="!rounded-full"
@@ -357,9 +402,8 @@ watch(isPlayable, (v, prev) => {
       </div>
     </div>
 
-    <!-- Floating controls while fullscreen -->
     <div
-      v-if="isFullscreen"
+      v-if="isFullscreen && canUseFullscreen"
       class="absolute right-3 top-3 z-[230] flex items-center gap-2"
       :style="{ top: 'calc(env(safe-area-inset-top) + 12px)' }"
     >
@@ -382,7 +426,6 @@ watch(isPlayable, (v, prev) => {
       </UButton>
     </div>
 
-    <!-- Body -->
     <div
       class="absolute inset-0 z-[210]"
       :style="{
