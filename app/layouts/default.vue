@@ -10,21 +10,23 @@ const { kind, ready } = useDeviceKind(768)
 </script>
 
 <template>
-  <SpeedInsights />
+  <div>
+    <SpeedInsights />
 
-  <!-- SSR fallback: render desktop shell to avoid blank HTML -->
-  <DesktopShell v-if="!ready">
-    <slot />
-  </DesktopShell>
+    <!-- SSR fallback: render desktop shell to avoid blank HTML -->
+    <DesktopShell v-if="!ready">
+      <slot />
+    </DesktopShell>
 
-  <!-- Client: render based on detected device -->
-  <MobileAppShell v-else-if="kind === 'mobile'">
-    <slot />
-  </MobileAppShell>
+    <!-- Client: render based on detected device -->
+    <MobileAppShell v-else-if="kind === 'mobile'">
+      <slot />
+    </MobileAppShell>
 
-  <DesktopShell v-else>
-    <slot />
-  </DesktopShell>
+    <DesktopShell v-else>
+      <slot />
+    </DesktopShell>
 
-  <InstallPwaButton />
+    <InstallPwaButton />
+  </div>
 </template>
