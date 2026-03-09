@@ -48,7 +48,7 @@ await refresh()
 
 const LazyHeroOrb = defineLazyHydrationComponent(
   'time',
-  () => import('~/components/home/HeroOrb.vue')
+  () => import('~/components/HeroOrb.vue')
 )
 
 function btnProps(cta: HeroCTA) {
