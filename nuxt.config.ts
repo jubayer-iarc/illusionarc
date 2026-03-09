@@ -241,6 +241,7 @@ export default defineNuxtConfig({
       }
     },
 
+    
     // Panorama needs unsafe-eval (A-Frame / three builds sometimes)
     '/apps/panorama/**': {
       security: {
