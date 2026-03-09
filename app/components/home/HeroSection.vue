@@ -1,9 +1,6 @@
 <!-- app/components/home/HeroSection.vue -->
 <script setup lang="ts">
-import { defineLazyHydrationComponent } from '#imports'
-
 const route = useRoute()
-
 type HeroCTA = {
   label: string
   to: string
@@ -37,23 +34,19 @@ const FALLBACK: HeroData = {
 }
 
 /**
- * Admin-managed content
+ * ✅ Admin-managed content
  * Table: page_sections
  * page='home', section_key='hero'
  */
 const { data: hero, refresh } = usePageSection<HeroData>('home', 'hero', FALLBACK)
 
-// Keep hero text SSR-rendered
+// SSR-safe fetch (will use Supabase on server; if it fails, fallback stays)
 await refresh()
-
-const LazyHeroOrb = defineLazyHydrationComponent(
-  'time',
-  () => import('~/components/HeroOrb.vue')
-)
 
 function btnProps(cta: HeroCTA) {
   if (cta.variant === 'outline') return { variant: 'outline' as const }
   if (cta.variant === 'ghost') return { variant: 'ghost' as const }
+  // solid/default
   return { color: (cta.color as any) || 'primary' }
 }
 </script>
@@ -62,10 +55,10 @@ function btnProps(cta: HeroCTA) {
   <section class="relative overflow-hidden">
     <GlowBackdrop />
 
-    <!-- Animated gradient wash -->
+    <!-- Animated gradient wash (inline style, theme-aware via opacity classes) -->
     <div
       aria-hidden="true"
-      class="pointer-events-none absolute inset-[-40%] animate-[heroDrift_10s_ease-in-out_infinite_alternate] blur-[14px]
+      class="absolute inset-[-40%] blur-[14px] pointer-events-none animate-[heroDrift_10s_ease-in-out_infinite_alternate]
              opacity-40 dark:opacity-55"
       :style="{
         background: `
@@ -77,7 +70,7 @@ function btnProps(cta: HeroCTA) {
     />
 
     <!-- Particles -->
-    <div class="pointer-events-none absolute inset-0" aria-hidden="true">
+    <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
       <span
         v-for="i in 18"
         :key="i"
@@ -96,12 +89,9 @@ function btnProps(cta: HeroCTA) {
     <UContainer class="py-16 md:py-24">
       <div class="flex flex-col gap-10 md:grid md:grid-cols-2 md:items-center">
         <!-- ORB -->
-        <div class="relative order-1 min-w-0 md:order-2" data-reveal>
+        <div class="relative order-1 md:order-2 min-w-0" data-reveal>
           <ClientOnly>
-            <LazyHeroOrb
-              :key="route.fullPath"
-              :hydrate-after="1200"
-            />
+            <HeroOrb :key="route.fullPath" />
           </ClientOnly>
 
           <!-- Glow edge -->
@@ -118,12 +108,12 @@ function btnProps(cta: HeroCTA) {
         </div>
 
         <!-- TEXT -->
-        <div class="order-2 min-w-0 max-w-xl md:order-1" data-reveal>
-          <h1 class="text-4xl font-semibold tracking-tight text-black dark:text-white md:text-6xl">
+        <div class="max-w-xl order-2 md:order-1 min-w-0" data-reveal>
+          <h1 class="text-4xl md:text-6xl font-semibold tracking-tight text-black dark:text-white">
             {{ hero.headline }}
           </h1>
 
-          <p class="mt-4 text-lg text-black/70 dark:text-white/80 md:text-xl">
+          <p class="mt-4 text-lg md:text-xl text-black/70 dark:text-white/80">
             {{ hero.subhead }}
           </p>
 
@@ -143,7 +133,7 @@ function btnProps(cta: HeroCTA) {
             <UCard
               v-for="s in hero.stats"
               :key="s.k"
-              class="press border border-black/10 bg-white/70 backdrop-blur dark:border-white/10 dark:bg-white/5"
+              class="press border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur"
             >
               <div class="text-sm text-black/60 dark:text-white/70">{{ s.v }}</div>
               <div class="mt-1 font-semibold text-black dark:text-white">{{ s.k }}</div>
@@ -164,7 +154,6 @@ function btnProps(cta: HeroCTA) {
     transform: translate3d(1%, 1%, 0) scale(1.06);
   }
 }
-
 @keyframes heroFloat {
   0% {
     transform: translateY(0) translateX(0) scale(1);
