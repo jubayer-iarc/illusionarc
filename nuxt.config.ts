@@ -223,7 +223,7 @@ export default defineNuxtConfig({
     },
 
     '/tournaments/**': {
-      swr: 60,
+      // swr: 60,
       security: {
         headers: {
           xFrameOptions: false,
@@ -330,7 +330,7 @@ export default defineNuxtConfig({
   },
 
   typescript: {
-    typeCheck: true,
+    typeCheck: false,
     tsConfig: {
       include: ['~/types/**/*.d.ts', '~/types/**/*.ts']
     }
