@@ -1,7 +1,6 @@
 <template>
   <UApp>
     <Analytics />
-    <RouteLoader />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
