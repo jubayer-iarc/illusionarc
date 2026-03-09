@@ -1,11 +1,10 @@
 // nuxt.config.ts
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
-  devtools: { enabled: true },
+  devtools: { enabled: false },
 
   modules: [
     '@nuxt/eslint',
-    '@nuxt/hints',
     '@nuxt/image',
     '@nuxt/scripts',
     '@nuxtjs/color-mode',
@@ -21,7 +20,8 @@ export default defineNuxtConfig({
     head: {
       titleTemplate: '%s · illusion Arc',
       meta: [
-        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        { charset: 'utf-8' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
         { name: 'theme-color', content: '#070A12' }
       ],
       link: [
@@ -58,8 +58,25 @@ export default defineNuxtConfig({
       icons: [
         { src: '/pwa/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
         { src: '/pwa/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
-        { src: '/pwa/android-chrome-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+        {
+          src: '/pwa/android-chrome-512x512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable'
+        }
       ]
+    }
+  },
+
+  image: {
+    format: ['avif', 'webp'],
+    screens: {
+      xs: 320,
+      sm: 640,
+      md: 768,
+      lg: 1024,
+      xl: 1280,
+      xxl: 1536
     }
   },
 
@@ -70,7 +87,6 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    resetTicketSecret: process.env.RESET_TICKET_SECRET,
     public: {
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseAnonKey: process.env.SUPABASE_KEY
@@ -83,10 +99,14 @@ export default defineNuxtConfig({
     classSuffix: ''
   },
 
+  experimental: {
+    payloadExtraction: true
+  },
+
   security: {
-    // CSP nonces + integrity
     nonce: true,
     sri: true,
+
     ssg: {
       meta: true,
       hashScripts: true,
@@ -95,13 +115,12 @@ export default defineNuxtConfig({
     },
 
     corsHandler: false,
-
     hidePoweredBy: true,
     removeLoggers: true,
 
     rateLimiter: {
       tokensPerInterval: 150,
-      interval: 300000, // 5 min
+      interval: 300000,
       headers: false,
       throwError: true
     },
@@ -116,16 +135,8 @@ export default defineNuxtConfig({
     csrf: false,
 
     headers: {
-      // ✅ Keep these off unless you specifically need cross-origin isolation
       crossOriginEmbedderPolicy: false,
       crossOriginOpenerPolicy: false,
-
-      /**
-       * ✅ IMPORTANT:
-       * Do NOT set X-Frame-Options to SAMEORIGIN globally,
-       * because it will block embedding from illusionarc.com on other origins.
-       * Use CSP frame-ancestors instead.
-       */
       xFrameOptions: false,
 
       strictTransportSecurity: {
@@ -146,25 +157,21 @@ export default defineNuxtConfig({
         fullscreen: ['self']
       },
 
-      // ✅ Global CSP (strict + allows your own domains to frame)
       contentSecurityPolicy: {
         'base-uri': ["'none'"],
         'object-src': ["'none'"],
-
-        // ✅ allow framing by your own domains (and self)
         'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com'],
 
         'default-src': ["'self'"],
         'connect-src': ["'self'", 'https:', 'wss:'],
-        'img-src': ["'self'", 'data:', 'https:'],
+        'img-src': ["'self'", 'data:', 'blob:', 'https:'],
         'font-src': ["'self'", 'data:', 'https:'],
         'style-src': ["'self'", 'https:', "'unsafe-inline'"],
-
-        'script-src': ["'self'", "'nonce-{{nonce}}'"],
+        'script-src': ["'self'", "'nonce-{{nonce}}'", 'https://va.vercel-scripts.com'],
         'script-src-attr': ["'none'"],
-
         'worker-src': ["'self'", 'blob:'],
-
+        'frame-src': ["'self'", 'https:'],
+        'media-src': ["'self'", 'data:', 'blob:', 'https:'],
         'form-action': ["'self'"],
         'manifest-src': ["'self'"],
         'upgrade-insecure-requests': true
@@ -173,13 +180,22 @@ export default defineNuxtConfig({
   },
 
   routeRules: {
-    /**
-     * ✅ Embeds / Arcade / Tournaments / Games
-     * - keep COOP/COEP off (iframe friendly)
-     * - ensure framing is allowed (CSP frame-ancestors already global, but we keep explicit)
-     * - DO NOT reintroduce X-Frame-Options
-     */
+    '/': { prerender: true },
+    '/about': { prerender: true },
+    '/contact': { prerender: true },
+    '/services': { prerender: true },
+    '/privacy': { prerender: true },
+    '/terms': { prerender: true },
+
+    '/works': { swr: 3600 },
+    '/works/**': { swr: 3600 },
+
+    '/arcade': { swr: 900 },
+
+    '/tournaments': { swr: 60 },
+
     '/embed/**': {
+      swr: 300,
       security: {
         headers: {
           xFrameOptions: false,
@@ -193,6 +209,7 @@ export default defineNuxtConfig({
     },
 
     '/arcade/**': {
+      swr: 900,
       security: {
         headers: {
           xFrameOptions: false,
@@ -206,6 +223,7 @@ export default defineNuxtConfig({
     },
 
     '/tournaments/**': {
+      swr: 60,
       security: {
         headers: {
           xFrameOptions: false,
@@ -219,37 +237,37 @@ export default defineNuxtConfig({
     },
 
     '/games/**': {
+      headers: {
+        'cache-control': 'public, max-age=31536000, immutable'
+      },
       security: {
         headers: {
           xFrameOptions: false,
           crossOriginEmbedderPolicy: false,
           crossOriginOpenerPolicy: false,
-
-          // Only add what games actually need; do not weaken global script policy unless required
           contentSecurityPolicy: {
             'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com'],
-            'img-src': ["'self'", 'data:', 'https:', 'blob:'],
-            'media-src': ["'self'", 'data:', 'https:', 'blob:'],
+            'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+            'media-src': ["'self'", 'data:', 'blob:', 'https:'],
             'style-src': ["'self'", 'https:', "'unsafe-inline'"],
-
-            // If your games truly load scripts from CDNs, allow those CDNs
-            // Still keeps nonce for inline/SSR scripts
-            'script-src': ["'self'", "'nonce-{{nonce}}'", 'https://cdnjs.cloudflare.com', 'https://cdn.jsdelivr.net'],
-
+            'script-src': [
+              "'self'",
+              "'nonce-{{nonce}}'",
+              'https://cdnjs.cloudflare.com',
+              'https://cdn.jsdelivr.net'
+            ],
             'worker-src': ["'self'", 'blob:']
           }
         }
       }
     },
 
-
-    // Panorama needs unsafe-eval (A-Frame / three builds sometimes)
     '/apps/panorama/**': {
       security: {
         headers: {
           contentSecurityPolicy: {
-            'img-src': ["'self'", 'data:', 'https:', 'blob:'],
-            'media-src': ["'self'", 'data:', 'https:', 'blob:'],
+            'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+            'media-src': ["'self'", 'data:', 'blob:', 'https:'],
             'style-src': ["'self'", 'https:', "'unsafe-inline'"],
             'script-src': ["'self'", "'nonce-{{nonce}}'", "'unsafe-eval'"]
           }
@@ -257,25 +275,44 @@ export default defineNuxtConfig({
       }
     },
 
-    // Admin is client-only
-    '/admin/**': { ssr: false },
-
     '/apps/**': {
+      swr: 300,
       security: {
         headers: {
           contentSecurityPolicy: {
-            'img-src': ["'self'", 'data:', 'https:', 'blob:'],
-            'media-src': ["'self'", 'data:', 'https:', 'blob:'],
+            'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+            'media-src': ["'self'", 'data:', 'blob:', 'https:'],
             'style-src': ["'self'", 'https:', "'unsafe-inline'"],
             'script-src': ["'self'", "'nonce-{{nonce}}'"]
           }
         }
+      }
+    },
+
+    '/admin/**': {
+      ssr: false,
+      headers: {
+        'cache-control': 'no-store'
+      }
+    },
+
+    '/login': {
+      headers: {
+        'cache-control': 'no-store'
+      }
+    },
+
+    '/update-password': {
+      headers: {
+        'cache-control': 'no-store'
       }
     }
   },
 
   vite: {
     build: {
+      sourcemap: false,
+      cssCodeSplit: true,
       rollupOptions: {
         onwarn(warning, warn) {
           if (
@@ -293,6 +330,7 @@ export default defineNuxtConfig({
   },
 
   typescript: {
+    typeCheck: true,
     tsConfig: {
       include: ['~/types/**/*.d.ts', '~/types/**/*.ts']
     }

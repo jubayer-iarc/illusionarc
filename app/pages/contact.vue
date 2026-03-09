@@ -10,11 +10,26 @@ useHead({
   ]
 })
 
+type ProjectType =
+  | 'Game Development'
+  | 'AR/VR'
+  | 'VFX/CGI'
+  | 'Animation'
+  | 'Interactive Web'
+  | 'Other'
+
+type BudgetType =
+  | 'Under $500'
+  | '$500–$2k'
+  | '$2k–$5k'
+  | '$5k–$10k'
+  | '$10k+'
+
 type FormState = {
   name: string
   email: string
-  projectType: 'Game Development' | 'AR/VR' | 'VFX/CGI' | 'Animation' | 'Interactive Web' | 'Other'
-  budget: 'Under $500' | '$500–$2k' | '$2k–$5k' | '$5k–$10k' | '$10k+'
+  projectType: ProjectType
+  budget: BudgetType
   message: string
   website: string // honeypot
 }
@@ -31,16 +46,22 @@ const state = reactive<FormState>({
   website: ''
 })
 
-const projectTypeOptions = [
+const projectTypeOptions: ProjectType[] = [
   'Game Development',
   'AR/VR',
   'VFX/CGI',
   'Animation',
   'Interactive Web',
   'Other'
-] as const
+]
 
-const budgetOptions = ['Under $500', '$500–$2k', '$2k–$5k', '$5k–$10k', '$10k+'] as const
+const budgetOptions: BudgetType[] = [
+  'Under $500',
+  '$500–$2k',
+  '$2k–$5k',
+  '$5k–$10k',
+  '$10k+'
+]
 
 function isEmailValid(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
@@ -49,8 +70,9 @@ function isEmailValid(v: string) {
 function validate(): string | null {
   if (!state.name.trim()) return 'Please enter your name.'
   if (!state.email.trim() || !isEmailValid(state.email)) return 'Please enter a valid email.'
-  if (!state.message.trim() || state.message.trim().length < 10)
+  if (!state.message.trim() || state.message.trim().length < 10) {
     return 'Please write a short project message (10+ chars).'
+  }
   return null
 }
 
@@ -105,7 +127,6 @@ async function submit() {
     loading.value = false
   }
 }
-
 </script>
 
 <template>
@@ -178,7 +199,7 @@ async function submit() {
 
         <form class="p-1" @submit.prevent="submit">
           <div class="grid gap-4 md:grid-cols-2">
-            <UFormGroup label="Name" required>
+            <UFormField label="Name" required>
               <UInput
                 v-model="state.name"
                 placeholder="Your name"
@@ -186,9 +207,9 @@ async function submit() {
                 size="lg"
                 class="w-full"
               />
-            </UFormGroup>
+            </UFormField>
 
-            <UFormGroup label="Email" required>
+            <UFormField label="Email" required>
               <UInput
                 v-model="state.email"
                 placeholder="you@email.com"
@@ -197,29 +218,35 @@ async function submit() {
                 size="lg"
                 class="w-full"
               />
-            </UFormGroup>
+            </UFormField>
 
-            <UFormGroup label="Project type" required>
+            <UFormField label="Project type" required>
               <USelect
                 v-model="state.projectType"
-                :options="projectTypeOptions"
+                :items="projectTypeOptions"
+                placeholder="Select project type"
                 size="lg"
                 class="w-full"
               />
-            </UFormGroup>
+            </UFormField>
 
-            <UFormGroup label="Budget range" required>
+            <UFormField label="Budget range" required>
               <USelect
                 v-model="state.budget"
-                :options="budgetOptions"
+                :items="budgetOptions"
+                placeholder="Select budget"
                 size="lg"
                 class="w-full"
               />
-            </UFormGroup>
+            </UFormField>
 
             <!-- FULL WIDTH MESSAGE -->
             <div class="md:col-span-2">
-              <UFormGroup label="Message" required>
+              <UFormField
+                label="Message"
+                required
+                help="Minimum 10 characters. You can paste links too."
+              >
                 <UTextarea
                   v-model="state.message"
                   :rows="8"
@@ -227,10 +254,7 @@ async function submit() {
                   class="w-full"
                   placeholder="What are you building? Platform? Any links? Timeline?"
                 />
-                <div class="mt-2 text-xs opacity-60">
-                  Minimum 10 characters. You can paste links too.
-                </div>
-              </UFormGroup>
+              </UFormField>
             </div>
 
             <!-- honeypot -->

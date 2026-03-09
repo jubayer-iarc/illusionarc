@@ -27,51 +27,42 @@ function isEmailValid(v: string) {
 const canSubmit = computed(() => {
   if (!isEmailValid(email.value)) return false
   if (loading.value) return false
-
-  // tiny cooldown to prevent spam-clicking
   if (lastSentAt.value && Date.now() - lastSentAt.value < 8000) return false
   return true
 })
 
-/**
- * IMPORTANT:
- * - Your Supabase Auth settings must have "Site URL" and/or "Redirect URLs" configured
- * - This redirect points back to your Nuxt app after clicking the email reset link.
- *
- * Choose the page you already have for setting a new password.
- * Common choices:
- *  - /update-password
- *  - /reset-password
- *  - /auth/callback
- *
- * If you don't have it yet, you can keep /update-password as a placeholder page.
- */
-const redirectTo = computed(() => {
-  // If you later create /update-password, keep this.
-  // It will receive tokens in the URL from Supabase.
-  return `${window.location.origin}/update-password`
-})
-
 async function sendResetLink() {
   const e = email.value.trim()
+
   if (!e) {
-    toast.add({ title: 'Missing email', description: 'Please enter your email address.', color: 'warning' })
+    toast.add({
+      title: 'Missing email',
+      description: 'Please enter your email address.',
+      color: 'warning'
+    })
     return
   }
+
   if (!isEmailValid(e)) {
-    toast.add({ title: 'Invalid email', description: 'Please enter a valid email address.', color: 'warning' })
+    toast.add({
+      title: 'Invalid email',
+      description: 'Please enter a valid email address.',
+      color: 'warning'
+    })
     return
   }
 
   loading.value = true
   try {
-    // SSR-safe: compute origin only on client
     let rt = ''
     if (import.meta.client) {
       rt = `${window.location.origin}/update-password`
     }
 
-    const { error } = await supabase.auth.resetPasswordForEmail(e, rt ? { redirectTo: rt } : undefined)
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      e,
+      rt ? { redirectTo: rt } : undefined
+    )
     if (error) throw error
 
     sent.value = true
@@ -84,7 +75,11 @@ async function sendResetLink() {
     })
   } catch (err: any) {
     const msg = String(err?.message || err?.error_description || 'Please try again.')
-    toast.add({ title: 'Could not send reset email', description: msg, color: 'error' })
+    toast.add({
+      title: 'Could not send reset email',
+      description: msg,
+      color: 'error'
+    })
   } finally {
     loading.value = false
   }
@@ -95,13 +90,11 @@ function backToLogin() {
 }
 
 function openMailHint() {
-  // Just a UX helper: some mobile browsers support mailto:
   const e = email.value.trim()
   if (!e || !import.meta.client) return
   window.location.href = `mailto:${encodeURIComponent(e)}`
 }
 
-// If user is already logged in, optionally redirect away
 watch(
   () => user.value?.id,
   (id) => {
@@ -123,7 +116,6 @@ watch(
 
     <UContainer class="relative py-10 md:py-14">
       <div class="grid gap-8 lg:grid-cols-2 items-start">
-        <!-- LEFT -->
         <div class="order-2 lg:order-1 max-w-xl">
           <div class="badge">
             <UIcon name="i-heroicons-key" class="w-4 h-4" />
@@ -178,7 +170,6 @@ watch(
           </div>
         </div>
 
-        <!-- CARD -->
         <div class="order-1 lg:order-2 lg:justify-self-end w-full max-w-xl">
           <div class="card">
             <div class="cardHead">
@@ -199,7 +190,7 @@ watch(
 
             <div class="cardBody">
               <form class="grid gap-4" @submit.prevent="sendResetLink">
-                <UFormGroup label="Email" required>
+                <UFormField label="Email" required>
                   <UInput
                     v-model="email"
                     class="w-full"
@@ -208,7 +199,7 @@ watch(
                     icon="i-heroicons-envelope"
                     :disabled="loading"
                   />
-                </UFormGroup>
+                </UFormField>
 
                 <UButton
                   type="submit"
@@ -229,8 +220,8 @@ watch(
                     Email sent
                   </div>
                   <div class="hintText">
-                    If you don’t see it, check <span class="opacity-100">Spam</span> / <span class="opacity-100">Promotions</span>.
-                    Then open the link to set a new password.
+                    If you don’t see it, check <span class="opacity-100">Spam</span> /
+                    <span class="opacity-100">Promotions</span>. Then open the link to set a new password.
                   </div>
 
                   <div class="mt-3 grid gap-2 sm:grid-cols-2">
@@ -266,7 +257,6 @@ watch(
 </template>
 
 <style scoped>
-/* Match your login page look */
 .authPage { position: relative; min-height: calc(100dvh - 64px); overflow: hidden; color: var(--app-fg); }
 .bg { position: absolute; inset: 0; background: var(--app-bg); }
 .wash { position: absolute; inset: 0; background: radial-gradient(900px 600px at 15% 20%, var(--wash-b), transparent 60%), radial-gradient(900px 600px at 85% 30%, var(--wash-a), transparent 60%), radial-gradient(900px 700px at 55% 90%, rgba(34, 197, 94, 0.10), transparent 60%), linear-gradient(to bottom, rgba(255, 255, 255, 0.05), transparent 35%, rgba(255, 255, 255, 0.03)); opacity: 0.9; }
