@@ -184,7 +184,7 @@ export default defineNuxtConfig({
     '/about': { prerender: true },
     '/contact': { prerender: true },
     '/services': { prerender: true },
-    '/privacy': { prerender: true },
+    '/privacy-policy': { prerender: true },
     '/terms': { prerender: true },
 
     '/works': { swr: 3600 },
