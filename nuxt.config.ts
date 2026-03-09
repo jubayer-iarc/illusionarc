@@ -70,6 +70,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    resetTicketSecret: process.env.RESET_TICKET_SECRET,
     public: {
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseAnonKey: process.env.SUPABASE_KEY
@@ -241,7 +242,7 @@ export default defineNuxtConfig({
       }
     },
 
-    
+
     // Panorama needs unsafe-eval (A-Frame / three builds sometimes)
     '/apps/panorama/**': {
       security: {

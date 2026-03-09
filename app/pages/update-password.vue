@@ -9,22 +9,18 @@ definePageMeta({
   middleware: ['guest-only']
 })
 
-const supabase = useSupabaseClient()
 const toast = useToast()
 const route = useRoute()
 
 const loading = ref(false)
-const ready = ref(false)
-const stage = ref<'validating' | 'form' | 'error'>('validating')
+const ready = ref(true)
+const stage = ref<'validating' | 'form' | 'error'>('form')
 const errorText = ref('')
 
 const password = ref('')
 const confirm = ref('')
 const showPass = ref(false)
 const showConfirm = ref(false)
-
-// ✅ Recovery guard cookie (used by recovery-guard.global.ts)
-const recovery = useCookie<string | null>('ia_recovery', { sameSite: 'lax', path: '/' })
 
 function isStrongEnough(p: string) {
   return String(p || '').length >= 6
@@ -38,133 +34,82 @@ const canSubmit = computed(() => {
   return true
 })
 
-function parseHashTokens() {
-  if (!import.meta.client) return null
-  const hash = window.location.hash || ''
-  if (!hash.startsWith('#')) return null
-  const params = new URLSearchParams(hash.slice(1))
-  const access_token = params.get('access_token') || ''
-  const refresh_token = params.get('refresh_token') || ''
-  const type = params.get('type') || ''
-  if (!access_token || !refresh_token) return null
-  return { access_token, refresh_token, type }
-}
+onMounted(() => {
+  // In the new server-ticket flow, the server already verifies the email link
+  // and redirects here only after issuing the reset ticket cookie.
+  stage.value = 'form'
+  ready.value = true
 
-function clearHash() {
-  if (!import.meta.client) return
-  if (!window.location.hash) return
-  history.replaceState(null, '', window.location.pathname + window.location.search)
-}
-
-async function safeSignOutAndClearRecovery() {
-  if (!import.meta.client) return
-  try {
-    await supabase.auth.signOut()
-  } catch {}
-  recovery.value = null
-}
-
-async function ensureSession() {
-  const {
-    data: { session }
-  } = await supabase.auth.getSession()
-  return session?.user ? session : null
-}
-
-/**
- * Establishes recovery session ONLY for setting password.
- * We do NOT allow this session to be used on other pages (global middleware blocks it).
- */
-async function initRecovery() {
-  if (!import.meta.client) return
-
-  loading.value = true
-  stage.value = 'validating'
-  errorText.value = ''
-  ready.value = false
-
-  // Mark the browser as "recovery mode" immediately
-  recovery.value = '1'
-
-  try {
-    // 1) Prefer hash token flow (works even when PKCE verifier missing)
-    const hash = parseHashTokens()
-    if (hash) {
-      const { error } = await supabase.auth.setSession({
-        access_token: hash.access_token,
-        refresh_token: hash.refresh_token
-      })
-      if (error) throw error
-      clearHash()
-    } else {
-      // 2) PKCE code flow
-      const code = typeof route.query.code === 'string' ? route.query.code : ''
-      if (code) {
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) throw error
-        if (!data?.session?.user) throw new Error('Invalid or expired reset link. Please request a new one.')
-      }
-    }
-
-    // 3) Ensure session exists now
-    const session = await ensureSession()
-    if (!session) {
-      throw new Error(
-        'Reset session not found. Please open the reset link directly from your email, in the same browser (avoid in-app browsers).'
-      )
-    }
-
-    ready.value = true
-    stage.value = 'form'
-  } catch (e: any) {
-    const msg = String(e?.message || e?.error_description || '')
-
-    // ✅ If PKCE verifier missing, do NOT leave any session behind
-    if (msg.toLowerCase().includes('pkce') && msg.toLowerCase().includes('verifier')) {
-      await safeSignOutAndClearRecovery()
-      errorText.value =
-        'This link was opened in a different browser/device (or storage was cleared), so it can’t be verified. Request a new reset link and open it in the same browser (avoid Gmail/Facebook in-app browsers).'
-    } else {
-      // Still clean up to be safe
-      await safeSignOutAndClearRecovery()
-      errorText.value = msg || 'Reset link is invalid. Please request a new one.'
-    }
-
+  const err = typeof route.query.error === 'string' ? route.query.error.trim() : ''
+  if (err) {
     stage.value = 'error'
     ready.value = false
-  } finally {
-    loading.value = false
+    errorText.value = err
   }
-}
-
-onMounted(() => {
-  void initRecovery()
 })
 
 async function setNewPassword() {
   if (!isStrongEnough(password.value)) {
-    toast.add({ title: 'Weak password', description: 'Password must be at least 6 characters.', color: 'warning' })
+    toast.add({
+      title: 'Weak password',
+      description: 'Password must be at least 6 characters.',
+      color: 'warning'
+    })
     return
   }
+
   if (password.value !== confirm.value) {
-    toast.add({ title: 'Password mismatch', description: 'Both passwords must match.', color: 'warning' })
+    toast.add({
+      title: 'Password mismatch',
+      description: 'Both passwords must match.',
+      color: 'warning'
+    })
     return
   }
 
   loading.value = true
   try {
-    const { error } = await supabase.auth.updateUser({ password: password.value })
-    if (error) throw error
+    await $fetch('/api/auth/reset-password', {
+      method: 'POST',
+      body: {
+        password: password.value,
+        confirm: confirm.value
+      }
+    })
 
-    toast.add({ title: 'Password updated', description: 'Please login with your new password.', color: 'success' })
-
-    // ✅ Critical: end recovery session (prevents “logged in without password”)
-    await safeSignOutAndClearRecovery()
+    toast.add({
+      title: 'Password updated',
+      description: 'Please login with your new password.',
+      color: 'success'
+    })
 
     await navigateTo('/login', { replace: true })
   } catch (e: any) {
-    const msg = String(e?.message || e?.error_description || 'Please try again.')
-    toast.add({ title: 'Could not update password', description: msg, color: 'error' })
+    const msg =
+      String(
+        e?.data?.statusMessage ||
+        e?.data?.message ||
+        e?.statusMessage ||
+        e?.message ||
+        'Please try again.'
+      ).trim()
+
+    if (
+      msg.toLowerCase().includes('expired') ||
+      msg.toLowerCase().includes('invalid') ||
+      msg.toLowerCase().includes('reset session')
+    ) {
+      stage.value = 'error'
+      ready.value = false
+      errorText.value = msg
+      return
+    }
+
+    toast.add({
+      title: 'Could not update password',
+      description: msg,
+      color: 'error'
+    })
   } finally {
     loading.value = false
   }
@@ -181,7 +126,6 @@ function requestNewLink() {
 }
 
 async function cancelRecovery() {
-  await safeSignOutAndClearRecovery()
   await navigateTo('/login', { replace: true })
 }
 </script>
@@ -198,7 +142,6 @@ async function cancelRecovery() {
 
     <UContainer class="relative py-10 md:py-14">
       <div class="grid gap-8 lg:grid-cols-2 items-start">
-        <!-- LEFT -->
         <div class="order-2 lg:order-1 max-w-xl">
           <div class="badge">
             <UIcon name="i-heroicons-lock-closed" class="w-4 h-4" />
@@ -210,7 +153,7 @@ async function cancelRecovery() {
           </h1>
 
           <p class="mt-4 text-sm md:text-base opacity-80 leading-relaxed max-w-lg">
-            Reset links create a temporary recovery session only to change password. After saving, you must login again.
+            Reset links no longer sign you into the app. Set a new password, then log in normally.
           </p>
 
           <div class="mt-6 text-xs opacity-60">
@@ -219,7 +162,6 @@ async function cancelRecovery() {
           </div>
         </div>
 
-        <!-- CARD -->
         <div class="order-1 lg:order-2 lg:justify-self-end w-full max-w-xl">
           <div class="card">
             <div class="cardHead">
@@ -245,7 +187,6 @@ async function cancelRecovery() {
             </div>
 
             <div class="cardBody">
-              <!-- ERROR -->
               <div v-if="stage === 'error'" class="errorBox">
                 <div class="errorTitle">
                   <UIcon name="i-heroicons-exclamation-triangle" class="w-5 h-5" />
@@ -266,9 +207,8 @@ async function cancelRecovery() {
                 </div>
               </div>
 
-              <!-- FORM -->
               <form v-else class="grid gap-4" @submit.prevent="setNewPassword">
-                <UFormGroup label="New password" required>
+                <UFormField label="New password" required>
                   <UInput
                     v-model="password"
                     class="w-full"
@@ -285,9 +225,9 @@ async function cancelRecovery() {
                     </UButton>
                     <div class="text-xs opacity-60">Min 6 chars</div>
                   </div>
-                </UFormGroup>
+                </UFormField>
 
-                <UFormGroup label="Confirm password" required>
+                <UFormField label="Confirm password" required>
                   <UInput
                     v-model="confirm"
                     class="w-full"
@@ -306,7 +246,7 @@ async function cancelRecovery() {
                       {{ confirm && password !== confirm ? 'Does not match' : ' ' }}
                     </div>
                   </div>
-                </UFormGroup>
+                </UFormField>
 
                 <UButton
                   type="submit"
@@ -326,7 +266,7 @@ async function cancelRecovery() {
                 </div>
 
                 <div class="text-xs opacity-70 leading-relaxed">
-                  If you opened this in Gmail/Facebook in-app browser, use “Open in Safari/Chrome”.
+                  After saving, use your new password to log in from the login page.
                 </div>
               </form>
             </div>
@@ -342,7 +282,6 @@ async function cancelRecovery() {
 </template>
 
 <style scoped>
-/* keep your existing styling system */
 .authPage { position: relative; min-height: calc(100dvh - 64px); overflow: hidden; color: var(--app-fg); }
 .bg { position: absolute; inset: 0; background: var(--app-bg); }
 .wash { position: absolute; inset: 0; background: radial-gradient(900px 600px at 15% 20%, var(--wash-b), transparent 60%), radial-gradient(900px 600px at 85% 30%, var(--wash-a), transparent 60%), radial-gradient(900px 700px at 55% 90%, rgba(34, 197, 94, 0.10), transparent 60%), linear-gradient(to bottom, rgba(255, 255, 255, 0.05), transparent 35%, rgba(255, 255, 255, 0.03)); opacity: 0.9; }

@@ -5,6 +5,10 @@ useHead({
   meta: [{ name: 'description', content: 'Login to play games on Illusion Arc.' }]
 })
 
+definePageMeta({
+  middleware: ['guest-only']
+})
+
 type RoleResponse = { role: 'admin' | 'user' | null; found?: boolean }
 
 const route = useRoute()
@@ -18,6 +22,7 @@ const password = ref('')
 const loading = ref(false)
 const mode = ref<'signin' | 'signup'>('signin')
 const showPass = ref(false)
+const authRedirecting = ref(false)
 
 /** Default avatar list (paths in /public) */
 const DEFAULT_AVATARS = ['/img/avatars/a1.png', '/img/avatars/a2.png', '/img/avatars/a3.png', '/img/avatars/a4.png', '/img/avatars/a5.png']
@@ -29,9 +34,9 @@ function pickRandomAvatar() {
 
 /* ---------------- Country code + phone (signup only) ---------------- */
 type CountryOpt = {
-  label: string // e.g. "BD +880"
-  dial: string // e.g. "+880"
-  iso: string // e.g. "BD"
+  label: string
+  dial: string
+  iso: string
 }
 
 /** Flag emoji from ISO (BD -> 🇧🇩) */
@@ -80,7 +85,6 @@ const COUNTRY_CODES: CountryOpt[] = [
   { label: 'ZA +27', dial: '+27', iso: 'ZA' }
 ]
 
-// ✅ keep v-model as FULL OBJECT (no value-key)
 const selectedCountry = ref<CountryOpt>(COUNTRY_CODES.find((c) => c.iso === 'BD') || COUNTRY_CODES[0])
 const phoneLocal = ref('')
 
@@ -155,32 +159,36 @@ async function redirectAfterLogin() {
   const {
     data: { session }
   } = await supabase.auth.getSession()
+
   if (!session) return
 
   const role = await getRole()
   if (role === 'admin') return hardReloadTo('/admin')
+
   return navigateTo(nextUrl.value, { replace: true })
 }
 
-// If already logged in, redirect by role
+/**
+ * Guarded auto-redirect only for already-authenticated visits.
+ * Prevents racing while submit() is still doing profile sync.
+ */
 watch(
   () => user.value?.id,
   async (id) => {
     if (!id) return
-    await redirectAfterLogin()
+    if (loading.value) return
+    if (authRedirecting.value) return
+
+    authRedirecting.value = true
+    try {
+      await redirectAfterLogin()
+    } finally {
+      authRedirecting.value = false
+    }
   },
   { immediate: true }
 )
 
-definePageMeta({
-  middleware: ['guest-only']
-})
-
-/* ---------------- Server-side safe phone uniqueness check ----------------
-   Requires SQL:
-   create function public.phone_exists(p text) returns boolean security definer ...
-   grant execute to anon, authenticated
-------------------------------------------------------------------------- */
 async function isPhoneTaken(phoneE164: string): Promise<boolean> {
   const p = String(phoneE164 || '').trim()
   if (!p) return false
@@ -193,7 +201,6 @@ async function isPhoneTaken(phoneE164: string): Promise<boolean> {
   }
 }
 
-/* ---------------- Display name uniqueness helpers (best-effort) ---------------- */
 async function isDisplayNameTaken(name: string): Promise<boolean> {
   if (!import.meta.client) return false
   const n = normalizeDisplayName(name)
@@ -238,6 +245,7 @@ async function ensureDisplayNameAfterLogin() {
 async function ensureAvatarAfterLogin() {
   const u: any = user.value
   if (!u?.id) return
+
   const md = u.user_metadata || {}
   if (String(md.avatar_url || '').trim()) return
 
@@ -249,23 +257,28 @@ async function ensureAvatarAfterLogin() {
   await supabase.auth.refreshSession()
 }
 
-async function upsertProfileIfPossible(dn: string, avatarOverride?: string | null, phoneOverride?: string | null) {
+/**
+ * Uses explicit userId so signup does not depend on reactive user.value timing.
+ */
+async function upsertProfileByUserId(
+  userId: string,
+  dn: string,
+  avatarOverride?: string | null,
+  phoneOverride?: string | null
+) {
   try {
-    const u: any = user.value
-    if (!u?.id) return
+    if (!userId) return
+
     const client: any = supabase
 
-    const md = u.user_metadata || {}
-
-    const avatar = (avatarOverride ?? '').trim() || String(md.avatar_url || '').trim() || null
-    const phone = (phoneOverride ?? '').trim() || String(md.phone || '').trim() || null
-
     const payload: any = {
-      user_id: u.id,
+      user_id: userId,
       display_name: dn,
-      avatar_url: avatar,
+      avatar_url: (avatarOverride ?? '').trim() || null,
       updated_at: new Date().toISOString()
     }
+
+    const phone = (phoneOverride ?? '').trim()
     if (phone) payload.phone = phone
 
     const { error } = await client.from('profiles').upsert(payload, { onConflict: 'user_id' })
@@ -275,22 +288,25 @@ async function upsertProfileIfPossible(dn: string, avatarOverride?: string | nul
   }
 }
 
-/* ---------------- Submit ---------------- */
 async function submit() {
   if (!email.value.trim() || !password.value) {
     toast.add({ title: 'Missing fields', description: 'Email and password are required.', color: 'warning' })
     return
   }
+
   if (!isEmailValid(email.value)) {
     toast.add({ title: 'Invalid email', description: 'Please enter a valid email address.', color: 'warning' })
     return
   }
+
   if (password.value.length < 6) {
     toast.add({ title: 'Weak password', description: 'Password must be at least 6 characters.', color: 'warning' })
     return
   }
 
   loading.value = true
+  authRedirecting.value = true
+
   try {
     if (mode.value === 'signin') {
       const { error } = await supabase.auth.signInWithPassword({
@@ -304,16 +320,21 @@ async function submit() {
 
       const u: any = user.value
       const md = u?.user_metadata || {}
-      const dn = normalizeDisplayName(md.display_name || md.full_name || md.name || '') || (await pickUniqueDisplayName(''))
+      const dn =
+        normalizeDisplayName(md.display_name || md.full_name || md.name || '') ||
+        (await pickUniqueDisplayName(''))
 
-      await upsertProfileIfPossible(dn)
+      if (u?.id) {
+        const avatar = String(md.avatar_url || '').trim() || null
+        const phone = String(md.phone || '').trim() || null
+        await upsertProfileByUserId(u.id, dn, avatar, phone)
+      }
 
       toast.add({ title: 'Welcome back', description: 'Logged in successfully.', color: 'success' })
       await redirectAfterLogin()
       return
     }
 
-    // ✅ signup (phone required & must be unique)
     const pErr = validatePhoneLocal(phoneLocal.value)
     if (pErr) {
       toast.add({ title: 'Invalid phone', description: pErr, color: 'warning' })
@@ -324,7 +345,6 @@ async function submit() {
     const avatar = pickRandomAvatar()
     const phoneE164 = toE164(selectedCountry.value.dial, phoneLocal.value).trim()
 
-    // ✅ pre-check uniqueness (safe RPC)
     const taken = await isPhoneTaken(phoneE164)
     if (taken) {
       toast.add({ title: 'Phone number already exists', description: 'Use a different number.', color: 'error' })
@@ -334,13 +354,27 @@ async function submit() {
     const { data, error } = await supabase.auth.signUp({
       email: email.value.trim(),
       password: password.value,
-      options: { data: { display_name: dn, avatar_url: avatar, phone: phoneE164 } }
+      options: {
+        data: {
+          display_name: dn,
+          avatar_url: avatar,
+          phone: phoneE164
+        }
+      }
     })
     if (error) throw error
 
+    /**
+     * Important:
+     * Use data.user.id directly so the profile row is written immediately,
+     * without waiting for reactive user.value timing.
+     */
+    if (data?.user?.id) {
+      await upsertProfileByUserId(data.user.id, dn, avatar, phoneE164)
+    }
+
     if (data?.session) {
       await supabase.auth.refreshSession()
-      await upsertProfileIfPossible(dn, avatar, phoneE164)
     }
 
     toast.add({
@@ -349,12 +383,17 @@ async function submit() {
       color: 'success'
     })
 
-    await redirectAfterLogin()
+    /**
+     * Signup should always land on /arcade
+     */
+    if (data?.session) {
+      await navigateTo('/arcade', { replace: true })
+    }
+    return
   } catch (e: any) {
     const code = String(e?.code || '')
     const msg = String(e?.message || e?.error_description || '')
 
-    // ✅ Supabase sometimes hides DB unique failures during signup as "unexpected_failure"
     if (mode.value === 'signup') {
       const phoneE164 = toE164(selectedCountry.value.dial, phoneLocal.value).trim()
       if (phoneE164 && (code === 'unexpected_failure' || msg.includes('Database error saving new user'))) {
@@ -374,11 +413,18 @@ async function submit() {
     toast.add({ title: 'Auth failed', description: friendly, color: 'error' })
   } finally {
     loading.value = false
+    authRedirecting.value = false
   }
 }
 
 function continueBrowsing() {
   navigateTo('/', { replace: true })
+}
+
+function goToForgotPassword() {
+  const e = email.value.trim()
+  const url = e ? `/forget-password?email=${encodeURIComponent(e)}` : '/forget-password'
+  navigateTo(url, { replace: true })
 }
 </script>
 
@@ -394,7 +440,6 @@ function continueBrowsing() {
 
     <UContainer class="relative py-10 md:py-14">
       <div class="grid gap-8 lg:grid-cols-2 items-start">
-        <!-- LEFT SIDE -->
         <div class="order-2 lg:order-1 max-w-xl">
           <div class="badge">
             <UIcon name="i-heroicons-lock-closed" class="w-4 h-4" />
@@ -449,7 +494,6 @@ function continueBrowsing() {
           </div>
         </div>
 
-        <!-- FORM -->
         <div class="order-1 lg:order-2 lg:justify-self-end w-full max-w-xl">
           <div class="card">
             <div class="cardHead">
@@ -478,10 +522,9 @@ function continueBrowsing() {
               </div>
             </div>
 
-            <!-- ✅ FORM wrapper: Enter key submits -->
             <div class="cardBody">
               <form class="grid gap-4" @submit.prevent="submit">
-                <UFormGroup label="Email" required>
+                <UFormField label="Email" required>
                   <UInput
                     v-model="email"
                     class="w-full"
@@ -489,11 +532,10 @@ function continueBrowsing() {
                     autocomplete="email"
                     icon="i-heroicons-envelope"
                   />
-                </UFormGroup>
+                </UFormField>
 
-                <!-- ✅ Phone required (signup only) -->
                 <div v-if="mode === 'signup'" class="grid gap-3 sm:grid-cols-[160px_1fr]">
-                  <UFormGroup label="Code" required>
+                  <UFormField label="Code" required>
                     <USelectMenu
                       v-model="selectedCountry"
                       :items="COUNTRY_CODES"
@@ -515,9 +557,9 @@ function continueBrowsing() {
                         </span>
                       </template>
                     </USelectMenu>
-                  </UFormGroup>
+                  </UFormField>
 
-                  <UFormGroup label="Phone" required>
+                  <UFormField label="Phone" required>
                     <UInput
                       v-model="phoneLocal"
                       class="w-full"
@@ -529,10 +571,10 @@ function continueBrowsing() {
                       Stored as:
                       <span class="opacity-100 tabular-nums">{{ toE164(selectedCountry.dial, phoneLocal) || '—' }}</span>
                     </div>
-                  </UFormGroup>
+                  </UFormField>
                 </div>
 
-                <UFormGroup label="Password" required>
+                <UFormField label="Password" required>
                   <UInput
                     v-model="password"
                     class="w-full"
@@ -542,17 +584,24 @@ function continueBrowsing() {
                     icon="i-heroicons-key"
                   />
                   <div class="mt-2 flex items-center justify-between">
-                    <!-- ✅ type="button" so Enter doesn't trigger this -->
                     <UButton type="button" size="xs" variant="ghost" @click="showPass = !showPass">
                       <UIcon :name="showPass ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'" class="w-4 h-4" />
                       {{ showPass ? 'Hide' : 'Show' }}
                     </UButton>
-                    <div class="text-xs opacity-60">Min 6 chars</div>
+
+                    <button
+                      v-if="mode === 'signin'"
+                      type="button"
+                      class="forgotLink"
+                      @click="goToForgotPassword"
+                    >
+                      Forgot password?
+                    </button>
+                    <div v-else class="text-xs opacity-60">Min 6 chars</div>
                   </div>
-                </UFormGroup>
+                </UFormField>
 
                 <div class="grid gap-2 sm:grid-cols-2">
-                  <!-- ✅ submit button -->
                   <UButton
                     type="submit"
                     class="w-full"
@@ -593,7 +642,6 @@ function continueBrowsing() {
 </template>
 
 <style scoped>
-/* (your CSS unchanged — keep exactly as you already have) */
 .authPage { position: relative; min-height: calc(100dvh - 64px); overflow: hidden; color: var(--app-fg); }
 .bg { position: absolute; inset: 0; background: var(--app-bg); }
 .wash { position: absolute; inset: 0; background: radial-gradient(900px 600px at 15% 20%, var(--wash-b), transparent 60%), radial-gradient(900px 600px at 85% 30%, var(--wash-a), transparent 60%), radial-gradient(900px 700px at 55% 90%, rgba(34, 197, 94, 0.10), transparent 60%), linear-gradient(to bottom, rgba(255, 255, 255, 0.05), transparent 35%, rgba(255, 255, 255, 0.03)); opacity: 0.9; }
@@ -617,4 +665,17 @@ function continueBrowsing() {
 .divider { position: relative; padding: 0.6rem 0; display: flex; justify-content: center; }
 .divider::before { content: ''; position: absolute; inset: 50% 0 auto; height: 1px; background: rgba(255, 255, 255, 0.1); }
 .divider span { position: relative; padding: 0 0.75rem; background: rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 9999px; }
+
+.forgotLink {
+  font-size: 0.75rem;
+  opacity: 0.82;
+  padding: 0.25rem 0.45rem;
+  border-radius: 0.75rem;
+  transition: opacity 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+.forgotLink:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
 </style>
