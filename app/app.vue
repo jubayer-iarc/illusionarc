@@ -1,7 +1,6 @@
 <template>
   <UApp>
     <Analytics />
-    <RouteLoader />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
@@ -12,6 +11,5 @@
 
 <script setup lang="ts">
 import { Analytics } from '@vercel/analytics/nuxt';
-import RouteLoader from "~/components/RouteLoader.vue";
 // No additional script logic needed
 </script>

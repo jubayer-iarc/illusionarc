@@ -7,7 +7,6 @@ export default defineNuxtConfig({
     '@nuxt/eslint',
     '@nuxt/hints',
     '@nuxt/image',
-    '@nuxt/scripts',
     '@nuxtjs/color-mode',
     '@nuxt/ui',
     '@vite-pwa/nuxt',
