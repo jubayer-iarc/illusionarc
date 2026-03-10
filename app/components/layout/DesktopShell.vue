@@ -63,7 +63,7 @@ const year = new Date().getFullYear()
 
 <template>
   <!-- Desktop only -->
-  <div class="hidden md:flex min-h-dvh flex-col bg-[var(--app-bg)] text-[var(--app-fg)]">
+  <div class="md:flex min-h-dvh flex-col bg-[var(--app-bg)] text-[var(--app-fg)]">
     <!-- Header -->
     <header
       class="sticky top-0 z-50 backdrop-blur

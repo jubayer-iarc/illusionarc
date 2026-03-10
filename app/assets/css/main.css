@@ -69,21 +69,6 @@
   }
 }
 
-#route-progress{
-  position: fixed;
-  left: 0;
-  top: 0;
-  height: 2px;
-  width: 100%;
-  transform: scaleX(0);
-  transform-origin: 0 0;
-  background: linear-gradient(90deg, rgba(34,211,238,.9), rgba(124,58,237,.9), rgba(34,197,94,.85));
-  opacity: 0;
-  z-index: 9999;
-  transition: transform .22s ease, opacity .12s ease;
-}
-#route-progress.on{ opacity: 1; }
-
 /* SSR-safe reveal */
 [data-reveal]{ opacity: 1; transform: none; filter: none; }
 html.reveal-ready [data-reveal]{

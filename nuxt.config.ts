@@ -32,8 +32,8 @@ export default defineNuxtConfig({
         { rel: 'manifest', href: '/site.webmanifest' }
       ]
     },
-    pageTransition: { name: 'page', mode: 'out-in' },
-    layoutTransition: { name: 'layout', mode: 'out-in' }
+    pageTransition: false,
+    layoutTransition: false
   },
 
   ui: {},
