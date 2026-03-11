@@ -2,18 +2,25 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { createError, getQuery } from 'h3'
 
+type PrizeRelation = {
+  id: string
+  title: string
+  description?: string | null
+  image_url?: string | null
+  image_path?: string | null
+}
+
 type WinnerRow = {
-  rank: 1 | 2 | 3
+  rank: number
   player_name: string
   score: number
   user_id?: string | null
   created_at?: string
-
-  // stored in tournament_winners (often defaults today)
+  prize_id?: string | null
   prize?: string | null
-
-  // legacy optional
+  prize_label?: string | null
   prize_bdt?: number | null
+  tournament_prize?: PrizeRelation | null
 }
 
 type TournamentRow = {
@@ -22,14 +29,6 @@ type TournamentRow = {
   ends_at: string | null
   status: string | null
   finalized: boolean | null
-
-  // ✅ your new columns from tournaments table
-  prize_1: string | null
-  prize_2: string | null
-  prize_3: string | null
-
-  // legacy single prize (optional)
-  prize: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -37,79 +36,109 @@ export default defineEventHandler(async (event) => {
   const q = getQuery(event)
 
   const slug = String(q.slug || '').trim()
-  if (!slug) throw createError({ statusCode: 400, statusMessage: 'Missing slug' })
+  if (!slug) {
+    throw createError({ statusCode: 400, statusMessage: 'Missing slug' })
+  }
 
   function clean(v: any) {
     const s = String(v ?? '').trim()
     return s || null
   }
 
-  function applyTournamentPrizes(winners: WinnerRow[], t: TournamentRow | null) {
-    if (!t) return winners
+  function normalizeWinnerRow(w: any): WinnerRow {
+    const joinedPrize = w?.tournament_prize || null
+    const explicitPrize = clean(w?.prize)
+    const labelPrize = clean(w?.prize_label)
+    const joinedTitle = clean(joinedPrize?.title)
 
-    const p1 = clean((t as any).prize_1)
-    const p2 = clean((t as any).prize_2)
-    const p3 = clean((t as any).prize_3)
-    const legacy = clean((t as any).prize)
+    let finalPrize = explicitPrize || labelPrize || joinedTitle
+    if (!finalPrize && w?.prize_bdt != null) {
+      finalPrize = `${Number(w.prize_bdt)} BDT`
+    }
 
-    return winners.map((w) => {
-      const rank = Number(w.rank) as 1 | 2 | 3
-
-      // Prefer tournament prizes ALWAYS if present
-      const fromTournament =
-        rank === 1 ? (p1 || legacy) : rank === 2 ? p2 : p3
-
-      if (fromTournament) {
-        return { ...w, prize: fromTournament }
-      }
-
-      // Otherwise: keep stored prize, but if empty and prize_bdt exists, show it
-      const existingPrize = clean(w.prize)
-      if (!existingPrize && w.prize_bdt != null) {
-        return { ...w, prize: `${w.prize_bdt} BDT` }
-      }
-
-      return { ...w, prize: existingPrize }
-    })
+    return {
+      rank: Number(w?.rank || 0),
+      player_name: String(w?.player_name || '').trim() || 'Player',
+      score: Number(w?.score || 0),
+      user_id: w?.user_id || null,
+      created_at: w?.created_at || undefined,
+      prize_id: w?.prize_id || null,
+      prize: finalPrize,
+      prize_label: labelPrize,
+      prize_bdt: w?.prize_bdt ?? null,
+      tournament_prize: joinedPrize
+        ? {
+            id: String(joinedPrize.id || '').trim(),
+            title: String(joinedPrize.title || '').trim(),
+            description: joinedPrize.description || null,
+            image_url: joinedPrize.image_url || null,
+            image_path: joinedPrize.image_path || null
+          }
+        : null
+    }
   }
 
   async function readWinners(): Promise<WinnerRow[]> {
     const { data, error } = await adminDb
       .from('tournament_winners')
-      .select('rank, player_name, score, user_id, created_at, prize, prize_bdt')
+      .select(`
+        rank,
+        player_name,
+        score,
+        user_id,
+        created_at,
+        prize_id,
+        prize,
+        prize_label,
+        prize_bdt,
+        tournament_prize:tournament_prizes!tournament_winners_prize_id_fkey (
+          id,
+          title,
+          description,
+          image_url,
+          image_path
+        )
+      `)
       .eq('tournament_slug', slug)
       .order('rank', { ascending: true })
 
-    if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-    return (data || []) as WinnerRow[]
+    if (error) {
+      throw createError({ statusCode: 500, statusMessage: error.message })
+    }
+
+    return (data || []).map(normalizeWinnerRow)
   }
 
   async function readTournament(): Promise<TournamentRow> {
     const { data: t, error: tErr } = await adminDb
       .from('tournaments')
-      .select('id, slug, ends_at, status, finalized, prize_1, prize_2, prize_3, prize')
+      .select('id, slug, ends_at, status, finalized')
       .eq('slug', slug)
       .maybeSingle()
 
-    if (tErr) throw createError({ statusCode: 500, statusMessage: tErr.message })
-    if (!t?.id) throw createError({ statusCode: 404, statusMessage: 'Tournament not found' })
+    if (tErr) {
+      throw createError({ statusCode: 500, statusMessage: tErr.message })
+    }
+    if (!t?.id) {
+      throw createError({ statusCode: 404, statusMessage: 'Tournament not found' })
+    }
 
-    return t as any as TournamentRow
+    return t as TournamentRow
   }
 
-  // 1) Read tournament first (we need prizes either way)
+  // 1) Read tournament first
   const tournament = await readTournament()
 
-  // 2) Quick return if winners exist
+  // 2) Quick return if winners already exist
   const existing = await readWinners()
   if (existing.length) {
-    return { slug, winners: applyTournamentPrizes(existing, tournament) }
+    return { slug, winners: existing }
   }
 
   // 3) Decide if ended
-  const endsAtIso = String((tournament as any).ends_at || '')
-  const status = String((tournament as any).status || '').toLowerCase()
-  const finalized = Boolean((tournament as any).finalized)
+  const endsAtIso = String(tournament.ends_at || '')
+  const status = String(tournament.status || '').toLowerCase()
+  const finalized = Boolean(tournament.finalized)
 
   const endsMs = endsAtIso ? new Date(endsAtIso).getTime() : 0
   const nowMs = Date.now()
@@ -117,12 +146,15 @@ export default defineEventHandler(async (event) => {
   const endedByStatus = status === 'ended'
   const isEnded = endedByTime || endedByStatus
 
-  if (!isEnded) return { slug, winners: [] }
+  if (!isEnded) {
+    return { slug, winners: [] }
+  }
 
-  // 4) Auto-finalize (RPC)
+  // 4) Auto-finalize
+  // Keep this only if your DB function exists.
   try {
     await (adminDb as any).rpc('finalize_tournament_winners', {
-      p_tournament_id: String((tournament as any).id),
+      p_tournament_id: String(tournament.id),
       p_force: false
     })
   } catch (e: any) {
@@ -132,7 +164,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 5) Return winners after finalize (but show tournament prizes)
+  // 5) Return winners after finalize
   const winners = await readWinners()
-  return { slug, winners: applyTournamentPrizes(winners, tournament), finalizedWas: finalized }
+  return { slug, winners, finalizedWas: finalized }
 })

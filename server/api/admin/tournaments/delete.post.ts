@@ -7,31 +7,24 @@ async function requireAdmin(event: any) {
 
   const { data: auth, error: authErr } = await client.auth.getUser()
   const user = auth?.user
-  if (authErr || !user?.id) throw createError({ statusCode: 401, statusMessage: 'Login required' })
+
+  if (authErr || !user?.id) {
+    throw createError({ statusCode: 401, statusMessage: 'Login required' })
+  }
 
   const { data: prof, error: profErr } = await client
-      .from('profiles')
-      .select('user_id, role')
-      .eq('user_id', user.id)
-      .maybeSingle()
+    .from('profiles')
+    .select('user_id, role')
+    .eq('user_id', user.id)
+    .maybeSingle()
 
-  if (profErr) throw createError({ statusCode: 500, statusMessage: profErr.message })
+  if (profErr) {
+    throw createError({ statusCode: 500, statusMessage: profErr.message })
+  }
+
   if (String((prof as any)?.role || '').toLowerCase() !== 'admin') {
     throw createError({ statusCode: 403, statusMessage: 'Admin only' })
   }
-}
-
-async function hasColumn(adminDb: any, table: string, column: string) {
-  const { data, error } = await adminDb
-      .from('information_schema.columns')
-      .select('column_name')
-      .eq('table_schema', 'public')
-      .eq('table_name', table)
-      .eq('column_name', column)
-      .limit(1)
-
-  if (error) return false
-  return (data || []).length > 0
 }
 
 export default defineEventHandler(async (event) => {
@@ -40,46 +33,82 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
 
   const id = String(body?.id || '').trim()
-  if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing id' })
+  if (!id) {
+    throw createError({ statusCode: 400, statusMessage: 'Missing id' })
+  }
 
-  // fetch tournament row to get slug for fallback deletes
+  // Load tournament first
   const { data: t, error: tErr } = await adminDb
-      .from('tournaments')
-      .select('id, slug')
-      .eq('id', id)
-      .maybeSingle()
+    .from('tournaments')
+    .select('id, slug')
+    .eq('id', id)
+    .maybeSingle()
 
-  if (tErr) throw createError({ statusCode: 400, statusMessage: tErr.message })
-  if (!t) throw createError({ statusCode: 404, statusMessage: 'Tournament not found' })
+  if (tErr) {
+    throw createError({ statusCode: 400, statusMessage: tErr.message })
+  }
+  if (!t?.id) {
+    throw createError({ statusCode: 404, statusMessage: 'Tournament not found' })
+  }
 
   const tournamentSlug = String((t as any).slug || '').trim()
 
-  // Determine how winners link to tournament
-  const winnersHasTid = await hasColumn(adminDb, 'tournament_winners', 'tournament_id')
-  const winnersHasSlug = await hasColumn(adminDb, 'tournament_winners', 'tournament_slug')
+  // Block delete if winners exist
+  const { data: winners, error: wErr } = await adminDb
+    .from('tournament_winners')
+    .select('id')
+    .or(`tournament_id.eq.${id},tournament_slug.eq.${tournamentSlug}`)
+    .limit(1)
 
-  // Optional safety: block delete if winners exist
-  if (winnersHasTid) {
-    const { data: w, error: wErr } = await adminDb
-        .from('tournament_winners')
-        .select('id')
-        .eq('tournament_id', id)
-        .limit(1)
-    if (wErr) throw createError({ statusCode: 400, statusMessage: wErr.message })
-    if ((w || []).length) throw createError({ statusCode: 400, statusMessage: 'Cannot delete: winners exist (finalized)' })
-  } else if (winnersHasSlug) {
-    const { data: w, error: wErr } = await adminDb
-        .from('tournament_winners')
-        .select('id')
-        .eq('tournament_slug', tournamentSlug)
-        .limit(1)
-    if (wErr) throw createError({ statusCode: 400, statusMessage: wErr.message })
-    if ((w || []).length) throw createError({ statusCode: 400, statusMessage: 'Cannot delete: winners exist (finalized)' })
+  if (wErr) {
+    throw createError({ statusCode: 400, statusMessage: wErr.message })
   }
 
-  // Delete tournament (and rely on FK cascade if you have it)
-  const { error } = await adminDb.from('tournaments').delete().eq('id', id)
-  if (error) throw createError({ statusCode: 400, statusMessage: error.message })
+  if ((winners || []).length) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Cannot delete: winners exist (finalized)'
+    })
+  }
+
+  // Delete child rows that belong only to this tournament
+  const { error: mapErr } = await adminDb
+    .from('tournament_prize_map')
+    .delete()
+    .eq('tournament_id', id)
+
+  if (mapErr) {
+    throw createError({ statusCode: 400, statusMessage: mapErr.message })
+  }
+
+  const { error: adsErr } = await adminDb
+    .from('tournament_ads')
+    .delete()
+    .eq('tournament_id', id)
+
+  if (adsErr) {
+    throw createError({ statusCode: 400, statusMessage: adsErr.message })
+  }
+
+  const { error: scoresErr } = await adminDb
+    .from('tournament_scores')
+    .delete()
+    .eq('tournament_id', id)
+
+  if (scoresErr) {
+    throw createError({ statusCode: 400, statusMessage: scoresErr.message })
+  }
+
+  // Do NOT delete reusable prize library rows from tournament_prizes
+
+  const { error: delErr } = await adminDb
+    .from('tournaments')
+    .delete()
+    .eq('id', id)
+
+  if (delErr) {
+    throw createError({ statusCode: 400, statusMessage: delErr.message })
+  }
 
   return { ok: true }
 })

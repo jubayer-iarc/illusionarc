@@ -7,7 +7,10 @@ async function requireAdmin(event: any) {
 
   const { data: auth, error: authErr } = await client.auth.getUser()
   const user = auth?.user
-  if (authErr || !user?.id) throw createError({ statusCode: 401, statusMessage: 'Login required' })
+
+  if (authErr || !user?.id) {
+    throw createError({ statusCode: 401, statusMessage: 'Login required' })
+  }
 
   const { data: prof, error: profErr } = await client
     .from('profiles')
@@ -15,10 +18,23 @@ async function requireAdmin(event: any) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  if (profErr) throw createError({ statusCode: 500, statusMessage: profErr.message })
+  if (profErr) {
+    throw createError({ statusCode: 500, statusMessage: profErr.message })
+  }
+
   if (String((prof as any)?.role || '').toLowerCase() !== 'admin') {
     throw createError({ statusCode: 403, statusMessage: 'Admin only' })
   }
+}
+
+function asNullableTrimmedString(v: any) {
+  const s = String(v || '').trim()
+  return s || null
+}
+
+function asSafeInteger(v: any, fallback = 0) {
+  const n = Number(v)
+  return Number.isFinite(n) ? Math.floor(n) : fallback
 }
 
 export default defineEventHandler(async (event) => {
@@ -28,33 +44,30 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
 
   const id = String(body?.id || '').trim()
-  if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing winner row id' })
+  if (!id) {
+    throw createError({ statusCode: 400, statusMessage: 'Missing winner row id' })
+  }
 
-  const patch: any = {}
+  const patch: Record<string, any> = {}
 
-  // ---- existing editable fields (keep if you still use them anywhere) ----
-  if (body.player_name != null) patch.player_name = String(body.player_name || '').trim() || null
+  // Optional editable fields
+  if (body.player_name != null) {
+    patch.player_name = asNullableTrimmedString(body.player_name)
+  }
 
   if (body.score != null) {
-    const n = Number(body.score)
-    patch.score = Number.isFinite(n) ? n : 0
+    patch.score = asSafeInteger(body.score, 0)
   }
 
   if (body.prize_bdt != null) {
-    const n = Number(body.prize_bdt)
-    patch.prize_bdt = Number.isFinite(n) ? n : 0
+    patch.prize_bdt = Math.max(0, asSafeInteger(body.prize_bdt, 0))
   }
 
   if (body.rank != null) {
-    const n = Number(body.rank)
-    patch.rank = Number.isFinite(n) ? Math.max(1, Math.floor(n)) : 1
+    patch.rank = Math.max(1, asSafeInteger(body.rank, 1))
   }
 
-  // ---- NEW: reward fulfillment fields ----
-  // Expected values:
-  // reward_status: 'pending' | 'given'
-  // reward_method: 'online' | 'offline' | null
-  // reward_txn_id: string | null (required if online + given)
+  // Reward fulfillment fields
   if (body.reward_status != null) {
     const v = String(body.reward_status || '').trim().toLowerCase()
     patch.reward_status = v === 'given' ? 'given' : 'pending'
@@ -62,34 +75,44 @@ export default defineEventHandler(async (event) => {
 
   if (body.reward_method != null) {
     const v = String(body.reward_method || '').trim().toLowerCase()
-    patch.reward_method = v ? v : null
+    patch.reward_method = v === 'online' || v === 'offline' ? v : null
   }
 
   if (body.reward_txn_id != null) {
-    const v = String(body.reward_txn_id || '').trim()
-    patch.reward_txn_id = v || null
+    patch.reward_txn_id = asNullableTrimmedString(body.reward_txn_id)
   }
 
-  // Validation: txn id required for online + given
-  const finalStatus = patch.reward_status ?? null
-  const finalMethod = patch.reward_method ?? null
-  const finalTxn = patch.reward_txn_id ?? null
-  if (finalStatus === 'given' && finalMethod === 'online' && !finalTxn) {
+  // Load existing row so validation works even for partial updates
+  const { data: existing, error: existingErr } = await adminDb
+    .from('tournament_winners')
+    .select('id, reward_status, reward_method, reward_txn_id')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (existingErr) {
+    throw createError({ statusCode: 400, statusMessage: existingErr.message })
+  }
+  if (!existing) {
+    throw createError({ statusCode: 404, statusMessage: 'Winner row not found' })
+  }
+
+  const finalStatus = patch.reward_status ?? existing.reward_status ?? 'pending'
+  const finalMethod = patch.reward_method ?? existing.reward_method ?? null
+  const finalTxn = patch.reward_txn_id ?? existing.reward_txn_id ?? null
+
+  if (finalStatus === 'given' && finalMethod === 'online' && !String(finalTxn || '').trim()) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Transaction ID required for online reward marked as given'
     })
   }
 
-  // Optional: track time of reward
   if (patch.reward_status === 'given') {
     patch.rewarded_at = new Date().toISOString()
-  }
-  if (patch.reward_status === 'pending') {
+  } else if (patch.reward_status === 'pending') {
     patch.rewarded_at = null
   }
 
-  // IMPORTANT: prevent empty updates (this causes 0 rows and .single() crash)
   if (Object.keys(patch).length === 0) {
     throw createError({ statusCode: 400, statusMessage: 'No fields to update' })
   }
@@ -98,11 +121,32 @@ export default defineEventHandler(async (event) => {
     .from('tournament_winners')
     .update(patch)
     .eq('id', id)
-    .select('*')
-    .maybeSingle() // ✅ avoids "Cannot coerce..." when 0 rows
+    .select(`
+      id,
+      tournament_id,
+      tournament_slug,
+      rank,
+      user_id,
+      player_name,
+      score,
+      prize_id,
+      prize,
+      prize_label,
+      prize_bdt,
+      reward_status,
+      reward_method,
+      reward_txn_id,
+      rewarded_at,
+      created_at
+    `)
+    .maybeSingle()
 
-  if (error) throw createError({ statusCode: 400, statusMessage: error.message })
-  if (!data) throw createError({ statusCode: 404, statusMessage: 'Winner row not found' })
+  if (error) {
+    throw createError({ statusCode: 400, statusMessage: error.message })
+  }
+  if (!data) {
+    throw createError({ statusCode: 404, statusMessage: 'Winner row not found' })
+  }
 
   return { ok: true, row: data }
 })

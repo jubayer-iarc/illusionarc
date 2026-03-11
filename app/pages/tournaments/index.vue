@@ -40,7 +40,7 @@ onBeforeUnmount(() => timer && clearInterval(timer))
 
 /* ---------------- Helpers ---------------- */
 function getStatus(t: AnyTournament) {
-  return String(t?.status || 'scheduled') as 'scheduled' | 'live' | 'ended' | 'canceled'
+  return String(t?.effective_status || t?.status || 'scheduled') as 'scheduled' | 'live' | 'ended' | 'canceled'
 }
 function getGameSlug(t: AnyTournament) {
   return String(t?.game_slug ?? t?.gameSlug ?? '').trim()
@@ -60,8 +60,6 @@ function fmt(dt: string) {
   if (Number.isNaN(d.getTime())) return ''
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(d)
 }
-
-/** ✅ Day:Hour:Minute:Second format */
 function msToDHMS(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return '0D:00H:00M:00S'
   const totalSeconds = Math.floor(ms / 1000)
@@ -78,16 +76,29 @@ function msToDHMS(ms: number) {
   const pad2 = (n: number) => String(n).padStart(2, '0')
   return `${days}D:${pad2(hours)}H:${pad2(minutes)}M:${pad2(seconds)}S`
 }
-
 function startsIn(t: AnyTournament) {
   return new Date(getStartsAt(t)).getTime() - now.value
 }
 function endsIn(t: AnyTournament) {
   return new Date(getEndsAt(t)).getTime() - now.value
 }
+function ordinal(n: number) {
+  const v = n % 100
+  if (v >= 11 && v <= 13) return `${n}th`
+  switch (n % 10) {
+    case 1:
+      return `${n}st`
+    case 2:
+      return `${n}nd`
+    case 3:
+      return `${n}rd`
+    default:
+      return `${n}th`
+  }
+}
 
 /* ---------------- Thumbnail resolver ---------------- */
-const DEFAULT_BUCKET = 'tournament-thumbs' // change to your real bucket name
+const DEFAULT_BUCKET = 'tournament-thumbs'
 
 function rawThumb(t: AnyTournament) {
   return String(t?.thumbnail_url ?? t?.thumbnail ?? t?.thumb ?? '').trim()
@@ -170,6 +181,43 @@ function onThumbError(t: AnyTournament) {
   if (slug) thumbMap[slug] = ''
 }
 
+/* ---------------- Prize summary ---------------- */
+function prizeSummary(t: AnyTournament) {
+  const summary = t?.prize_summary
+  if (summary && typeof summary === 'object') {
+    return {
+      count: Number(summary?.count || 0),
+      top_prize: String(summary?.top_prize || '').trim() || null
+    }
+  }
+
+  const legacyTop = String(t?.prize_1 || t?.prize || '').trim()
+  const legacy2 = String(t?.prize_2 || '').trim()
+  const legacy3 = String(t?.prize_3 || '').trim()
+
+  const count = [legacyTop, legacy2, legacy3].filter(Boolean).length
+  return {
+    count,
+    top_prize: legacyTop || null
+  }
+}
+
+function firstPrizeText(t: AnyTournament) {
+  return prizeSummary(t).top_prize || ''
+}
+
+function prizeCountText(t: AnyTournament) {
+  const count = prizeSummary(t).count
+  if (!count) return ''
+  return `${count} prize${count > 1 ? 's' : ''}`
+}
+
+function topPrizePreview(t: AnyTournament) {
+  const top = firstPrizeText(t)
+  if (!top) return ''
+  return `${ordinal(1)}: ${top}`
+}
+
 /* ---------------- UI State ---------------- */
 const q = ref('')
 const status = ref<'all' | 'live' | 'scheduled' | 'ended'>('all')
@@ -232,7 +280,8 @@ const filtered = computed(() => {
       const title = String(t?.title || '').toLowerCase()
       const slug = String(t?.slug || '').toLowerCase()
       const g = getGameSlug(t).toLowerCase()
-      return title.includes(qs) || slug.includes(qs) || g.includes(qs)
+      const prizeText = `${firstPrizeText(t)} ${prizeCountText(t)}`.toLowerCase()
+      return title.includes(qs) || slug.includes(qs) || g.includes(qs) || prizeText.includes(qs)
     })
   }
 
@@ -255,7 +304,6 @@ const counts = computed(() => {
   }
 })
 
-/** ✅ mobile compact header counts */
 const countsText = computed(() => {
   return `Total ${counts.value.all} • Live ${counts.value.live} • Upcoming ${counts.value.scheduled} • Ended ${counts.value.ended}`
 })
@@ -295,17 +343,13 @@ function windowText(t: AnyTournament) {
 
 <template>
   <UContainer class="py-8 sm:py-10">
-    <!-- TOP: Header -->
     <div
       class="relative overflow-hidden rounded-3xl border border-black/10 bg-white p-5 sm:p-8
              dark:border-white/10 dark:bg-white/5"
     >
       <div class="pointer-events-none absolute inset-0" aria-hidden="true">
-        <!-- Light blobs -->
         <div class="absolute -top-28 left-1/3 h-80 w-80 rounded-full bg-violet-500/15 blur-3xl dark:bg-violet-500/15"></div>
         <div class="absolute -bottom-28 right-1/4 h-80 w-80 rounded-full bg-emerald-500/10 blur-3xl dark:bg-emerald-500/10"></div>
-
-        <!-- Overlay: light vs dark -->
         <div class="absolute inset-0 bg-gradient-to-b from-black/0 to-black/0 dark:from-white/10 dark:to-transparent"></div>
       </div>
 
@@ -327,7 +371,6 @@ function windowText(t: AnyTournament) {
             Discover live runs, upcoming windows, and ended results — all in one place.
           </p>
 
-          <!-- ✅ Mobile compact counts (single line) -->
           <div class="mt-3 sm:hidden text-[11px] text-black/60 dark:text-white/60">
             {{ countsText }}
           </div>
@@ -351,7 +394,6 @@ function windowText(t: AnyTournament) {
         </div>
       </div>
 
-      <!-- ✅ Desktop-only Stats row (unchanged) -->
       <div class="relative mt-5 hidden sm:grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-2xl border border-black/10 bg-black/5 p-4 dark:border-white/10 dark:bg-black/20">
           <div class="text-xs text-black/60 dark:text-white/60">Total</div>
@@ -379,9 +421,7 @@ function windowText(t: AnyTournament) {
       </div>
     </div>
 
-    <!-- BODY -->
     <div class="mt-6 grid gap-5 lg:grid-cols-[320px_1fr]">
-      <!-- FILTERS -->
       <aside class="lg:sticky lg:top-6 lg:self-start" :class="filtersOpen ? 'block' : 'hidden lg:block'">
         <div class="rounded-3xl border border-black/10 bg-white p-4 dark:border-white/10 dark:bg-white/5">
           <div class="flex items-center justify-between">
@@ -395,14 +435,13 @@ function windowText(t: AnyTournament) {
             </button>
           </div>
 
-          <!-- Search -->
           <div class="mt-4 rounded-2xl border border-black/10 bg-black/5 px-3 py-2.5 dark:border-white/10 dark:bg-black/20">
             <div class="flex items-center gap-2">
               <UIcon name="i-heroicons-magnifying-glass" class="h-5 w-5 opacity-60" />
               <input
                 v-model="q"
                 type="text"
-                placeholder="Search by title / slug / game…"
+                placeholder="Search by title / slug / game / prize…"
                 class="w-full bg-transparent text-sm outline-none placeholder:text-black/40 dark:placeholder:text-white/40"
               />
               <button
@@ -417,7 +456,6 @@ function windowText(t: AnyTournament) {
             </div>
           </div>
 
-          <!-- Status chips -->
           <div class="mt-4">
             <div class="text-xs text-black/60 dark:text-white/60">Status</div>
             <div class="mt-2 flex flex-wrap gap-2">
@@ -428,7 +466,6 @@ function windowText(t: AnyTournament) {
             </div>
           </div>
 
-          <!-- Game -->
           <div class="mt-4">
             <div class="text-xs text-black/60 dark:text-white/60">Game</div>
             <div class="mt-2 rounded-2xl border border-black/10 bg-black/5 px-3 py-2.5 dark:border-white/10 dark:bg-black/20">
@@ -439,7 +476,6 @@ function windowText(t: AnyTournament) {
             </div>
           </div>
 
-          <!-- Sort -->
           <div class="mt-4">
             <div class="text-xs text-black/60 dark:text-white/60">Sort</div>
             <div class="mt-2 rounded-2xl border border-black/10 bg-black/5 px-3 py-2.5 dark:border-white/10 dark:bg-black/20">
@@ -451,7 +487,6 @@ function windowText(t: AnyTournament) {
             </div>
           </div>
 
-          <!-- Joinable toggle -->
           <button
             type="button"
             class="mt-4 w-full rounded-2xl border border-black/10 bg-black/5 px-3 py-3 text-left hover:bg-black/10 transition
@@ -479,7 +514,6 @@ function windowText(t: AnyTournament) {
             <div class="mt-1 text-xs text-black/50 dark:text-white/50">Live + subscription</div>
           </button>
 
-          <!-- Actions -->
           <div class="mt-4 flex gap-2">
             <UButton variant="soft" class="flex-1 !rounded-full" @click="clearFilters">Reset</UButton>
             <UButton class="flex-1 !rounded-full" @click="filtersOpen = false" v-if="filtersOpen">Apply</UButton>
@@ -491,9 +525,7 @@ function windowText(t: AnyTournament) {
         </div>
       </aside>
 
-      <!-- CONTENT -->
       <main class="min-w-0">
-        <!-- LIVE STRIP -->
         <section
           v-if="live.length"
           class="rounded-3xl border border-black/10 bg-white p-4 sm:p-5 dark:border-white/10 dark:bg-white/5"
@@ -548,10 +580,16 @@ function windowText(t: AnyTournament) {
                     {{ windowText(t) || '—' }}
                   </span>
                   <span
-                    v-if="t.prize"
+                    v-if="prizeCountText(t)"
                     class="rounded-full border border-black/10 bg-white px-2.5 py-1 dark:border-white/10 dark:bg-white/5"
                   >
-                    Prize: <b class="font-semibold text-black/90 dark:text-white/90">{{ t.prize }}</b>
+                    {{ prizeCountText(t) }}
+                  </span>
+                  <span
+                    v-if="firstPrizeText(t)"
+                    class="rounded-full border border-black/10 bg-white px-2.5 py-1 dark:border-white/10 dark:bg-white/5"
+                  >
+                    Top: <b class="font-semibold text-black/90 dark:text-white/90">{{ firstPrizeText(t) }}</b>
                   </span>
                 </div>
 
@@ -573,7 +611,6 @@ function windowText(t: AnyTournament) {
           </div>
         </section>
 
-        <!-- GRID -->
         <section class="mt-5">
           <div class="flex items-end justify-between gap-3">
             <div>
@@ -641,9 +678,22 @@ function windowText(t: AnyTournament) {
                   <div class="text-[11px] text-black/60 dark:text-white/60 truncate">
                     {{ windowText(t) || '—' }}
                   </div>
-                  <div v-if="t.prize" class="text-[11px] text-black/70 dark:text-white/70 truncate">
-                    Prize: <b class="text-black/85 dark:text-white/90">{{ t.prize }}</b>
+                  <div
+                    v-if="prizeCountText(t) || firstPrizeText(t)"
+                    class="text-[11px] text-black/70 dark:text-white/70 truncate"
+                  >
+                    <template v-if="prizeCountText(t)">
+                      {{ prizeCountText(t) }}
+                    </template>
+                    <template v-if="firstPrizeText(t)">
+                      <span v-if="prizeCountText(t)"> • </span>
+                      Top: <b class="text-black/85 dark:text-white/90">{{ firstPrizeText(t) }}</b>
+                    </template>
                   </div>
+                </div>
+
+                <div v-if="topPrizePreview(t)" class="mt-2 text-[11px] text-black/55 dark:text-white/55 truncate">
+                  {{ topPrizePreview(t) }}
                 </div>
 
                 <div class="mt-3 flex flex-wrap gap-2">
@@ -673,7 +723,6 @@ function windowText(t: AnyTournament) {
             </article>
           </div>
 
-          <!-- Empty -->
           <div
             v-if="!filtered.length"
             class="mt-6 rounded-3xl border border-black/10 bg-white p-10 text-center dark:border-white/10 dark:bg-white/5"

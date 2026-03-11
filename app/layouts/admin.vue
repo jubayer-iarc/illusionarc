@@ -23,6 +23,7 @@ const nav: AdminNavItem[] = [
   { label: 'Scores', to: '/admin/scores' },
   { label: 'Services', to: '/admin/services' },
   { label: 'Works', to: '/admin/works' },
+  { label: 'Prizes', to: '/admin/tournament-prizes' },
   { label: 'Tournaments', to: '/admin/tournaments' },
   { label: 'Payments', to: '/admin/payments' },
   { label: 'Subscriptions', to: '/admin/subscriptions' },
