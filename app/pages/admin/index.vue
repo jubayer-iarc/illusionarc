@@ -77,10 +77,12 @@ type TournamentRow = {
   ends_at: string
   status: string
   finalized: boolean
-  prize_1?: string | null
-  prize_2?: string | null
-  prize_3?: string | null
   thumbnail_url?: string | null
+}
+
+type PrizeSummary = {
+  count: number
+  top_prize: string | null
 }
 
 /* ---------------- State ---------------- */
@@ -114,6 +116,7 @@ const upcomingTournaments = ref<TournamentRow[]>([])
 const liveTournaments = ref<TournamentRow[]>([])
 
 const nameByUserId = ref<Record<string, string>>({})
+const prizeSummaryMap = ref<Record<string, PrizeSummary>>({})
 
 /* ---------------- UI helpers ---------------- */
 function n(v: number) {
@@ -162,7 +165,7 @@ function relTime(iso: string) {
 function badgeClass(kind: string) {
   const k = String(kind || '').toLowerCase()
   if (k === 'new' || k === 'pending') return 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/25'
-  if (k === 'paid' || k === 'success' || k === 'active' || k === 'live') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/25'
+  if (k === 'paid' || k === 'success' || k === 'active' || k === 'live' || k === 'ok') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/25'
   if (k === 'expired' || k === 'ended') return 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/25'
   if (k === 'failed' || k === 'canceled' || k === 'cancelled') return 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/25'
   if (k === 'scheduled') return 'bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/25'
@@ -180,16 +183,83 @@ async function loadProfilesMapFromPayments(items: PaymentRow[]) {
     nameByUserId.value = {}
     return
   }
-  const { data, error } = await supabase.from('profiles').select('user_id, display_name').in('user_id', ids)
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('user_id, display_name')
+    .in('user_id', ids)
+
   if (error) return
+
   const map: Record<string, string> = {}
-  ;(data || []).forEach((p: any) => (map[p.user_id] = p.display_name))
+  ;(data || []).forEach((p: any) => {
+    const uid = String(p?.user_id || '').trim()
+    if (!uid) return
+    map[uid] = String(p?.display_name || '').trim()
+  })
+
   nameByUserId.value = map
+}
+
+async function loadPrizeSummaryForTournaments(rows: TournamentRow[]) {
+  const ids = Array.from(new Set(rows.map((t) => String(t.id || '').trim()).filter(Boolean)))
+  prizeSummaryMap.value = {}
+
+  if (!ids.length) return
+
+  const { data, error } = await supabase
+    .from('tournament_prize_map')
+    .select(`
+      tournament_id,
+      rank,
+      prize:tournament_prizes!tournament_prize_map_prize_id_fkey (
+        title
+      )
+    `)
+    .in('tournament_id', ids)
+    .order('rank', { ascending: true })
+
+  if (error) return
+
+  const grouped: Record<string, Array<{ rank: number; title: string }>> = {}
+
+  for (const row of data || []) {
+    const tid = String((row as any)?.tournament_id || '').trim()
+    const rank = Number((row as any)?.rank || 0)
+    const title = String((row as any)?.prize?.title || '').trim()
+
+    if (!tid || !title) continue
+    if (!grouped[tid]) grouped[tid] = []
+    grouped[tid].push({ rank, title })
+  }
+
+  const out: Record<string, PrizeSummary> = {}
+
+  for (const tid of Object.keys(grouped)) {
+    const arr = grouped[tid].sort((a, b) => a.rank - b.rank)
+    out[tid] = {
+      count: arr.length,
+      top_prize: arr[0]?.title || null
+    }
+  }
+
+  prizeSummaryMap.value = out
+}
+
+function tournamentPills(t: TournamentRow) {
+  const summary = prizeSummaryMap.value[t.id]
+  const out: string[] = []
+
+  if (summary?.count) out.push(`${summary.count} prize${summary.count > 1 ? 's' : ''}`)
+  if (summary?.top_prize) out.push(`Top: ${summary.top_prize}`)
+
+  return out.slice(0, 2)
 }
 
 /* ---------------- Load dashboard ---------------- */
 async function loadDashboard() {
   loading.value = true
+
   try {
     const nowIso = new Date().toISOString()
 
@@ -215,19 +285,17 @@ async function loadDashboard() {
           .order('created_at', { ascending: false })
           .limit(3),
 
-        // Upcoming tournaments (next 5)
         supabase
           .from('tournaments')
-          .select('id, slug, title, game_slug, starts_at, ends_at, status, finalized, prize_1, prize_2, prize_3, thumbnail_url')
+          .select('id, slug, title, game_slug, starts_at, ends_at, status, finalized, thumbnail_url')
           .neq('status', 'canceled')
           .gte('starts_at', nowIso)
           .order('starts_at', { ascending: true })
           .limit(5),
 
-        // Live tournaments (max 5) - time window based
         supabase
           .from('tournaments')
-          .select('id, slug, title, game_slug, starts_at, ends_at, status, finalized, prize_1, prize_2, prize_3, thumbnail_url')
+          .select('id, slug, title, game_slug, starts_at, ends_at, status, finalized, thumbnail_url')
           .neq('status', 'canceled')
           .lte('starts_at', nowIso)
           .gte('ends_at', nowIso)
@@ -274,9 +342,19 @@ async function loadDashboard() {
     upcomingTournaments.value = (upcomingRes.data || []) as TournamentRow[]
     liveTournaments.value = (liveRes.data || []) as TournamentRow[]
 
-    await loadProfilesMapFromPayments(latestPayments.value)
+    await Promise.all([
+      loadProfilesMapFromPayments(latestPayments.value),
+      loadPrizeSummaryForTournaments([
+        ...upcomingTournaments.value,
+        ...liveTournaments.value
+      ])
+    ])
   } catch (e: any) {
-    toast.add({ title: 'Failed to load dashboard', description: e?.message || 'Try again.', color: 'error' })
+    toast.add({
+      title: 'Failed to load dashboard',
+      description: e?.message || 'Try again.',
+      color: 'error'
+    })
   } finally {
     loading.value = false
   }
@@ -302,15 +380,8 @@ const attentionCount = computed(() => {
     (stats.value.expiringSubs || 0)
   )
 })
-const needsAttention = computed(() => attentionCount.value > 0)
 
-function tournamentPills(t: TournamentRow) {
-  const out: string[] = []
-  if (t.prize_1) out.push(`1st: ${t.prize_1}`)
-  if (t.prize_2) out.push(`2nd: ${t.prize_2}`)
-  if (t.prize_3) out.push(`3rd: ${t.prize_3}`)
-  return out.slice(0, 2)
-}
+const needsAttention = computed(() => attentionCount.value > 0)
 </script>
 
 <template>
@@ -411,9 +482,9 @@ function tournamentPills(t: TournamentRow) {
               <div class="text-xs text-black/60 dark:text-white/60">paid/success</div>
             </div>
           </div>
-          <NuxtLink to="/admin/payments" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition"
-            >Open →</NuxtLink
-          >
+          <NuxtLink to="/admin/payments" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
+            Open →
+          </NuxtLink>
         </div>
 
         <div class="mt-4 text-3xl font-extrabold tracking-tight text-black dark:text-white tabular-nums">
@@ -439,10 +510,11 @@ function tournamentPills(t: TournamentRow) {
               <div class="text-xs text-black/60 dark:text-white/60">profiles</div>
             </div>
           </div>
-          <NuxtLink to="/admin/users" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition"
-            >Open →</NuxtLink
-          >
+          <NuxtLink to="/admin/users" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
+            Open →
+          </NuxtLink>
         </div>
+
         <div class="mt-4 text-3xl font-extrabold tracking-tight text-black dark:text-white tabular-nums">
           <span v-if="loading" class="inline-block h-9 w-20 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
           <span v-else>{{ n(stats.users) }}</span>
@@ -461,9 +533,9 @@ function tournamentPills(t: TournamentRow) {
               <div class="text-xs text-black/60 dark:text-white/60">new messages</div>
             </div>
           </div>
-          <NuxtLink to="/admin/messages" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition"
-            >Open →</NuxtLink
-          >
+          <NuxtLink to="/admin/messages" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
+            Open →
+          </NuxtLink>
         </div>
 
         <div class="mt-4 flex items-end justify-between gap-3">
@@ -489,13 +561,12 @@ function tournamentPills(t: TournamentRow) {
               <div class="text-xs text-black/60 dark:text-white/60">live + upcoming + ended</div>
             </div>
           </div>
-          <NuxtLink to="/admin/tournaments" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition"
-            >Open →</NuxtLink
-          >
+          <NuxtLink to="/admin/tournaments" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
+            Open →
+          </NuxtLink>
         </div>
 
         <div class="mt-4 flex items-end justify-between gap-3">
-          <!-- Big number: ended total (so your dashboard reflects "ended tournaments") -->
           <div class="text-3xl font-extrabold tracking-tight text-black dark:text-white tabular-nums">
             <span v-if="loading" class="inline-block h-9 w-24 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
             <span v-else>{{ n(stats.endedTotal) }}</span>
@@ -525,9 +596,9 @@ function tournamentPills(t: TournamentRow) {
               <div class="text-xs text-black/60 dark:text-white/60">active / expiring</div>
             </div>
           </div>
-          <NuxtLink to="/admin/subscriptions" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition"
-            >Open →</NuxtLink
-          >
+          <NuxtLink to="/admin/subscriptions" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
+            Open →
+          </NuxtLink>
         </div>
 
         <div class="mt-4 flex items-end justify-between gap-3">
@@ -566,9 +637,9 @@ function tournamentPills(t: TournamentRow) {
           <div class="flex items-center gap-2 text-xs">
             <NuxtLink to="/admin/services" class="hover:underline text-black/70 dark:text-white/70">Services</NuxtLink>
             <span class="opacity-40">•</span>
-            <NuxtLink to="/admin/works" class="hover:underline text-black/70 dark:text-white/70"
-              >Works ({{ n(stats.activeWorks) }})</NuxtLink
-            >
+            <NuxtLink to="/admin/works" class="hover:underline text-black/70 dark:text-white/70">
+              Works ({{ n(stats.activeWorks) }})
+            </NuxtLink>
           </div>
         </div>
       </div>
@@ -622,9 +693,9 @@ function tournamentPills(t: TournamentRow) {
               <div class="text-lg font-extrabold tracking-tight text-black dark:text-white">Recent Messages</div>
               <div class="text-xs text-black/60 dark:text-white/60">Latest 3 from contact_messages</div>
             </div>
-            <NuxtLink to="/admin/messages" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition"
-              >Open →</NuxtLink
-            >
+            <NuxtLink to="/admin/messages" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition">
+              Open →
+            </NuxtLink>
           </div>
 
           <div class="mt-4 space-y-3">
@@ -666,9 +737,9 @@ function tournamentPills(t: TournamentRow) {
               <div class="text-lg font-extrabold tracking-tight text-black dark:text-white">Recent Payments</div>
               <div class="text-xs text-black/60 dark:text-white/60">Latest 3 from payments</div>
             </div>
-            <NuxtLink to="/admin/payments" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition"
-              >Open →</NuxtLink
-            >
+            <NuxtLink to="/admin/payments" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition">
+              Open →
+            </NuxtLink>
           </div>
 
           <div class="mt-4 space-y-3">
@@ -719,9 +790,9 @@ function tournamentPills(t: TournamentRow) {
               <div class="text-lg font-extrabold tracking-tight text-black dark:text-white">Latest Scores</div>
               <div class="text-xs text-black/60 dark:text-white/60">Latest 3 from leaderboard_scores</div>
             </div>
-            <NuxtLink to="/admin/scores" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition"
-              >Open →</NuxtLink
-            >
+            <NuxtLink to="/admin/scores" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition">
+              Open →
+            </NuxtLink>
           </div>
 
           <div class="mt-4 space-y-3">
@@ -769,9 +840,9 @@ function tournamentPills(t: TournamentRow) {
             <div class="text-lg font-extrabold tracking-tight text-black dark:text-white">Tournaments</div>
             <div class="text-xs text-black/60 dark:text-white/60">Live now + upcoming</div>
           </div>
-          <NuxtLink to="/admin/tournaments" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition"
-            >Open →</NuxtLink
-          >
+          <NuxtLink to="/admin/tournaments" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition">
+            Open →
+          </NuxtLink>
         </div>
 
         <!-- Live -->
@@ -797,13 +868,22 @@ function tournamentPills(t: TournamentRow) {
                   <div class="flex items-center gap-2">
                     <div class="font-semibold text-black dark:text-white truncate">{{ t.title }}</div>
                     <span :class="pill('live')">live</span>
-                    <span v-if="!t.finalized && new Date(t.ends_at).getTime() < Date.now() + 5 * 60 * 1000" :class="pill('pending')">finalize soon</span>
+                    <span
+                      v-if="!t.finalized && new Date(t.ends_at).getTime() < Date.now() + 5 * 60 * 1000"
+                      :class="pill('pending')"
+                    >
+                      finalize soon
+                    </span>
                   </div>
                   <div class="mt-1 text-xs text-black/60 dark:text-white/60 truncate">
                     {{ t.game_slug }} • ends {{ relTime(t.ends_at) }}
                   </div>
                   <div class="mt-2 flex flex-wrap gap-1 text-[11px] text-black/70 dark:text-white/70">
-                    <span v-for="x in tournamentPills(t)" :key="x" class="rounded-full border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 px-2 py-0.5">
+                    <span
+                      v-for="x in tournamentPills(t)"
+                      :key="x"
+                      class="rounded-full border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 px-2 py-0.5"
+                    >
                       {{ x }}
                     </span>
                   </div>
@@ -817,9 +897,9 @@ function tournamentPills(t: TournamentRow) {
         <div class="mt-5">
           <div class="flex items-center justify-between">
             <div class="text-sm font-semibold text-black dark:text-white">Upcoming</div>
-            <span v-if="!loading" class="text-xs text-black/60 dark:text-white/60">{{
-              upcomingTournaments.length ? `${upcomingTournaments.length} scheduled` : 'none'
-            }}</span>
+            <span v-if="!loading" class="text-xs text-black/60 dark:text-white/60">
+              {{ upcomingTournaments.length ? `${upcomingTournaments.length} scheduled` : 'none' }}
+            </span>
           </div>
 
           <div class="mt-3 space-y-2">
@@ -858,6 +938,15 @@ function tournamentPills(t: TournamentRow) {
                   <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">
                     {{ fmtDate(t.starts_at) }} → {{ fmtDate(t.ends_at) }}
                   </div>
+                  <div class="mt-2 flex flex-wrap gap-1 text-[11px] text-black/70 dark:text-white/70">
+                    <span
+                      v-for="x in tournamentPills(t)"
+                      :key="x"
+                      class="rounded-full border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 px-2 py-0.5"
+                    >
+                      {{ x }}
+                    </span>
+                  </div>
                 </div>
               </div>
             </NuxtLink>
@@ -875,7 +964,9 @@ function tournamentPills(t: TournamentRow) {
               <div class="mt-1 text-sm text-black/70 dark:text-white/70">
                 {{ n(stats.endedUnfinalized) }} ended tournament(s) are not finalized.
               </div>
-              <NuxtLink to="/admin/tournaments" class="mt-2 inline-flex text-sm font-semibold hover:underline">Go finalize →</NuxtLink>
+              <NuxtLink to="/admin/tournaments" class="mt-2 inline-flex text-sm font-semibold hover:underline">
+                Go finalize →
+              </NuxtLink>
             </div>
           </div>
         </div>

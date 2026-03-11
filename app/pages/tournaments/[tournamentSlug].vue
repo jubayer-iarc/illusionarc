@@ -13,7 +13,6 @@ const slug = computed(() => String(route.params.tournamentSlug || '').trim())
 
 const user = useSupabaseUser()
 const supabase = useSupabaseClient()
-const toast = useToast()
 
 const { bySlug } = useTournaments()
 const { getLeaderboard } = useTournamentLeaderboard()
@@ -75,9 +74,12 @@ async function loadTournament() {
 await loadTournament()
 
 /* ---------------- SEO ---------------- */
-const pageTitle = computed(() => (t.value ? `Tournament — ${t.value.title}` : 'Tournament'))
+const pageTitle = computed(() => (t.value ? `টুর্নামেন্ট — ${t.value.title}` : 'টুর্নামেন্ট'))
 const pageDesc = computed(() =>
-  String(t.value?.description || 'Play tournaments, climb the leaderboard, and win prizes.').trim()
+  String(
+    t.value?.description ||
+      'Illusion Arc-এর টুর্নামেন্ট খেলুন, লিডারবোর্ডে উঠুন এবং আকর্ষণীয় পুরস্কার জিতুন।'
+  ).trim()
 )
 
 useHead(() => ({
@@ -130,18 +132,21 @@ function getEndsAt(x: AnyTournament) {
 }
 function fmt(dt: string) {
   if (!dt) return ''
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat('bn-BD', {
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(new Date(dt))
 }
-function msToClock(ms: number) {
-  if (!Number.isFinite(ms) || ms <= 0) return '00:00:00'
-  const total = Math.floor(ms / 1000)
-  const h = String(Math.floor(total / 3600)).padStart(2, '0')
-  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0')
-  const s = String(total % 60).padStart(2, '0')
-  return `${h}:${m}:${s}`
+function toBnDigits(input: string | number) {
+  return String(input).replace(/\d/g, (d) => '০১২৩৪৫৬৭৮৯'[Number(d)])
+}
+function msToTournamentClock(ms: number) {
+  if (!Number.isFinite(ms) || ms <= 0) return '০০ দিন: ০০ ঘন্টা: ০০ মিনিট'
+  const totalMinutes = Math.floor(ms / 60000)
+  const days = Math.floor(totalMinutes / (60 * 24))
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60)
+  const minutes = totalMinutes % 60
+  return `${toBnDigits(String(days).padStart(2, '0'))} দিন: ${toBnDigits(String(hours).padStart(2, '0'))} ঘন্টা: ${toBnDigits(String(minutes).padStart(2, '0'))} মিনিট`
 }
 function safeName(name: any) {
   const s = String(name || '').trim()
@@ -163,19 +168,13 @@ function maskPhone(phone: any) {
   const keep = Math.min(6, p.length)
   return p.slice(0, keep) + 'X'.repeat(Math.max(0, p.length - keep))
 }
-function ordinal(n: number) {
-  const v = n % 100
-  if (v >= 11 && v <= 13) return `${n}th`
-  switch (n % 10) {
-    case 1:
-      return `${n}st`
-    case 2:
-      return `${n}nd`
-    case 3:
-      return `${n}rd`
-    default:
-      return `${n}th`
+function ordinalBn(n: number) {
+  const map: Record<number, string> = {
+    1: '১ম',
+    2: '২য়',
+    3: '৩য়'
   }
+  return map[n] || `${toBnDigits(n)}তম`
 }
 function cleanText(v: any) {
   const s = String(v ?? '').trim()
@@ -189,13 +188,6 @@ function rankChipClass(rank: number) {
   if (rank === 2) return 'bg-slate-300/20 text-slate-100 border-slate-300/25'
   if (rank === 3) return 'bg-orange-400/20 text-orange-100 border-orange-300/25'
   return 'bg-white/10 text-white/90 border-white/10'
-}
-function statusLine() {
-  if (!t.value) return ''
-  if (isLive.value) return `Ends in ${msToClock(endsInMs.value)}`
-  if (isScheduled.value) return `Starts in ${msToClock(startsInMs.value)}`
-  if (isCanceled.value) return 'This tournament was canceled.'
-  return 'Tournament ended.'
 }
 
 /* ---------------- Status ---------------- */
@@ -226,63 +218,76 @@ const game = computed(() => {
   return GAMES.find((g) => g.slug === getGameSlug(t.value)) || null
 })
 
-const showArcadeBtn = computed(() => Boolean(t.value) && !isLive.value)
 const canPlay = computed(() => Boolean(t.value) && isLive.value && user.value && sub.value?.active === true)
 
 const statusBadge = computed(() => {
   const s = effectiveStatus.value
   if (s === 'live') {
     return {
-      text: 'LIVE',
+      text: 'লাইভ',
       cls: 'border-emerald-400/35 bg-emerald-500/14 text-emerald-300',
       dot: 'bg-emerald-400'
     }
   }
   if (s === 'scheduled') {
     return {
-      text: 'SCHEDULED',
-      cls: 'border-violet-400/35 bg-violet-500/14 text-violet-200',
-      dot: 'bg-violet-400'
+      text: 'শিডিউলড',
+      cls: 'border-indigo-400/35 bg-indigo-500/14 text-indigo-200',
+      dot: 'bg-indigo-400'
     }
   }
   if (s === 'canceled') {
     return {
-      text: 'CANCELED',
+      text: 'বাতিল',
       cls: 'border-rose-400/35 bg-rose-500/14 text-rose-200',
       dot: 'bg-rose-400'
     }
   }
   return {
-    text: 'ENDED',
-    cls: 'border-white/15 bg-white/8 text-white/75',
-    dot: 'bg-white/45'
+    text: 'সমাপ্ত',
+    cls: 'border-red-400/35 bg-red-500/14 text-red-200',
+    dot: 'bg-red-400'
   }
 })
 
-/* ---------------- How to play ---------------- */
+/* ---------------- Bangla content ---------------- */
+const introPitch = computed(() => {
+  return 'এই ঈদে শুধু Facebook Scroll না করে নিজের গেমিং স্কিল দিয়ে আকর্ষণীয় গিফট জিতে নেওয়ার সুযোগ। Illusion Arc নিয়ে এসেছে Eid Salami Rush Fest—যেখানে Salami Rush খেলে টপ স্কোরার হলেই মিলবে দারুণ সব পুরস্কার।'
+})
+
+const introWindow = computed(() => {
+  return 'হাতে সময় মাত্র ১০ দিন। ১৮ মার্চ থেকে ২৭ মার্চ পর্যন্ত চলবে এই টুর্নামেন্ট।'
+})
+
 const howToPlayTitle = computed(() => {
   const g: any = game.value
-  return g?.name ? `How to Play — ${g.name}` : 'How to Play'
+  return g?.name ? `${g.name} কীভাবে খেলবেন` : 'কীভাবে খেলবেন'
 })
-const howToPlaySteps = computed<string[]>(() => {
-  const g: any = game.value
-  const steps = Array.isArray(g?.controls)
-    ? g.controls.map((x: any) => String(x).trim()).filter(Boolean)
-    : []
-  return steps.length ? steps : ['Controls info coming soon.']
-})
+
 const howToPlaySummary = computed(() => {
-  const g: any = game.value
-  const d = String(g?.description || '').trim()
-  if (!d) return ''
-  return d.length > 220 ? d.slice(0, 220).trim() + '…' : d
+  return 'Salami Rush হলো এমন একটি গেম যেখানে আপনি মিউজিকের তালে তালে একের পর এক শক্তিশালী বসের মুখোমুখি হবেন। নিয়ন আলোর এই যুদ্ধক্ষেত্রে যতক্ষণ সম্ভব টিকে থাকাই হবে আপনার আসল চ্যালেঞ্জ।'
 })
-const tournamentRules = computed(() => {
-  const rules: string[] = []
-  rules.push('Play only during the LIVE window.')
-  rules.push('Subscription required to submit scores.')
-  rules.push('Highest valid score ranks on the leaderboard.')
-  return rules
+
+const howToPlaySteps = computed<string[]>(() => {
+  return [
+    'মোবাইল/ট্যাব: স্ক্রিনের বাম বা ডান পাশে টাচ করে দ্রুত এপাশ-ওপাশ সরে যান।',
+    'কিবোর্ড: বাম ও ডান Arrow Key ব্যবহার করে ডানে-বামে মুভ করুন।',
+    'বসের ছোড়া বুলেট বা গুলি এড়িয়ে যতক্ষণ সম্ভব বেঁচে থাকার চেষ্টা করুন।',
+    'Slow Mo, Shield এবং Magnet-এর মতো পাওয়ার-আপ সংগ্রহ করুন।',
+    'যত বেশি সম্ভব কয়েন সংগ্রহ করে স্কোর বাড়ান।'
+  ]
+})
+
+const termsList = computed(() => {
+  return [
+    'গেমটি যখন লাইভ থাকবে, শুধুমাত্র তখনই খেলতে পারবেন।',
+    'অংশ নিতে ও স্কোর জমা দিতে অ্যাকাউন্টে লগ-ইন থাকতে হবে।',
+    'স্কোর জমা দিতে সক্রিয় সাবস্ক্রিপশন বাধ্যতামূলক।',
+    'লাইভ চলাকালীন যার স্কোর সবচেয়ে বেশি হবে, সে লিডারবোর্ডে ওপরে থাকবে।',
+    'শীর্ষ ২০ জন স্কোরার পুরস্কার পাবে।',
+    'লাইভ শুরুর আগে প্র্যাকটিস করা যাবে, কিন্তু লাইভ শুরু হলে টুর্নামেন্ট পেজ থেকে খেলতে হবে।',
+    'গেমের সময়সূচী: ১৮ তারিখ রাত ১২:০১ মিনিট থেকে ২৭ তারিখ রাত ১১:৫৯ মিনিট পর্যন্ত।'
+  ]
 })
 
 /* ---------------- Thumbnail ---------------- */
@@ -302,11 +307,6 @@ const promoYoutubeId = computed(() => String(t.value?.promo_video_youtube_id || 
 const promoVideoTitle = computed(() => String(t.value?.promo_video_title || '').trim())
 const promoYoutubeEmbedUrl = computed(() => {
   return promoYoutubeId.value ? `https://www.youtube.com/embed/${promoYoutubeId.value}` : ''
-})
-const hasPromoVideo = computed(() => {
-  if (promoVideoType.value === 'upload' && promoVideoUrl.value) return true
-  if (promoVideoType.value === 'youtube' && promoYoutubeEmbedUrl.value) return true
-  return false
 })
 
 /* ---------------- Assigned prizes ---------------- */
@@ -358,7 +358,7 @@ async function loadAssignedPrizes() {
       })
       .filter(Boolean) as PrizeRelation[]
   } catch (e: any) {
-    prizesError.value = e?.message || 'Failed to load prizes'
+    prizesError.value = e?.message || 'পুরস্কারের তথ্য লোড করা যায়নি'
     assignedPrizes.value = []
   } finally {
     prizesPending.value = false
@@ -430,7 +430,7 @@ async function loadWinners() {
     const ids = Array.from(new Set(arr.map((w) => w.user_id).filter(Boolean))) as string[]
     if (ids.length) await fetchProfiles(ids)
   } catch (e: any) {
-    winnersError.value = e?.data?.message || e?.message || 'Failed to load winners'
+    winnersError.value = e?.data?.message || e?.message || 'বিজয়ীদের তথ্য লোড করা যায়নি'
     winners.value = []
   } finally {
     winnersPending.value = false
@@ -510,7 +510,7 @@ async function loadLeaderboard() {
     lb.value = (res?.rows || []) as LbRow[]
     lbUpdatedAt.value = Date.now()
   } catch (e: any) {
-    lbError.value = e?.data?.message || e?.message || 'Failed to load leaderboard'
+    lbError.value = e?.data?.message || e?.message || 'লিডারবোর্ড লোড করা যায়নি'
     lb.value = []
   } finally {
     lbPending.value = false
@@ -523,9 +523,9 @@ const leaderboardPreview = computed(() => lb.value.slice(0, 8))
 function lastUpdatedText() {
   const diff = Math.max(0, Date.now() - lbUpdatedAt.value)
   const mins = Math.floor(diff / 60000)
-  if (mins <= 0) return 'just now'
-  if (mins === 1) return '1m ago'
-  return `${mins}m ago`
+  if (mins <= 0) return 'এইমাত্র'
+  if (mins === 1) return '১ মিনিট আগে'
+  return `${toBnDigits(mins)} মিনিট আগে`
 }
 
 /* ---------------- Boundary refresh ---------------- */
@@ -568,26 +568,6 @@ function playHard(tournamentSlug: string) {
   const url = `/tournaments/embed/${encodeURIComponent(tournamentSlug)}?boot=${Date.now()}`
   window.location.assign(url)
 }
-
-async function shareLink() {
-  if (!import.meta.client) return
-  try {
-    await navigator.clipboard.writeText(window.location.href)
-    toast.add({
-      title: 'Link copied',
-      description: 'Tournament link copied to clipboard.',
-      icon: 'i-heroicons-clipboard-document-check',
-      color: 'green'
-    })
-  } catch {
-    toast.add({
-      title: 'Could not copy',
-      description: 'Your browser blocked clipboard access.',
-      icon: 'i-heroicons-exclamation-triangle',
-      color: 'red'
-    })
-  }
-}
 </script>
 
 <template>
@@ -596,28 +576,24 @@ async function shareLink() {
       v-if="!t"
       class="glass-card rounded-[26px] p-6 text-white"
     >
-      <div class="text-lg font-semibold">Tournament not found</div>
+      <div class="text-lg font-semibold">টুর্নামেন্ট পাওয়া যায়নি</div>
       <NuxtLink to="/tournaments" class="mt-3 inline-block text-sm text-white/70 hover:text-white">
-        ← Back to tournaments
+        ← টুর্নামেন্টে ফিরে যান
       </NuxtLink>
     </div>
 
     <div v-else class="space-y-8 text-white">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <NuxtLink to="/tournaments" class="text-sm text-white/70 hover:text-white">
-          ← Back
+          ← ফিরে যান
         </NuxtLink>
 
         <div class="flex items-center gap-2">
-          <UButton size="sm" variant="soft" class="!rounded-full" @click="shareLink">
-            Copy link
-          </UButton>
-
           <UButton v-if="user && sub && !sub.active" to="/subscribe" size="sm" class="!rounded-full">
-            Subscribe to Play
+            খেলতে সাবস্ক্রাইব করুন
           </UButton>
           <UButton v-else-if="user" to="/subscribe" size="sm" variant="soft" class="!rounded-full">
-            Subscription
+            সাবস্ক্রিপশন
           </UButton>
         </div>
       </div>
@@ -642,13 +618,21 @@ async function shareLink() {
                 v-if="sub?.active"
                 class="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] text-emerald-200"
               >
-                Pass Active
+                সাবস্ক্রিপশন চালু
               </span>
             </div>
 
             <h1 class="text-4xl font-extrabold leading-none tracking-tight text-white sm:text-5xl">
               {{ t.title }}
             </h1>
+
+            <div class="text-base leading-7 text-white/72">
+              {{ introPitch }}
+            </div>
+
+            <div class="rounded-[18px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/78">
+              {{ introWindow }}
+            </div>
 
             <div class="text-base text-white/70">
               {{ fmt(getStartsAt(t)) }} – {{ fmt(getEndsAt(t)) }}
@@ -668,7 +652,7 @@ async function shareLink() {
               <iframe
                 v-else-if="promoVideoType === 'youtube' && promoYoutubeEmbedUrl"
                 :src="promoYoutubeEmbedUrl"
-                :title="promoVideoTitle || 'Tournament promo video'"
+                :title="promoVideoTitle || 'টুর্নামেন্ট প্রোমো ভিডিও'"
                 class="h-full w-full"
                 frameborder="0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -679,19 +663,69 @@ async function shareLink() {
                 <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                 <div class="absolute inset-0 grid place-items-center">
                   <div class="rounded-full border border-white/15 bg-black/35 px-5 py-3 text-white/80 backdrop-blur">
-                    Promo video coming soon
+                    প্রোমো ভিডিও শীঘ্রই আসছে
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
+          <div class="glass-card rounded-[26px] p-5 sm:p-6">
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="text-3xl font-bold tracking-tight text-white">লিডারবোর্ড</h2>
+            </div>
+
+            <div v-if="lbError" class="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-100">
+              {{ lbError }}
+            </div>
+
+            <div
+              v-else-if="!lbPending && !leaderboardPreview.length"
+              class="mt-4 text-sm text-white/65"
+            >
+              এখনো কোনো স্কোর জমা পড়েনি।
+            </div>
+
+            <div v-else class="mt-4 space-y-2.5">
+              <div
+                v-for="(r, i) in leaderboardPreview"
+                :key="`${r.player_name}-${r.created_at}-${i}`"
+                class="leader-row flex items-center justify-between gap-3 rounded-[18px] px-4 py-3"
+                :class="i === 2 ? 'leader-row-active' : ''"
+              >
+                <div class="flex min-w-0 items-center gap-3">
+                  <div class="w-6 text-center text-lg">{{ medal(i + 1) }}</div>
+                  <div class="min-w-0">
+                    <div class="text-sm text-white/70">{{ toBnDigits(i + 1) }}</div>
+                  </div>
+                  <div class="truncate text-xl font-medium text-white">
+                    {{ safeName(r.player_name) }}
+                  </div>
+                </div>
+
+                <div class="text-xl font-semibold text-white">
+                  {{ toBnDigits(r.score) }}
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-5 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
+              <div class="text-sm text-white/55">
+                সর্বশেষ আপডেট: {{ lastUpdatedText() }}
+              </div>
+
+              <UButton size="sm" variant="soft" class="!rounded-full" :loading="lbPending" @click="loadLeaderboard">
+                রিফ্রেশ
+              </UButton>
+            </div>
+          </div>
+
           <div class="space-y-4">
             <div class="flex items-end justify-between gap-3">
               <div>
-                <h2 class="text-3xl font-bold tracking-tight text-white">Prizes</h2>
+                <h2 class="text-3xl font-bold tracking-tight text-white">পুরস্কার</h2>
                 <div class="mt-1 text-sm text-white/60">
-                  {{ visiblePrizes.length ? `Top ${visiblePrizes.length} players win prizes` : 'Prize details coming soon' }}
+                  {{ visiblePrizes.length ? `শীর্ষ ${toBnDigits(visiblePrizes.length)} জন বিজয়ী পুরস্কার পাবে` : 'পুরস্কারের তথ্য শীঘ্রই আসছে' }}
                 </div>
               </div>
             </div>
@@ -707,14 +741,14 @@ async function shareLink() {
               v-else-if="prizesPending && !visiblePrizes.length"
               class="glass-card rounded-[22px] p-4 text-sm text-white/70"
             >
-              Loading prizes…
+              পুরস্কারের তথ্য লোড হচ্ছে…
             </div>
 
             <div
               v-else-if="!visiblePrizes.length"
               class="glass-card rounded-[22px] p-4 text-sm text-white/70"
             >
-              Prize details are coming soon.
+              পুরস্কারের বিস্তারিত শীঘ্রই প্রকাশ করা হবে।
             </div>
 
             <div
@@ -745,7 +779,7 @@ async function shareLink() {
                         class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
                         :class="rankChipClass(p.rank)"
                       >
-                        {{ ordinal(p.rank) }}
+                        {{ ordinalBn(p.rank) }}
                       </span>
                     </div>
 
@@ -760,10 +794,14 @@ async function shareLink() {
                 </div>
               </div>
             </div>
+
+            <div class="glass-card rounded-[24px] p-5 text-sm leading-7 text-white/75">
+              টপ <b class="text-white">{{ toBnDigits(20) }}</b> জন স্কোরার পুরস্কার পাবে।
+            </div>
           </div>
 
           <div class="space-y-4">
-            <h2 class="text-3xl font-bold tracking-tight text-white">How to Play</h2>
+            <h2 class="text-3xl font-bold tracking-tight text-white">{{ howToPlayTitle }}</h2>
 
             <div class="glass-card rounded-[26px] p-5 sm:p-6">
               <div class="grid gap-5 lg:grid-cols-[8px_minmax(0,1fr)]">
@@ -785,18 +823,29 @@ async function shareLink() {
             </div>
           </div>
 
+          <div class="glass-card rounded-[26px] p-5 sm:p-6">
+            <h3 class="text-2xl font-bold tracking-tight text-white">শর্তাবলী</h3>
+
+            <ul class="mt-4 space-y-3">
+              <li v-for="(r, i) in termsList" :key="`terms-${i}`" class="flex gap-3">
+                <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-300"></span>
+                <span class="text-base leading-7 text-white/85">{{ r }}</span>
+              </li>
+            </ul>
+          </div>
+
           <section
             v-if="isEnded"
             class="space-y-4"
           >
             <div class="flex items-center justify-between gap-3">
               <div>
-                <h2 class="text-3xl font-bold tracking-tight text-white">Final Results</h2>
-                <div class="mt-1 text-sm text-white/60">Winners are locked after the tournament ends.</div>
+                <h2 class="text-3xl font-bold tracking-tight text-white">চূড়ান্ত ফলাফল</h2>
+                <div class="mt-1 text-sm text-white/60">টুর্নামেন্ট শেষ হলে বিজয়ীদের ফলাফল স্থির হয়ে যাবে।</div>
               </div>
 
               <UButton size="xs" variant="soft" class="!rounded-full" :loading="winnersPending" @click="loadWinners">
-                Refresh
+                রিফ্রেশ
               </UButton>
             </div>
 
@@ -811,7 +860,7 @@ async function shareLink() {
               v-else-if="!winnersPending && !hasWinners"
               class="glass-card rounded-[22px] p-4 text-sm text-white/70"
             >
-              No winners snapshot yet. Refresh once.
+              এখনো বিজয়ীদের তথ্য পাওয়া যায়নি। রিফ্রেশ করে দেখুন।
             </div>
 
             <div v-else class="grid gap-4 md:grid-cols-3">
@@ -822,7 +871,7 @@ async function shareLink() {
               >
                 <div class="text-4xl">{{ medal(rank) }}</div>
                 <div class="mt-2 text-xs uppercase tracking-[0.2em] text-white/50">
-                  {{ rank === 1 ? 'Champion' : rank === 2 ? 'Runner-up' : '3rd Place' }}
+                  {{ rank === 1 ? 'চ্যাম্পিয়ন' : rank === 2 ? 'রানার-আপ' : 'তৃতীয় স্থান' }}
                 </div>
 
                 <div class="mt-4 flex justify-center">
@@ -845,17 +894,17 @@ async function shareLink() {
                 </div>
 
                 <div class="mt-1 text-xs text-white/55">
-                  Phone:
+                  ফোন:
                   <b class="font-semibold text-white/85">{{ maskPhone(phoneFor(winnerByRank(rank)?.user_id)) }}</b>
                 </div>
 
                 <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/90">
                   <UIcon name="i-heroicons-bolt" class="h-4 w-4 opacity-90" />
-                  <span class="font-semibold">{{ winnerByRank(rank)?.score ?? '—' }}</span>
+                  <span class="font-semibold">{{ toBnDigits(winnerByRank(rank)?.score ?? '—') }}</span>
                 </div>
 
                 <div v-if="winnerPrizeText(winnerByRank(rank))" class="mt-3 text-sm text-white/70">
-                  <b class="text-white/90">Prize:</b> {{ winnerPrizeText(winnerByRank(rank)) }}
+                  <b class="text-white/90">পুরস্কার:</b> {{ winnerPrizeText(winnerByRank(rank)) }}
                 </div>
               </div>
             </div>
@@ -863,7 +912,11 @@ async function shareLink() {
         </div>
 
         <aside class="space-y-6 xl:sticky xl:top-6 xl:self-start">
-          <div class="live-card rounded-[30px] p-[1px]">
+          <div class="live-card rounded-[30px] p-[1px]" :class="{
+            'live-state': isLive,
+            'scheduled-state': isScheduled,
+            'ended-state': isEnded || isCanceled
+          }">
             <div class="live-card-inner rounded-[29px] p-5 sm:p-6">
               <div class="flex justify-center">
                 <span
@@ -877,142 +930,41 @@ async function shareLink() {
 
               <div class="mt-8 text-center">
                 <div class="text-2xl text-white/90">
-                  {{ isLive ? 'Ends in' : isScheduled ? 'Starts in' : isEnded ? 'Ended' : 'Canceled' }}
+                  {{ isLive ? 'শেষ হতে বাকি' : isScheduled ? 'শুরু হতে বাকি' : isEnded ? 'টুর্নামেন্ট শেষ' : 'টুর্নামেন্ট বাতিল' }}
                 </div>
-                <div class="mt-2 text-5xl font-extrabold tracking-tight text-emerald-300">
-                  {{ isLive ? msToClock(endsInMs) : isScheduled ? msToClock(startsInMs) : '00:00:00' }}
+                <div class="mt-2 text-4xl font-extrabold tracking-tight" :class="{
+                  'text-emerald-300': isLive,
+                  'text-indigo-300': isScheduled,
+                  'text-red-300': isEnded || isCanceled
+                }">
+                  {{ isLive ? msToTournamentClock(endsInMs) : isScheduled ? msToTournamentClock(startsInMs) : '০০ দিন: ০০ ঘন্টা: ০০ মিনিট' }}
                 </div>
               </div>
 
-              <div class="mt-8 text-base text-white/80">
+              <div class="mt-8 space-y-3 text-base text-white/80">
                 <div class="flex items-start gap-2">
                   <span class="mt-1.5 inline-block h-2 w-2 rounded-full bg-blue-300"></span>
                   <span>
-                    Eligibility:
-                    <b class="font-semibold text-white">{{ sub?.active ? 'Subscription Active' : 'Subscription Required' }}</b>
+                    যোগ্যতা:
+                    <b class="font-semibold text-white">{{ sub?.active ? 'সাবস্ক্রিপশন চালু' : 'সাবস্ক্রিপশন প্রয়োজন' }}</b>
                   </span>
                 </div>
               </div>
 
-              <div class="mt-8 space-y-3">
+              <div class="mt-8">
                 <UButton
-                  v-if="canPlay"
                   block
-                  size="lg"
-                  class="cta-glow !rounded-[18px]"
+                  size="xl"
+                  class="cta-glow !rounded-[18px] min-h-[56px]"
                   @click="playHard(t.slug)"
                 >
-                  Play Now
-                </UButton>
-
-                <UButton
-                  v-else-if="isLive && user && sub && !sub.active"
-                  block
-                  size="lg"
-                  class="cta-glow !rounded-[18px]"
-                  to="/subscribe"
-                >
-                  Subscribe to Play
-                </UButton>
-
-                <UButton
-                  v-else
-                  block
-                  size="lg"
-                  class="cta-glow !rounded-[18px]"
-                  variant="soft"
-                  :to="`/tournaments/embed/${t.slug}`"
-                >
-                  Open Tournament
-                </UButton>
-
-                <UButton
-                  block
-                  size="lg"
-                  variant="soft"
-                  class="!rounded-[18px]"
-                  @click="shareLink"
-                >
-                  Copy Link
+                  খেলুন
                 </UButton>
               </div>
 
               <div class="mt-4 text-center text-sm text-white/60">
-                {{ visiblePrizes.length ? `Top ${visiblePrizes.length} players win prizes` : 'Prize details coming soon' }}
+                {{ visiblePrizes.length ? `শীর্ষ ${toBnDigits(visiblePrizes.length)} জন পুরস্কার পাবে` : 'পুরস্কারের তথ্য শীঘ্রই আসছে' }}
               </div>
-            </div>
-          </div>
-
-          <div class="glass-card rounded-[26px] p-5 sm:p-6">
-            <h3 class="text-2xl font-bold tracking-tight text-white">Tournament Rules</h3>
-
-            <ul class="mt-4 space-y-3">
-              <li v-for="(r, i) in tournamentRules" :key="`rule-${i}`" class="flex gap-3">
-                <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-white/80"></span>
-                <span class="text-base leading-7 text-white/85">{{ r }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <div class="glass-card rounded-[26px] p-5 sm:p-6">
-            <div class="flex items-center justify-between gap-3">
-              <h3 class="text-2xl font-bold tracking-tight text-white">Leaderboard</h3>
-            </div>
-
-            <div v-if="lbError" class="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-100">
-              {{ lbError }}
-            </div>
-
-            <div
-              v-else-if="!lbPending && !leaderboardPreview.length"
-              class="mt-4 text-sm text-white/65"
-            >
-              No scores yet.
-            </div>
-
-            <div v-else class="mt-4 space-y-2.5">
-              <div
-                v-for="(r, i) in leaderboardPreview"
-                :key="`${r.player_name}-${r.created_at}-${i}`"
-                class="leader-row flex items-center justify-between gap-3 rounded-[18px] px-4 py-3"
-                :class="i === 2 ? 'leader-row-active' : ''"
-              >
-                <div class="flex min-w-0 items-center gap-3">
-                  <div class="w-6 text-center text-lg">{{ medal(i + 1) }}</div>
-                  <div class="min-w-0">
-                    <div class="text-sm text-white/70">{{ i + 1 }}</div>
-                  </div>
-                  <div class="truncate text-xl font-medium text-white">
-                    {{ safeName(r.player_name) }}
-                  </div>
-                </div>
-
-                <div class="text-xl font-semibold text-white">
-                  {{ r.score }}
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-5 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
-              <div class="text-sm text-white/55">
-                Last updated: {{ lastUpdatedText() }}
-              </div>
-
-              <UButton size="sm" variant="soft" class="!rounded-full" :loading="lbPending" @click="loadLeaderboard">
-                Refresh
-              </UButton>
-            </div>
-          </div>
-
-          <div class="glass-card rounded-[26px] p-5">
-            <div class="text-sm text-white/60">Quick actions</div>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <UButton v-if="showArcadeBtn" :to="`/arcade/${getGameSlug(t)}`" variant="soft" class="!rounded-full">
-                Arcade
-              </UButton>
-              <UButton v-if="!sub?.active" to="/subscribe" variant="soft" class="!rounded-full">
-                Plans
-              </UButton>
             </div>
           </div>
         </aside>
@@ -1068,11 +1020,30 @@ async function shareLink() {
 }
 
 .live-card {
-  background: linear-gradient(180deg, rgba(92, 255, 130, 0.95), rgba(70, 212, 109, 0.7));
   box-shadow:
     0 0 0 1px rgba(120, 255, 155, 0.18),
-    0 0 34px rgba(84, 255, 146, 0.28),
-    0 0 70px rgba(64, 255, 136, 0.16);
+    0 0 34px rgba(84, 255, 146, 0.18),
+    0 0 70px rgba(64, 255, 136, 0.1);
+}
+
+.live-state {
+  background: linear-gradient(180deg, rgba(92, 255, 130, 0.95), rgba(70, 212, 109, 0.7));
+}
+
+.scheduled-state {
+  background: linear-gradient(180deg, rgba(120, 131, 255, 0.95), rgba(79, 70, 229, 0.72));
+  box-shadow:
+    0 0 0 1px rgba(129, 140, 248, 0.18),
+    0 0 34px rgba(99, 102, 241, 0.18),
+    0 0 70px rgba(79, 70, 229, 0.1);
+}
+
+.ended-state {
+  background: linear-gradient(180deg, rgba(255, 107, 107, 0.95), rgba(220, 38, 38, 0.72));
+  box-shadow:
+    0 0 0 1px rgba(248, 113, 113, 0.18),
+    0 0 34px rgba(239, 68, 68, 0.18),
+    0 0 70px rgba(220, 38, 38, 0.1);
 }
 
 .live-card-inner {

@@ -28,18 +28,18 @@ export type ArcadeGame = {
 
 export const GAMES: ArcadeGame[] = [
   {
-    name: 'Salami Rush',
+    name: 'সালামি রাশ',
     slug: 'salami-rush',
     thumbnail: '/img/salami-rush/salami-rush-thumbnail.png',
-    shortPitch: 'A fast-paced neon bullet-hell where you dodge, react, and survive endless boss battles to the rhythm.',
+    shortPitch: 'মিউজিকের তালে দ্রুত ডজ করে বসের আক্রমণ এড়িয়ে যতক্ষণ সম্ভব টিকে থাকার রিদম-ভিত্তিক অ্যাকশন গেম।',
     description:
-      'Salami Rush: Neon Arena throws you into a pulse-pounding synthwave battlefield where every second tests your reflex. Face relentless bosses, dodge cinematic attacks, and master rhythm-driven survival with minimal controls. Experience glowing visuals, adaptive difficulty, and fast, intense gameplay built for quick mobile sessions. Survive. Adapt. Repeat.',
+      'সালামি রাশ হলো একটি দ্রুতগতির রিদম-ভিত্তিক অ্যাকশন গেম, যেখানে আপনাকে মিউজিকের তালে তালে একের পর এক শক্তিশালী বসের মুখোমুখি হতে হবে। নিয়ন আলোর যুদ্ধক্ষেত্রে বসের ছোড়া বুলেট ও আক্রমণ এড়িয়ে যতক্ষণ সম্ভব টিকে থাকাই আপনার মূল লক্ষ্য। খেলার মাঝে Slow Mo, Shield ও Magnet-এর মতো পাওয়ার-আপ সংগ্রহ করে সাময়িক সুবিধা নিতে পারবেন। পাশাপাশি যত বেশি সম্ভব কয়েন সংগ্রহ করে নিজের স্কোর আরও বাড়িয়ে নিতে হবে। লাইভ টুর্নামেন্ট চলাকালীন সর্বোচ্চ স্কোর করেই লিডারবোর্ডে উপরের দিকে উঠে আসতে হবে।',
     controls: [
-      'Tap / click left or right to dodge (quick dash).',
-      'Keyboard: Left Arrow / Right Arrow — dodge left/right.',
-      'Dodge boss bullets and survive as long as possible.',
-      'Collect power-ups: Slow Mo, Shield, Magnet (temporary boosts).',
-      'Collect as many coins as you can.'
+      'মোবাইল/ট্যাব: স্ক্রিনের বাম বা ডান পাশে টাচ করে দ্রুত ডজ করুন।',
+      'কিবোর্ড: Left Arrow / Right Arrow চেপে ডানে-বামে সরুন।',
+      'বসের বুলেট ও আক্রমণ এড়িয়ে যতক্ষণ সম্ভব টিকে থাকুন।',
+      'পাওয়ার-আপ সংগ্রহ করুন: Slow Mo, Shield, Magnet।',
+      'যত বেশি সম্ভব কয়েন সংগ্রহ করুন।'
     ],
     buildType: 'iframe',
     sourceUrl: '/games/salami-rush/index.html',
@@ -50,7 +50,7 @@ export const GAMES: ArcadeGame[] = [
     featured: false,
     genre: 'Shooter',
     difficulty: 'Medium',
-    estTime: '60s',
+    estTime: '৬০ সেকেন্ড',
     pro: false
   },
   {
