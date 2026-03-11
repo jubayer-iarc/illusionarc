@@ -28,6 +28,32 @@ export type ArcadeGame = {
 
 export const GAMES: ArcadeGame[] = [
   {
+    name: 'Salami Rush',
+    slug: 'salami-rush',
+    thumbnail: '/img/salami-rush/salami-rush-thumbnail.png',
+    shortPitch: 'A fast-paced neon bullet-hell where you dodge, react, and survive endless boss battles to the rhythm.',
+    description:
+      'Salami Rush: Neon Arena throws you into a pulse-pounding synthwave battlefield where every second tests your reflex. Face relentless bosses, dodge cinematic attacks, and master rhythm-driven survival with minimal controls. Experience glowing visuals, adaptive difficulty, and fast, intense gameplay built for quick mobile sessions. Survive. Adapt. Repeat.',
+    controls: [
+      'Tap / click left or right to dodge (quick dash).',
+      'Keyboard: Left Arrow / Right Arrow — dodge left/right.',
+      'Dodge boss bullets and survive as long as possible.',
+      'Collect power-ups: Slow Mo, Shield, Magnet (temporary boosts).',
+      'Collect as many coins as you can.'
+    ],
+    buildType: 'iframe',
+    sourceUrl: '/games/salami-rush/index.html',
+    embedAllowed: true,
+    embed: { aspectRatio: '16/9', minHeight: 520, orientation: 'landscape' },
+    leaderboard: true,
+    rating: { value: 4.6, count: 1280 },
+    featured: false,
+    genre: 'Shooter',
+    difficulty: 'Medium',
+    estTime: '60s',
+    pro: false
+  },
+  {
     name: 'Boss Rush',
     slug: 'boss-rush',
     thumbnail: '/img/boss-rush/boss-rush-thumbnail.png',

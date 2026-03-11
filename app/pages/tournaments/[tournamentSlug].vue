@@ -107,11 +107,13 @@ await refreshSub()
 /* ---------------- Time ticker ---------------- */
 const now = ref(Date.now())
 let timer: any = null
+
 onMounted(() => {
   timer = setInterval(() => {
     now.value = Date.now()
   }, 1000)
 })
+
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
 })
@@ -601,7 +603,6 @@ async function shareLink() {
     </div>
 
     <div v-else class="space-y-8 text-white">
-      <!-- top actions -->
       <div class="flex flex-wrap items-center justify-between gap-3">
         <NuxtLink to="/tournaments" class="text-sm text-white/70 hover:text-white">
           ← Back
@@ -622,9 +623,7 @@ async function shareLink() {
       </div>
 
       <section class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <!-- LEFT MAIN -->
         <div class="space-y-6">
-          <!-- title / meta -->
           <div class="space-y-3">
             <div class="flex flex-wrap items-center gap-2">
               <span
@@ -656,7 +655,6 @@ async function shareLink() {
             </div>
           </div>
 
-          <!-- VIDEO HERO -->
           <div class="glass-card rounded-[28px] overflow-hidden">
             <div class="aspect-[16/9] bg-black">
               <video
@@ -688,7 +686,6 @@ async function shareLink() {
             </div>
           </div>
 
-          <!-- PRIZES -->
           <div class="space-y-4">
             <div class="flex items-end justify-between gap-3">
               <div>
@@ -722,44 +719,42 @@ async function shareLink() {
 
             <div
               v-else
-              class="prize-scroll glass-card rounded-[24px] p-3 sm:p-4"
+              class="prize-scroll-x glass-card rounded-[24px] p-3 sm:p-4"
             >
-              <div class="space-y-3">
+              <div class="prize-row">
                 <div
                   v-for="p in visiblePrizes"
                   :key="`${p.rank}-${p.id || p.title}`"
-                  class="prize-item rounded-[22px] border border-white/10 bg-white/5 p-3 sm:p-4"
+                  class="prize-item prize-card-horizontal rounded-[22px] border border-white/10 bg-white/5 p-3 sm:p-4"
                 >
-                  <div class="flex items-center gap-4">
-                    <div class="relative h-24 w-24 shrink-0 overflow-hidden rounded-[18px] border border-white/10 bg-white/5">
-                      <img
-                        v-if="p.image_url"
-                        :src="p.image_url"
-                        :alt="p.title"
-                        class="h-full w-full object-cover"
-                      />
-                      <div v-else class="grid h-full w-full place-items-center text-3xl">
-                        {{ medal(p.rank) }}
-                      </div>
+                  <div class="relative h-40 w-full overflow-hidden rounded-[18px] border border-white/10 bg-white/5">
+                    <img
+                      v-if="p.image_url"
+                      :src="p.image_url"
+                      :alt="p.title"
+                      class="h-full w-full object-cover"
+                    />
+                    <div v-else class="grid h-full w-full place-items-center text-5xl">
+                      {{ medal(p.rank) }}
+                    </div>
+                  </div>
+
+                  <div class="mt-4">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span
+                        class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
+                        :class="rankChipClass(p.rank)"
+                      >
+                        {{ ordinal(p.rank) }}
+                      </span>
                     </div>
 
-                    <div class="min-w-0 flex-1">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <span
-                          class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
-                          :class="rankChipClass(p.rank)"
-                        >
-                          {{ ordinal(p.rank) }}
-                        </span>
-                      </div>
+                    <div class="mt-2 text-lg font-semibold text-white">
+                      {{ p.title }}
+                    </div>
 
-                      <div class="mt-2 text-lg font-semibold text-white">
-                        {{ p.title }}
-                      </div>
-
-                      <div v-if="p.description" class="mt-1 text-sm leading-6 text-white/65">
-                        {{ p.description }}
-                      </div>
+                    <div v-if="p.description" class="mt-1 text-sm leading-6 text-white/65">
+                      {{ p.description }}
                     </div>
                   </div>
                 </div>
@@ -767,7 +762,6 @@ async function shareLink() {
             </div>
           </div>
 
-          <!-- HOW TO PLAY -->
           <div class="space-y-4">
             <h2 class="text-3xl font-bold tracking-tight text-white">How to Play</h2>
 
@@ -791,7 +785,6 @@ async function shareLink() {
             </div>
           </div>
 
-          <!-- WINNERS -->
           <section
             v-if="isEnded"
             class="space-y-4"
@@ -869,9 +862,7 @@ async function shareLink() {
           </section>
         </div>
 
-        <!-- RIGHT SIDEBAR -->
         <aside class="space-y-6 xl:sticky xl:top-6 xl:self-start">
-          <!-- LIVE / CTA CARD -->
           <div class="live-card rounded-[30px] p-[1px]">
             <div class="live-card-inner rounded-[29px] p-5 sm:p-6">
               <div class="flex justify-center">
@@ -952,7 +943,6 @@ async function shareLink() {
             </div>
           </div>
 
-          <!-- RULES -->
           <div class="glass-card rounded-[26px] p-5 sm:p-6">
             <h3 class="text-2xl font-bold tracking-tight text-white">Tournament Rules</h3>
 
@@ -964,7 +954,6 @@ async function shareLink() {
             </ul>
           </div>
 
-          <!-- LEADERBOARD -->
           <div class="glass-card rounded-[26px] p-5 sm:p-6">
             <div class="flex items-center justify-between gap-3">
               <h3 class="text-2xl font-bold tracking-tight text-white">Leaderboard</h3>
@@ -1015,7 +1004,6 @@ async function shareLink() {
             </div>
           </div>
 
-          <!-- OPTIONAL ARCADE / SUBSCRIBE -->
           <div class="glass-card rounded-[26px] p-5">
             <div class="text-sm text-white/60">Quick actions</div>
             <div class="mt-3 flex flex-wrap gap-2">
@@ -1099,28 +1087,44 @@ async function shareLink() {
     0 8px 30px rgba(84, 255, 146, 0.2);
 }
 
-.prize-scroll {
-  max-height: 540px;
-  overflow-y: auto;
+.prize-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: thin;
   scrollbar-color: rgba(85, 255, 155, 0.45) rgba(255, 255, 255, 0.06);
 }
 
-.prize-scroll::-webkit-scrollbar {
-  width: 8px;
+.prize-scroll-x::-webkit-scrollbar {
+  height: 8px;
 }
-.prize-scroll::-webkit-scrollbar-track {
+
+.prize-scroll-x::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.06);
   border-radius: 999px;
 }
-.prize-scroll::-webkit-scrollbar-thumb {
+
+.prize-scroll-x::-webkit-scrollbar-thumb {
   background: rgba(85, 255, 155, 0.45);
   border-radius: 999px;
+}
+
+.prize-row {
+  display: flex;
+  gap: 16px;
+  min-width: max-content;
+}
+
+.prize-card-horizontal {
+  width: 280px;
+  min-width: 280px;
+  max-width: 280px;
+  flex: 0 0 280px;
 }
 
 .prize-item {
   transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
 }
+
 .prize-item:hover {
   transform: translateY(-2px);
   border-color: rgba(96, 255, 150, 0.22);
@@ -1131,6 +1135,7 @@ async function shareLink() {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
 }
+
 .leader-row-active {
   border-color: rgba(95, 255, 145, 0.45);
   background:
