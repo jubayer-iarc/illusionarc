@@ -1,33 +1,64 @@
 <script setup lang="ts">
 const nuxtApp = useNuxtApp()
+const route = useRoute()
+
 const reducedMotion = ref(false)
 
-const routeLoader = nuxtApp.$routeLoader ?? null
+const routeLoader = nuxtApp.$routeLoader ?? {
+  isLoading: ref(false),
+  progress: ref(0)
+}
+
+const isTournamentEmbedPage = computed(() => {
+  return route.path.startsWith('/tournaments/embed/')
+})
+
+const isArcadeChildPage = computed(() => {
+  return route.path.startsWith('/arcade/')
+})
+
+const shouldHideLoader = computed(() => {
+  return isTournamentEmbedPage.value || isArcadeChildPage.value
+})
 
 onMounted(() => {
   reducedMotion.value =
     window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
 })
 
-const showOverlay = computed(() => routeLoader?.isLoading?.value ?? false)
-const p = computed(() => routeLoader?.progress?.value ?? 0)
+const showOverlay = computed(() => {
+  if (shouldHideLoader.value) return false
+  return routeLoader.isLoading.value
+})
+
+const p = computed(() => {
+  if (shouldHideLoader.value) return 0
+  return routeLoader.progress.value
+})
 </script>
 
 <template>
-  <!-- Top progress bar -->
   <div
+    v-if="!shouldHideLoader"
     class="route-progress"
     :class="{ 'is-on': showOverlay, reduced: reducedMotion }"
     aria-hidden="true"
   >
     <div class="route-progress__bar" :style="{ transform: `scaleX(${p})` }" />
-    <div class="route-progress__glow" :style="{ left: `${Math.max(0, p * 100 - 12)}%` }" />
+    <div
+      class="route-progress__glow"
+      :style="{ left: `${Math.max(0, p * 100 - 12)}%` }"
+    />
   </div>
 
-  <!-- Optional full-screen overlay -->
   <Teleport to="body">
     <Transition name="route-overlay">
-      <div v-if="showOverlay" class="route-overlay" aria-live="polite" aria-busy="true">
+      <div
+        v-if="showOverlay"
+        class="route-overlay"
+        aria-live="polite"
+        aria-busy="true"
+      >
         <div class="route-overlay__card">
           <div class="orb" />
           <div class="text">
@@ -52,6 +83,7 @@ const p = computed(() => routeLoader?.progress?.value ?? 0)
   opacity: 0;
   transition: opacity 140ms ease;
 }
+
 .route-progress.is-on {
   opacity: 1;
 }
@@ -79,6 +111,7 @@ const p = computed(() => routeLoader?.progress?.value ?? 0)
 .route-progress.reduced .route-progress__bar {
   transition: none;
 }
+
 .route-progress.reduced .route-progress__glow {
   display: none;
 }

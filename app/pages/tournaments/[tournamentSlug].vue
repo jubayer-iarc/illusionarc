@@ -76,10 +76,10 @@ await loadTournament()
 /* ---------------- SEO ---------------- */
 const pageTitle = computed(() => (t.value ? `টুর্নামেন্ট — ${t.value.title}` : 'টুর্নামেন্ট'))
 const pageDesc = computed(() =>
-    String(
-        t.value?.description ||
-        'Illusion Arc-এর টুর্নামেন্ট খেলুন, লিডারবোর্ডে উঠুন এবং আকর্ষণীয় পুরস্কার জিতুন।'
-    ).trim()
+  String(
+    t.value?.description ||
+      'Illusion Arc-এর টুর্নামেন্ট খেলুন, লিডারবোর্ডে উঠুন এবং আকর্ষণীয় পুরস্কার জিতুন。'
+  ).trim()
 )
 
 useHead(() => ({
@@ -174,8 +174,8 @@ function maskPhone(phone: any) {
 function ordinalBn(n: number) {
   const map: Record<number, string> = {
     1: '১ম',
-    2: '২য়',
-    3: '৩য়'
+    2: '২য়',
+    3: '৩য়'
   }
   return map[n] || `${toBnDigits(n)}তম`
 }
@@ -255,7 +255,7 @@ const statusBadge = computed(() => {
 
 /* ---------------- Bangla content ---------------- */
 const introPitch = computed(() => {
-  return 'এই ঈদে শুধু Facebook Scroll না করে নিজের গেমিং স্কিল দিয়ে আকর্ষণীয় গিফট জিতে নেওয়ার সুযোগ। Illusion Arc নিয়ে এসেছে Eid Salami Rush Fest—যেখানে Salami Rush খেলে টপ স্কোরার হলেই মিলবে দারুণ সব পুরস্কার।'
+  return 'এই ঈদে শুধু Facebook Scroll না করে নিজের গেমিং স্কিল দিয়ে আকর্ষণীয় গিফট জিতে নেওয়ার সুযোগ। Illusion Arc নিয়ে এসেছে Eid Salami Rush Fest—যেখানে Salami Rush খেলে টপ স্কোরার হলেই মিলবে দারুণ সব পুরস্কার।'
 })
 
 const howToPlayTitle = computed(() => {
@@ -264,16 +264,16 @@ const howToPlayTitle = computed(() => {
 })
 
 const howToPlaySummary = computed(() => {
-  return 'Salami Rush হলো এমন একটি গেম যেখানে আপনি মিউজিকের তালে তালে একের পর এক শক্তিশালী বসের মুখোমুখি হবেন। নিয়ন আলোর এই যুদ্ধক্ষেত্রে যতক্ষণ সম্ভব টিকে থাকাই হবে আপনার আসল চ্যালেঞ্জ।'
+  return 'Salami Rush হলো এমন একটি গেম যেখানে আপনি মিউজিকের তালে তালে একের পর এক শক্তিশালী বসের মুখোমুখি হবেন। নিয়ন আলোর এই যুদ্ধক্ষেত্রে যতক্ষণ সম্ভব টিকে থাকাই হবে আপনার আসল চ্যালেঞ্জ।'
 })
 
 const howToPlaySteps = computed<string[]>(() => {
   return [
     'মোবাইল/ট্যাব: স্ক্রিনের বাম বা ডান পাশে টাচ করে দ্রুত এপাশ-ওপাশ সরে যান।',
     'কিবোর্ড: বাম ও ডান Arrow Key ব্যবহার করে ডানে-বামে মুভ করুন।',
-    'বসের ছোড়া বুলেট বা গুলি এড়িয়ে যতক্ষণ সম্ভব বেঁচে থাকার চেষ্টা করুন।',
-    'Slow Mo, Shield এবং Magnet-এর মতো পাওয়ার-আপ সংগ্রহ করুন।',
-    'যত বেশি সম্ভব কয়েন সংগ্রহ করে স্কোর বাড়ান।'
+    'বসের ছোড়া বুলেট বা গুলি এড়িয়ে যতক্ষণ সম্ভব বেঁচে থাকার চেষ্টা করুন।',
+    'Slow Mo, Shield এবং Magnet-এর মতো পাওয়ার-আপ সংগ্রহ করুন।',
+    'যত বেশি সম্ভব কয়েন সংগ্রহ করে স্কোর বাড়ান।'
   ]
 })
 
@@ -281,11 +281,11 @@ const termsList = computed(() => {
   return [
     'গেমটি যখন লাইভ থাকবে, শুধুমাত্র তখনই খেলতে পারবেন।',
     'অংশ নিতে ও স্কোর জমা দিতে অ্যাকাউন্টে লগ-ইন থাকতে হবে।',
-    'স্কোর জমা দিতে সক্রিয় সাবস্ক্রিপশন বাধ্যতামূলক।',
-    'লাইভ চলাকালীন যার স্কোর সবচেয়ে বেশি হবে, সে লিডারবোর্ডে ওপরে থাকবে।',
+    'স্কোর জমা দিতে সক্রিয় সাবস্ক্রিপশন বাধ্যতামূলক।',
+    'লাইভ চলাকালীন যার স্কোর সবচেয়ে বেশি হবে, সে লিডারবোর্ডে ওপরে থাকবে।',
     'শীর্ষ ২০ জন স্কোরার পুরস্কার পাবে।',
     'লাইভ শুরুর আগে প্র্যাকটিস করা যাবে, কিন্তু লাইভ শুরু হলে টুর্নামেন্ট পেজ থেকে খেলতে হবে।',
-    'গেমের সময়সূচী: ১৮ তারিখ রাত ১২:০১ মিনিট থেকে ২৭ তারিখ রাত ১১:৫৯ মিনিট পর্যন্ত।'
+    'গেমের সময়সূচী: ১৮ তারিখ রাত ১২:০১ মিনিট থেকে ২৭ তারিখ রাত ১১:৫৯ মিনিট পর্যন্ত।'
   ]
 })
 
@@ -304,8 +304,16 @@ const promoVideoType = computed(() => String(t.value?.promo_video_type || '').tr
 const promoVideoUrl = computed(() => String(t.value?.promo_video_url || '').trim())
 const promoYoutubeId = computed(() => String(t.value?.promo_video_youtube_id || '').trim())
 const promoVideoTitle = computed(() => String(t.value?.promo_video_title || '').trim())
+
 const promoYoutubeEmbedUrl = computed(() => {
-  return promoYoutubeId.value ? `https://www.youtube.com/embed/${promoYoutubeId.value}` : ''
+  if (!promoYoutubeId.value) return ''
+  const params = new URLSearchParams({
+    autoplay: '1',
+    mute: '1',
+    playsinline: '1',
+    rel: '0'
+  })
+  return `https://www.youtube.com/embed/${promoYoutubeId.value}?${params.toString()}`
 })
 
 /* ---------------- Assigned prizes ---------------- */
@@ -324,8 +332,8 @@ async function loadAssignedPrizes() {
     }
 
     const { data, error } = await supabase
-        .from('tournament_prize_map')
-        .select(`
+      .from('tournament_prize_map')
+      .select(`
         id,
         rank,
         prize_id,
@@ -337,27 +345,27 @@ async function loadAssignedPrizes() {
           image_path
         )
       `)
-        .eq('tournament_id', t.value.id)
-        .order('rank', { ascending: true })
+      .eq('tournament_id', t.value.id)
+      .order('rank', { ascending: true })
 
     if (error) throw error
 
     assignedPrizes.value = ((data || []) as AssignedPrizeRow[])
-        .map((row) => {
-          const p = row.prize
-          if (!p) return null
-          return {
-            id: String(p.id || '').trim(),
-            rank: Number(row.rank || 0),
-            title: String(p.title || '').trim(),
-            description: p.description || null,
-            image_url: p.image_url || null,
-            image_path: p.image_path || null
-          } as PrizeRelation
-        })
-        .filter(Boolean) as PrizeRelation[]
+      .map((row) => {
+        const p = row.prize
+        if (!p) return null
+        return {
+          id: String(p.id || '').trim(),
+          rank: Number(row.rank || 0),
+          title: String(p.title || '').trim(),
+          description: p.description || null,
+          image_url: p.image_url || null,
+          image_path: p.image_path || null
+        } as PrizeRelation
+      })
+      .filter(Boolean) as PrizeRelation[]
   } catch (e: any) {
-    prizesError.value = e?.message || 'পুরস্কারের তথ্য লোড করা যায়নি'
+    prizesError.value = e?.message || 'পুরস্কারের তথ্য লোড করা যায়নি'
     assignedPrizes.value = []
   } finally {
     prizesPending.value = false
@@ -429,7 +437,7 @@ async function loadWinners() {
     const ids = Array.from(new Set(arr.map((w) => w.user_id).filter(Boolean))) as string[]
     if (ids.length) await fetchProfiles(ids)
   } catch (e: any) {
-    winnersError.value = e?.data?.message || e?.message || 'বিজয়ীদের তথ্য লোড করা যায়নি'
+    winnersError.value = e?.data?.message || e?.message || 'বিজয়ীদের তথ্য লোড করা যায়নি'
     winners.value = []
   } finally {
     winnersPending.value = false
@@ -468,9 +476,9 @@ async function fetchProfiles(ids: string[]) {
   for (const a of attempts) {
     try {
       const { data, error } = await (supabase as any)
-          .from('profiles')
-          .select(a.select)
-          .in(a.idKey, ids)
+        .from('profiles')
+        .select(a.select)
+        .in(a.idKey, ids)
 
       if (error) throw error
 
@@ -509,7 +517,7 @@ async function loadLeaderboard() {
     lb.value = (res?.rows || []) as LbRow[]
     lbUpdatedAt.value = Date.now()
   } catch (e: any) {
-    lbError.value = e?.data?.message || e?.message || 'লিডারবোর্ড লোড করা যায়নি'
+    lbError.value = e?.data?.message || e?.message || 'লিডারবোর্ড লোড করা যায়নি'
     lb.value = []
   } finally {
     lbPending.value = false
@@ -531,30 +539,30 @@ function lastUpdatedText() {
 const lastBoundaryTick = ref<number>(0)
 
 watch(
-    () => now.value,
-    async () => {
-      if (!t.value) return
+  () => now.value,
+  async () => {
+    if (!t.value) return
 
-      const s = new Date(getStartsAt(t.value)).getTime()
-      const e = new Date(getEndsAt(t.value)).getTime()
-      if (!Number.isFinite(s) && !Number.isFinite(e)) return
+    const s = new Date(getStartsAt(t.value)).getTime()
+    const e = new Date(getEndsAt(t.value)).getTime()
+    if (!Number.isFinite(s) && !Number.isFinite(e)) return
 
-      const nearStart = Number.isFinite(s) ? Math.abs(now.value - s) < 1500 : false
-      const nearEnd = Number.isFinite(e) ? Math.abs(now.value - e) < 1500 : false
-      if (!nearStart && !nearEnd) return
+    const nearStart = Number.isFinite(s) ? Math.abs(now.value - s) < 1500 : false
+    const nearEnd = Number.isFinite(e) ? Math.abs(now.value - e) < 1500 : false
+    if (!nearStart && !nearEnd) return
 
-      if (now.value - lastBoundaryTick.value < 2000) return
-      lastBoundaryTick.value = now.value
+    if (now.value - lastBoundaryTick.value < 2000) return
+    lastBoundaryTick.value = now.value
 
-      await loadTournament()
-      await loadAssignedPrizes()
-      await refreshSub()
-      await loadLeaderboard()
+    await loadTournament()
+    await loadAssignedPrizes()
+    await refreshSub()
+    await loadLeaderboard()
 
-      if (effectiveStatus.value === 'ended') {
-        await loadWinners()
-      }
+    if (effectiveStatus.value === 'ended') {
+      await loadWinners()
     }
+  }
 )
 
 if (effectiveStatus.value === 'ended') {
@@ -568,6 +576,12 @@ function playHard(tournamentSlug: string) {
   window.location.assign(url)
 }
 
+const practiceLink = computed(() => {
+  const gameSlug = getGameSlug(t.value)
+  if (!gameSlug) return '/arcade'
+  return `/arcade/${encodeURIComponent(gameSlug)}`
+})
+
 const fullLeaderboardLink = computed(() => {
   const gameSlug = getGameSlug(t.value)
   const tournamentSlug = String(t.value?.slug || slug.value || '').trim()
@@ -579,18 +593,24 @@ const fullLeaderboardLink = computed(() => {
   <div class="tournament-page">
     <UContainer class="py-6 sm:py-8 lg:py-10">
       <div
-          v-if="!t"
-          class="rounded-[26px] border border-black/10 bg-white p-5 text-slate-900 shadow-[0_14px_44px_rgba(15,23,42,0.08)] backdrop-blur sm:p-6 dark:border-white/10 dark:bg-white/5 dark:text-white dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+        v-if="!t"
+        class="rounded-[26px] border border-black/10 bg-white p-5 text-slate-900 shadow-[0_14px_44px_rgba(15,23,42,0.08)] backdrop-blur sm:p-6 dark:border-white/10 dark:bg-white/5 dark:text-white dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
       >
-        <div class="text-lg font-semibold">টুর্নামেন্ট পাওয়া যায়নি</div>
-        <NuxtLink to="/tournaments" class="mt-3 inline-block text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white">
+        <div class="text-lg font-semibold">টুর্নামেন্ট পাওয়া যায়নি</div>
+        <NuxtLink
+          to="/tournaments"
+          class="mt-3 inline-block text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white"
+        >
           ← টুর্নামেন্টে ফিরে যান
         </NuxtLink>
       </div>
 
       <div v-else class="space-y-6 text-slate-900 sm:space-y-8 dark:text-white">
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <NuxtLink to="/tournaments" class="text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white">
+          <NuxtLink
+            to="/tournaments"
+            class="text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white"
+          >
             ← ফিরে যান
           </NuxtLink>
 
@@ -607,7 +627,7 @@ const fullLeaderboardLink = computed(() => {
         <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-6">
           <div class="min-w-0 space-y-5 sm:space-y-6">
             <div
-                class="hero-card relative overflow-hidden rounded-[26px] border border-black/10 bg-white/90 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)] sm:p-7 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_40px_rgba(0,0,0,0.25)]"
+              class="hero-card relative overflow-hidden rounded-[26px] border border-black/10 bg-white/90 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)] sm:p-7 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_40px_rgba(0,0,0,0.25)]"
             >
               <div class="hero-glow hero-glow-a"></div>
               <div class="hero-glow hero-glow-b"></div>
@@ -615,8 +635,8 @@ const fullLeaderboardLink = computed(() => {
               <div class="relative space-y-3">
                 <div class="flex flex-wrap items-center gap-2">
                   <span
-                      class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold"
-                      :class="statusBadge.cls"
+                    class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold"
+                    :class="statusBadge.cls"
                   >
                     <span class="inline-flex h-1.5 w-1.5 rounded-full" :class="statusBadge.dot" />
                     {{ statusBadge.text }}
@@ -627,8 +647,8 @@ const fullLeaderboardLink = computed(() => {
                   </span>
 
                   <span
-                      v-if="sub?.active"
-                      class="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] text-emerald-700 dark:text-emerald-200"
+                    v-if="sub?.active"
+                    class="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] text-emerald-700 dark:text-emerald-200"
                   >
                     সাবস্ক্রিপশন চালু
                   </span>
@@ -651,22 +671,23 @@ const fullLeaderboardLink = computed(() => {
             <div class="overflow-hidden rounded-[24px] border border-black/10 bg-white shadow-[0_14px_44px_rgba(15,23,42,0.08)] backdrop-blur sm:rounded-[28px] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
               <div class="aspect-[16/10] bg-black sm:aspect-[16/9]">
                 <video
-                    v-if="promoVideoType === 'upload' && promoVideoUrl"
-                    :src="promoVideoUrl"
-                    controls
-                    playsinline
-                    preload="metadata"
-                    class="h-full w-full object-cover"
-                    autoplay="true"
+                  v-if="promoVideoType === 'upload' && promoVideoUrl"
+                  :src="promoVideoUrl"
+                  controls
+                  autoplay
+                  muted
+                  playsinline
+                  preload="metadata"
+                  class="h-full w-full object-cover"
                 />
                 <iframe
-                    v-else-if="promoVideoType === 'youtube' && promoYoutubeEmbedUrl"
-                    :src="promoYoutubeEmbedUrl"
-                    :title="promoVideoTitle || 'টুর্নামেন্ট প্রোমো ভিডিও'"
-                    class="h-full w-full"
-                    frameborder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowfullscreen
+                  v-else-if="promoVideoType === 'youtube' && promoYoutubeEmbedUrl"
+                  :src="promoYoutubeEmbedUrl"
+                  :title="promoVideoTitle || 'টুর্নামেন্ট প্রোমো ভিডিও'"
+                  class="h-full w-full"
+                  frameborder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowfullscreen
                 />
                 <div v-else class="relative h-full w-full">
                   <img :src="thumb" :alt="t.title" class="h-full w-full object-cover opacity-90" />
@@ -685,48 +706,48 @@ const fullLeaderboardLink = computed(() => {
                 <div>
                   <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">পুরস্কার</h2>
                   <div class="mt-1 text-sm text-black/55 dark:text-white/55">
-                    {{ visiblePrizes.length ? `শীর্ষ ${toBnDigits(visiblePrizes.length)} জন বিজয়ী পুরস্কার পাবে` : 'পুরস্কারের তথ্য শীঘ্রই আসছে' }}
+                    {{ visiblePrizes.length ? `শীর্ষ ${toBnDigits(visiblePrizes.length)} জন বিজয়ী পুরস্কার পাবে` : 'পুরস্কারের তথ্য শীঘ্রই আসছে' }}
                   </div>
                 </div>
               </div>
 
               <div
-                  v-if="prizesError && !visiblePrizes.length"
-                  class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
+                v-if="prizesError && !visiblePrizes.length"
+                class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
               >
                 {{ prizesError }}
               </div>
 
               <div
-                  v-else-if="prizesPending && !visiblePrizes.length"
-                  class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                v-else-if="prizesPending && !visiblePrizes.length"
+                class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
               >
                 পুরস্কারের তথ্য লোড হচ্ছে…
               </div>
 
               <div
-                  v-else-if="!visiblePrizes.length"
-                  class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                v-else-if="!visiblePrizes.length"
+                class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
               >
                 পুরস্কারের বিস্তারিত শীঘ্রই প্রকাশ করা হবে।
               </div>
 
               <div
-                  v-else
-                  class="prize-scroll-x rounded-[24px] border border-black/10 bg-white p-3 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:p-4 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                v-else
+                class="prize-scroll-x rounded-[24px] border border-black/10 bg-white p-3 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:p-4 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
               >
                 <div class="prize-row">
                   <div
-                      v-for="p in visiblePrizes"
-                      :key="`${p.rank}-${p.id || p.title}`"
-                      class="prize-item prize-card-horizontal rounded-[20px] border border-black/10 bg-black/5 p-3 sm:rounded-[22px] sm:p-4 dark:border-white/10 dark:bg-white/5"
+                    v-for="p in visiblePrizes"
+                    :key="`${p.rank}-${p.id || p.title}`"
+                    class="prize-item prize-card-horizontal rounded-[20px] border border-black/10 bg-black/5 p-3 sm:rounded-[22px] sm:p-4 dark:border-white/10 dark:bg-white/5"
                   >
                     <div class="relative h-36 w-full overflow-hidden rounded-[16px] border border-black/10 bg-white sm:h-40 sm:rounded-[18px] dark:border-white/10 dark:bg-white/10">
                       <img
-                          v-if="p.image_url"
-                          :src="p.image_url"
-                          :alt="p.title"
-                          class="h-full w-full object-cover"
+                        v-if="p.image_url"
+                        :src="p.image_url"
+                        :alt="p.title"
+                        class="h-full w-full object-cover"
                       />
                       <div v-else class="grid h-full w-full place-items-center text-5xl">
                         {{ medal(p.rank) }}
@@ -736,8 +757,8 @@ const fullLeaderboardLink = computed(() => {
                     <div class="mt-4">
                       <div class="flex flex-wrap items-center gap-2">
                         <span
-                            class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
-                            :class="rankChipClass(p.rank)"
+                          class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
+                          :class="rankChipClass(p.rank)"
                         >
                           {{ ordinalBn(p.rank) }}
                         </span>
@@ -797,8 +818,8 @@ const fullLeaderboardLink = computed(() => {
             <section v-if="isEnded" class="space-y-4">
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">চূড়ান্ত ফলাফল</h2>
-                  <div class="mt-1 text-sm text-black/55 dark:text-white/55">টুর্নামেন্ট শেষ হলে বিজয়ীদের ফলাফল স্থির হয়ে যাবে।</div>
+                  <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">চূড়ান্ত ফলাফল</h2>
+                  <div class="mt-1 text-sm text-black/55 dark:text-white/55">টুর্নামেন্ট শেষ হলে বিজয়ীদের ফলাফল স্থির হয়ে যাবে।</div>
                 </div>
 
                 <UButton size="xs" variant="soft" class="!rounded-full" :loading="winnersPending" @click="loadWinners">
@@ -807,38 +828,38 @@ const fullLeaderboardLink = computed(() => {
               </div>
 
               <div
-                  v-if="winnersError"
-                  class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
+                v-if="winnersError"
+                class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
               >
                 {{ winnersError }}
               </div>
 
               <div
-                  v-else-if="!winnersPending && !hasWinners"
-                  class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                v-else-if="!winnersPending && !hasWinners"
+                class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
               >
-                এখনো বিজয়ীদের তথ্য পাওয়া যায়নি। রিফ্রেশ করে দেখুন।
+                এখনো বিজয়ীদের তথ্য পাওয়া যায়নি। রিফ্রেশ করে দেখুন।
               </div>
 
               <div class="grid gap-4 md:grid-cols-3">
                 <div
-                    v-for="rank in [1, 2, 3]"
-                    :key="`podium-${rank}`"
-                    class="rounded-[22px] border border-black/10 bg-white p-5 text-center shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[24px] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                  v-for="rank in [1, 2, 3]"
+                  :key="`podium-${rank}`"
+                  class="rounded-[22px] border border-black/10 bg-white p-5 text-center shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[24px] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
                 >
                   <div class="text-4xl">{{ medal(rank) }}</div>
                   <div class="mt-2 text-xs uppercase tracking-[0.2em] text-black/55 dark:text-white/55">
-                    {{ rank === 1 ? 'চ্যাম্পিয়ন' : rank === 2 ? 'রানার-আপ' : 'তৃতীয় স্থান' }}
+                    {{ rank === 1 ? 'চ্যাম্পিয়ন' : rank === 2 ? 'রানার-আপ' : 'তৃতীয় স্থান' }}
                   </div>
 
                   <div class="mt-4 flex justify-center">
                     <div class="h-16 w-16 overflow-hidden rounded-full border border-black/10 bg-white dark:border-white/10 dark:bg-white/10">
                       <img
-                          v-if="avatarFor(winnerByRank(rank)?.user_id)"
-                          :src="avatarFor(winnerByRank(rank)?.user_id)"
-                          alt="avatar"
-                          class="h-full w-full object-cover"
-                          @error="onAvatarError(winnerByRank(rank)?.user_id)"
+                        v-if="avatarFor(winnerByRank(rank)?.user_id)"
+                        :src="avatarFor(winnerByRank(rank)?.user_id)"
+                        alt="avatar"
+                        class="h-full w-full object-cover"
+                        @error="onAvatarError(winnerByRank(rank)?.user_id)"
                       />
                       <div v-else class="grid h-full w-full place-items-center text-sm font-semibold text-slate-900 dark:text-white">
                         {{ initials(winnerByRank(rank)?.player_name) }}
@@ -870,8 +891,8 @@ const fullLeaderboardLink = computed(() => {
 
           <aside class="space-y-5 xl:sticky xl:top-6 xl:self-start xl:space-y-6">
             <div
-                class="state-shell rounded-[26px] p-[1px] sm:rounded-[30px]"
-                :class="{
+              class="state-shell rounded-[26px] p-[1px] sm:rounded-[30px]"
+              :class="{
                 'state-shell-live': isLive,
                 'state-shell-scheduled': isScheduled,
                 'state-shell-ended': isEnded || isCanceled
@@ -880,8 +901,8 @@ const fullLeaderboardLink = computed(() => {
               <div class="rounded-[25px] bg-white p-4 sm:rounded-[29px] sm:p-6 dark:bg-[#0b1322]">
                 <div class="flex justify-center">
                   <span
-                      class="inline-flex items-center gap-3 rounded-[16px] border px-4 py-2 text-xl font-extrabold tracking-tight sm:rounded-[18px] sm:px-5 sm:py-3 sm:text-2xl"
-                      :class="statusBadge.cls"
+                    class="inline-flex items-center gap-3 rounded-[16px] border px-4 py-2 text-xl font-extrabold tracking-tight sm:rounded-[18px] sm:px-5 sm:py-3 sm:text-2xl"
+                    :class="statusBadge.cls"
                   >
                     <span class="inline-flex h-3 w-3 rounded-full sm:h-3.5 sm:w-3.5" :class="statusBadge.dot" />
                     {{ statusBadge.text }}
@@ -893,8 +914,8 @@ const fullLeaderboardLink = computed(() => {
                     {{ isLive ? 'শেষ হতে বাকি' : isScheduled ? 'শুরু হতে বাকি' : isEnded ? 'টুর্নামেন্ট শেষ' : 'টুর্নামেন্ট বাতিল' }}
                   </div>
                   <div
-                      class="mt-2 break-words text-2xl font-extrabold tracking-tight sm:text-4xl"
-                      :class="{
+                    class="mt-2 break-words text-2xl font-extrabold tracking-tight sm:text-4xl"
+                    :class="{
                       'text-emerald-700 dark:text-emerald-300': isLive,
                       'text-violet-700 dark:text-violet-300': isScheduled,
                       'text-red-700 dark:text-red-300': isEnded || isCanceled
@@ -909,40 +930,52 @@ const fullLeaderboardLink = computed(() => {
                     <span class="mt-1.5 inline-block h-2 w-2 rounded-full bg-blue-400 dark:bg-blue-300"></span>
                     <span>
                       যোগ্যতা:
-                      <b class="font-semibold text-slate-900 dark:text-white">{{ sub?.active ? 'সাবস্ক্রিপশন চালু' : 'সাবস্ক্রিপশন প্রয়োজন' }}</b>
+                      <b class="font-semibold text-slate-900 dark:text-white">{{ sub?.active ? 'সাবস্ক্রিপশন চালু' : 'সাবস্ক্রিপশন প্রয়োজন' }}</b>
                     </span>
                   </div>
                 </div>
 
-                <div class="mt-6 sm:mt-8">
+                <div class="mt-6 space-y-3 sm:mt-8">
                   <UButton
-                      v-if="canPlay"
-                      block
-                      size="xl"
-                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
-                      @click="playHard(t.slug)"
+                    v-if="canPlay"
+                    block
+                    size="xl"
+                    class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                    @click="playHard(t.slug)"
                   >
                     খেলুন
                   </UButton>
 
                   <UButton
-                      v-else-if="isLive && user && sub && !sub.active"
-                      block
-                      size="xl"
-                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
-                      to="/subscribe"
+                    v-else-if="isLive && user && sub && !sub.active"
+                    block
+                    size="xl"
+                    class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                    to="/subscribe"
                   >
                     খেলতে সাবস্ক্রাইব করুন
                   </UButton>
 
                   <UButton
-                      v-else
-                      block
-                      size="xl"
-                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
-                      @click="playHard(t.slug)"
+                    v-else
+                    block
+                    size="xl"
+                    class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                    @click="playHard(t.slug)"
                   >
                     খেলুন
+                  </UButton>
+
+                  <UButton
+                    v-if="isScheduled && game"
+                    :to="practiceLink"
+                    block
+                    size="lg"
+                    variant="solid"
+                    color="secondary"
+                    class="!rounded-[18px] min-h-[48px]"
+                  >
+                    প্র্যাকটিস করুন
                   </UButton>
                 </div>
 
@@ -962,18 +995,18 @@ const fullLeaderboardLink = computed(() => {
               </div>
 
               <div
-                  v-else-if="!lbPending && !leaderboardPreview.length"
-                  class="mt-4 text-sm text-black/70 dark:text-white/75"
+                v-else-if="!lbPending && !leaderboardPreview.length"
+                class="mt-4 text-sm text-black/70 dark:text-white/75"
               >
-                এখনো কোনো স্কোর জমা পড়েনি।
+                এখনো কোনো স্কোর জমা পড়েনি।
               </div>
 
               <div v-else class="mt-4 space-y-2.5">
                 <div
-                    v-for="(r, i) in leaderboardPreview"
-                    :key="`${r.player_name}-${r.created_at}-${i}`"
-                    class="leader-row flex items-center justify-between gap-3 rounded-[16px] border border-black/10 bg-black/5 px-3 py-3 sm:rounded-[18px] sm:px-4 dark:border-white/10 dark:bg-white/5"
-                    :class="i === 2 ? 'leader-row-active' : ''"
+                  v-for="(r, i) in leaderboardPreview"
+                  :key="`${r.player_name}-${r.created_at}-${i}`"
+                  class="leader-row flex items-center justify-between gap-3 rounded-[16px] border border-black/10 bg-black/5 px-3 py-3 sm:rounded-[18px] sm:px-4 dark:border-white/10 dark:bg-white/5"
+                  :class="i === 2 ? 'leader-row-active' : ''"
                 >
                   <div class="flex min-w-0 items-center gap-3">
                     <div class="w-6 shrink-0 text-center text-lg">{{ medal(i + 1) }}</div>
@@ -1003,10 +1036,10 @@ const fullLeaderboardLink = computed(() => {
 
               <div class="mt-4">
                 <UButton
-                    :to="fullLeaderboardLink"
-                    variant="soft"
-                    block
-                    class="!rounded-full"
+                  :to="fullLeaderboardLink"
+                  variant="soft"
+                  block
+                  class="!rounded-full"
                 >
                   View Full Leaderboard
                 </UButton>
@@ -1031,9 +1064,9 @@ const fullLeaderboardLink = computed(() => {
   inset: 0;
   z-index: -2;
   background:
-      radial-gradient(circle at 18% 10%, rgba(139, 92, 246, 0.12), transparent 28%),
-      radial-gradient(circle at 82% 14%, rgba(16, 185, 129, 0.1), transparent 24%),
-      linear-gradient(180deg, #f7faff 0%, #eef4ff 52%, #f9fbff 100%);
+    radial-gradient(circle at 18% 10%, rgba(139, 92, 246, 0.12), transparent 28%),
+    radial-gradient(circle at 82% 14%, rgba(16, 185, 129, 0.1), transparent 24%),
+    linear-gradient(180deg, #f7faff 0%, #eef4ff 52%, #f9fbff 100%);
 }
 
 .tournament-page::after {
@@ -1044,8 +1077,8 @@ const fullLeaderboardLink = computed(() => {
   pointer-events: none;
   opacity: 0.08;
   background-image:
-      linear-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(99, 102, 241, 0.08) 1px, transparent 1px);
+    linear-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.08) 1px, transparent 1px);
   background-size: 38px 38px;
   mask-image: radial-gradient(circle at center, black 35%, transparent 100%);
 }
@@ -1075,8 +1108,8 @@ const fullLeaderboardLink = computed(() => {
 
 .state-shell {
   box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.03),
-      0 18px 48px rgba(15, 23, 42, 0.12);
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 18px 48px rgba(15, 23, 42, 0.12);
 }
 
 .state-shell-live {
@@ -1093,8 +1126,8 @@ const fullLeaderboardLink = computed(() => {
 
 .cta-glow {
   box-shadow:
-      0 0 0 1px rgba(16, 185, 129, 0.14),
-      0 12px 28px rgba(16, 185, 129, 0.18);
+    0 0 0 1px rgba(16, 185, 129, 0.14),
+    0 12px 28px rgba(16, 185, 129, 0.18);
 }
 
 .prize-scroll-x {
@@ -1144,8 +1177,8 @@ const fullLeaderboardLink = computed(() => {
   border-color: rgba(16, 185, 129, 0.4) !important;
   background: linear-gradient(180deg, rgba(16, 185, 129, 0.13), rgba(16, 185, 129, 0.06)) !important;
   box-shadow:
-      inset 0 0 0 1px rgba(16, 185, 129, 0.08),
-      0 0 18px rgba(16, 185, 129, 0.08);
+    inset 0 0 0 1px rgba(16, 185, 129, 0.08),
+    0 0 18px rgba(16, 185, 129, 0.08);
 }
 
 @media (max-width: 1279px) {

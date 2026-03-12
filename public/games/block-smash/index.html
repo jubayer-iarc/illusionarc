@@ -18,7 +18,7 @@
       background: #000;
     }
 
-    /* ✅ iframe-safe sizing */
+    /* iframe-safe sizing */
     #unity-container {
       position: absolute;
       inset: 0;
@@ -31,37 +31,71 @@
       width: 100% !important;
       height: 100% !important;
       display: block;
-
-      /* ✅ show your build splash while loading */
       background: url('Build/bs.jpg') center / cover no-repeat;
-
-      /* ✅ important for mobile */
       touch-action: none;
       -webkit-user-select: none;
       user-select: none;
       outline: none;
+
+      opacity: 0;
+      transition: opacity 0.18s ease;
     }
 
-    /* Simple loading bar (Boss Rush style) */
-    #loading {
+    #unity-canvas.ready {
+      opacity: 1;
+    }
+
+    /* Round loader overlay */
+    #loading-overlay {
       position: absolute;
-      left: 16px;
-      right: 16px;
-      bottom: 16px;
-      height: 10px;
-      border-radius: 999px;
-      overflow: hidden;
-      background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.18);
-    }
-    #loading > div {
-      height: 100%;
-      width: 0%;
-      background: rgba(34,211,238,0.9);
-      transition: width .15s linear;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0.20),
+        rgba(0, 0, 0, 0.45)
+      );
+      z-index: 5;
+      transition: opacity 0.18s ease;
     }
 
-    /* Optional warning banner area (Unity showBanner) */
+    #loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loader-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 20px 24px;
+      border-radius: 20px;
+      background: rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    .spinner {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 4px solid rgba(255, 255, 255, 0.18);
+      border-top-color: rgba(34, 211, 238, 0.95);
+      animation: spin 0.8s linear infinite;
+      box-sizing: border-box;
+    }
+
+    .loading-text {
+      color: rgba(255, 255, 255, 0.9);
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      letter-spacing: 0.3px;
+    }
+
+    /* Unity warning banner */
     #unity-warning {
       position: absolute;
       top: 10px;
@@ -72,6 +106,7 @@
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       font-size: 14px;
     }
+
     #unity-warning > div {
       margin-bottom: 8px;
       border-radius: 10px;
@@ -79,6 +114,23 @@
       background: rgba(255, 255, 255, 0.92);
       color: #000;
       box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .spinner {
+        animation-duration: 1.6s;
+      }
+
+      #unity-canvas,
+      #loading-overlay {
+        transition: none;
+      }
     }
   </style>
 </head>
@@ -89,20 +141,20 @@
 
     <div id="unity-warning"></div>
 
-    <div id="loading">
-      <div id="bar"></div>
+    <div id="loading-overlay">
+      <div class="loader-wrap">
+        <div class="spinner"></div>
+        <div class="loading-text">Loading game...</div>
+      </div>
     </div>
   </div>
 
-  <!-- Use the Unity-generated loader directly (like Boss Rush) -->
   <script src="Build/bs.loader.js"></script>
   <script>
     const canvas = document.querySelector("#unity-canvas");
     const container = document.querySelector("#unity-container");
-    const bar = document.querySelector("#bar");
-    const loading = document.querySelector("#loading");
+    const loadingOverlay = document.querySelector("#loading-overlay");
 
-    // Optional: Unity banner handler (ported from template)
     function unityShowBanner(msg, type) {
       const warningBanner = document.querySelector("#unity-warning");
       const div = document.createElement("div");
@@ -125,18 +177,25 @@
     }
 
     function resize() {
-      // Match canvas to container box (iframe-safe)
       const w = container.clientWidth;
       const h = container.clientHeight;
       canvas.style.width = w + "px";
       canvas.style.height = h + "px";
     }
 
+    function hideLoader() {
+      canvas.classList.add("ready");
+      loadingOverlay.classList.add("hidden");
+
+      setTimeout(() => {
+        if (loadingOverlay) loadingOverlay.remove();
+      }, 220);
+    }
+
     resize();
     window.addEventListener("resize", resize);
     window.addEventListener("orientationchange", () => setTimeout(resize, 200));
 
-    // Unity config (matches your provided template)
     const config = {
       arguments: [],
       dataUrl: "Build/bs.data",
@@ -147,14 +206,13 @@
       productName: "Block Smash",
       productVersion: "0.9",
       showBanner: unityShowBanner,
-
-      // If you want lower resolution on mobile, uncomment:
-      // devicePixelRatio: 1,
+      devicePixelRatio: 1
     };
 
-    createUnityInstance(canvas, config, (progress) => {
-      if (bar) bar.style.width = Math.round(progress * 100) + "%";
-      if (progress >= 0.99 && loading) loading.style.display = "none";
+    createUnityInstance(canvas, config, () => {
+      /* no visible progress */
+    }).then(() => {
+      hideLoader();
     }).catch((message) => {
       alert(message);
     });

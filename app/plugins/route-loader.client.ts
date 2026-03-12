@@ -7,52 +7,84 @@ export default defineNuxtPlugin((nuxtApp) => {
   let timer: number | null = null
   let showDelay: number | null = null
   let safety: number | null = null
+  let finishTimer: number | null = null
 
-  // track both page loading and transition
   let loadDepth = 0
   let transitionDepth = 0
 
-  // min show time to prevent flash + “late swap” feeling
-  const MIN_VISIBLE_MS = 320
-  const SHOW_DELAY_MS = 120
+  const MIN_VISIBLE_MS = 80
+  const SHOW_DELAY_MS = 0
   let shownAt = 0
+
+  function isTournamentEmbedRoute() {
+    return window.location.pathname.startsWith('/tournaments/embed/')
+  }
+
+  function isArcadeChildRoute() {
+    return window.location.pathname.startsWith('/arcade/')
+  }
+
+  function shouldDisableLoader() {
+    return isTournamentEmbedRoute() || isArcadeChildRoute()
+  }
 
   function clearAll() {
     if (timer) window.clearInterval(timer)
     if (showDelay) window.clearTimeout(showDelay)
     if (safety) window.clearTimeout(safety)
+    if (finishTimer) window.clearTimeout(finishTimer)
+
     timer = null
     showDelay = null
     safety = null
+    finishTimer = null
+  }
+
+  function hardReset() {
+    clearAll()
+    isLoading.value = false
+    progress.value = 0
+    loadDepth = 0
+    transitionDepth = 0
   }
 
   function startProgress() {
+    if (shouldDisableLoader()) {
+      hardReset()
+      return
+    }
+
     clearAll()
 
-    // delay showing (prevents flash on instant navigations)
     showDelay = window.setTimeout(() => {
+      if (shouldDisableLoader()) {
+        hardReset()
+        return
+      }
+
       isLoading.value = true
       shownAt = Date.now()
-      progress.value = Math.max(progress.value, 0.08)
+      progress.value = Math.max(progress.value, 0.12)
 
-      // smooth fake progress until we finish
       timer = window.setInterval(() => {
+        if (shouldDisableLoader()) {
+          hardReset()
+          return
+        }
+
         const p = progress.value
-        progress.value = Math.min(0.92, p + (0.92 - p) * 0.12)
-      }, 120)
+        progress.value = Math.min(0.94, p + (0.94 - p) * 0.18)
+      }, 90)
     }, SHOW_DELAY_MS)
 
-    // hard failsafe: never stuck forever
     safety = window.setTimeout(() => {
       forceFinish()
     }, 20000)
   }
 
   function maybeFinish() {
-    // only finish when BOTH are done
     if (loadDepth > 0 || transitionDepth > 0) return
 
-    // if not yet shown (still in showDelay), just cancel
     if (!isLoading.value) {
       clearAll()
       progress.value = 0
@@ -62,38 +94,49 @@ export default defineNuxtPlugin((nuxtApp) => {
     const elapsed = Date.now() - shownAt
     const wait = Math.max(0, MIN_VISIBLE_MS - elapsed)
 
-    window.setTimeout(() => {
-      // re-check in case a new nav started
+    finishTimer = window.setTimeout(() => {
       if (loadDepth > 0 || transitionDepth > 0) return
+
+      if (shouldDisableLoader()) {
+        hardReset()
+        return
+      }
 
       clearAll()
       progress.value = 1
 
-      window.setTimeout(() => {
+      finishTimer = window.setTimeout(() => {
         isLoading.value = false
         progress.value = 0
-      }, 160)
+      }, 40)
     }, wait)
   }
 
   function forceFinish() {
     loadDepth = 0
     transitionDepth = 0
-    if (!isLoading.value) {
+
+    if (!shouldDisableLoader() && isLoading.value) {
       clearAll()
-      progress.value = 0
+      progress.value = 1
+
+      finishTimer = window.setTimeout(() => {
+        isLoading.value = false
+        progress.value = 0
+      }, 40)
+
       return
     }
-    clearAll()
-    progress.value = 1
-    window.setTimeout(() => {
-      isLoading.value = false
-      progress.value = 0
-    }, 160)
+
+    hardReset()
   }
 
-  // ✅ Nuxt page loading hooks (best for asyncData/navigation)
   nuxtApp.hook('page:loading:start', () => {
+    if (shouldDisableLoader()) {
+      hardReset()
+      return
+    }
+
     loadDepth++
     if (loadDepth + transitionDepth === 1) startProgress()
   })
@@ -103,8 +146,12 @@ export default defineNuxtPlugin((nuxtApp) => {
     maybeFinish()
   })
 
-  // ✅ Transition hooks (you use out-in transitions)
   nuxtApp.hook('page:transition:start', () => {
+    if (shouldDisableLoader()) {
+      hardReset()
+      return
+    }
+
     transitionDepth++
     if (loadDepth + transitionDepth === 1) startProgress()
   })
@@ -114,10 +161,11 @@ export default defineNuxtPlugin((nuxtApp) => {
     maybeFinish()
   })
 
-  // ✅ errors/abort shouldn't leave loader weird
   nuxtApp.hook('app:error', forceFinish)
 
   return {
-    provide: { routeLoader: { isLoading, progress } }
+    provide: {
+      routeLoader: { isLoading, progress }
+    }
   }
 })
