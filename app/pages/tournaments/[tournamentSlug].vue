@@ -1,4 +1,3 @@
-<!-- app/pages/tournaments/[tournamentSlug].vue -->
 <script setup lang="ts">
 import { GAMES } from '~/data/games'
 import { TOURNAMENTS as FALLBACK } from '~/data/tournaments'
@@ -55,6 +54,7 @@ type AssignedPrizeRow = {
 }
 
 type LbRow = {
+  user_id?: string | null
   player_name: string
   score: number
   created_at: string
@@ -76,10 +76,10 @@ await loadTournament()
 /* ---------------- SEO ---------------- */
 const pageTitle = computed(() => (t.value ? `টুর্নামেন্ট — ${t.value.title}` : 'টুর্নামেন্ট'))
 const pageDesc = computed(() =>
-  String(
-    t.value?.description ||
-      'Illusion Arc-এর টুর্নামেন্ট খেলুন, লিডারবোর্ডে উঠুন এবং আকর্ষণীয় পুরস্কার জিতুন।'
-  ).trim()
+    String(
+        t.value?.description ||
+        'Illusion Arc-এর টুর্নামেন্ট খেলুন, লিডারবোর্ডে উঠুন এবং আকর্ষণীয় পুরস্কার জিতুন।'
+    ).trim()
 )
 
 useHead(() => ({
@@ -108,7 +108,7 @@ await refreshSub()
 
 /* ---------------- Time ticker ---------------- */
 const now = ref(Date.now())
-let timer: any = null
+let timer: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   timer = setInterval(() => {
@@ -132,10 +132,12 @@ function getEndsAt(x: AnyTournament) {
 }
 function fmt(dt: string) {
   if (!dt) return ''
+  const d = new Date(dt)
+  if (Number.isNaN(d.getTime())) return ''
   return new Intl.DateTimeFormat('bn-BD', {
     dateStyle: 'medium',
     timeStyle: 'short'
-  }).format(new Date(dt))
+  }).format(d)
 }
 function toBnDigits(input: string | number) {
   return String(input).replace(/\d/g, (d) => '০১২৩৪৫৬৭৮৯'[Number(d)])
@@ -161,11 +163,12 @@ function initials(name: any) {
   return (a + b).toUpperCase()
 }
 function maskPhone(phone: any) {
-  const p = String(phone || '')
-    .trim()
-    .replace(/\s+/g, '')
+  const p = String(phone || '').trim().replace(/\s+/g, '')
   if (!p) return '—'
-  const keep = Math.min(6, p.length)
+  if (p.startsWith('+880') && p.length >= 14) return `0${p.slice(4, 7)}XXXXXXXX`
+  if (p.startsWith('880') && p.length >= 13) return `0${p.slice(3, 6)}XXXXXXXX`
+  if (p.startsWith('01') && p.length >= 11) return `${p.slice(0, 3)}XXXXXXXX`
+  const keep = Math.min(3, p.length)
   return p.slice(0, keep) + 'X'.repeat(Math.max(0, p.length - keep))
 }
 function ordinalBn(n: number) {
@@ -184,10 +187,10 @@ function medal(rank: number) {
   return rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '🏅'
 }
 function rankChipClass(rank: number) {
-  if (rank === 1) return 'bg-amber-400/20 text-amber-100 border-amber-300/30'
-  if (rank === 2) return 'bg-slate-300/20 text-slate-100 border-slate-300/25'
-  if (rank === 3) return 'bg-orange-400/20 text-orange-100 border-orange-300/25'
-  return 'bg-white/10 text-white/90 border-white/10'
+  if (rank === 1) return 'border-amber-300/40 bg-amber-400/20 text-amber-700 dark:text-amber-100'
+  if (rank === 2) return 'border-slate-300/40 bg-slate-300/20 text-slate-700 dark:text-slate-100'
+  if (rank === 3) return 'border-orange-300/40 bg-orange-400/20 text-orange-700 dark:text-orange-100'
+  return 'border-black/10 bg-black/5 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-white/90'
 }
 
 /* ---------------- Status ---------------- */
@@ -225,38 +228,34 @@ const statusBadge = computed(() => {
   if (s === 'live') {
     return {
       text: 'লাইভ',
-      cls: 'border-emerald-400/35 bg-emerald-500/14 text-emerald-300',
-      dot: 'bg-emerald-400'
+      cls: 'border-emerald-400/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
+      dot: 'bg-emerald-500 dark:bg-emerald-400'
     }
   }
   if (s === 'scheduled') {
     return {
       text: 'শিডিউলড',
-      cls: 'border-indigo-400/35 bg-indigo-500/14 text-indigo-200',
-      dot: 'bg-indigo-400'
+      cls: 'border-violet-400/30 bg-violet-500/12 text-violet-700 dark:text-violet-200',
+      dot: 'bg-violet-500 dark:bg-violet-400'
     }
   }
   if (s === 'canceled') {
     return {
       text: 'বাতিল',
-      cls: 'border-rose-400/35 bg-rose-500/14 text-rose-200',
-      dot: 'bg-rose-400'
+      cls: 'border-rose-400/30 bg-rose-500/12 text-rose-700 dark:text-rose-200',
+      dot: 'bg-rose-500 dark:bg-rose-400'
     }
   }
   return {
     text: 'সমাপ্ত',
-    cls: 'border-red-400/35 bg-red-500/14 text-red-200',
-    dot: 'bg-red-400'
+    cls: 'border-red-400/30 bg-red-500/12 text-red-700 dark:text-red-200',
+    dot: 'bg-red-500 dark:bg-red-400'
   }
 })
 
 /* ---------------- Bangla content ---------------- */
 const introPitch = computed(() => {
   return 'এই ঈদে শুধু Facebook Scroll না করে নিজের গেমিং স্কিল দিয়ে আকর্ষণীয় গিফট জিতে নেওয়ার সুযোগ। Illusion Arc নিয়ে এসেছে Eid Salami Rush Fest—যেখানে Salami Rush খেলে টপ স্কোরার হলেই মিলবে দারুণ সব পুরস্কার।'
-})
-
-const introWindow = computed(() => {
-  return 'হাতে সময় মাত্র ১০ দিন। ১৮ মার্চ থেকে ২৭ মার্চ পর্যন্ত চলবে এই টুর্নামেন্ট।'
 })
 
 const howToPlayTitle = computed(() => {
@@ -325,8 +324,8 @@ async function loadAssignedPrizes() {
     }
 
     const { data, error } = await supabase
-      .from('tournament_prize_map')
-      .select(`
+        .from('tournament_prize_map')
+        .select(`
         id,
         rank,
         prize_id,
@@ -338,25 +337,25 @@ async function loadAssignedPrizes() {
           image_path
         )
       `)
-      .eq('tournament_id', t.value.id)
-      .order('rank', { ascending: true })
+        .eq('tournament_id', t.value.id)
+        .order('rank', { ascending: true })
 
     if (error) throw error
 
     assignedPrizes.value = ((data || []) as AssignedPrizeRow[])
-      .map((row) => {
-        const p = row.prize
-        if (!p) return null
-        return {
-          id: String(p.id || '').trim(),
-          rank: Number(row.rank || 0),
-          title: String(p.title || '').trim(),
-          description: p.description || null,
-          image_url: p.image_url || null,
-          image_path: p.image_path || null
-        } as PrizeRelation
-      })
-      .filter(Boolean) as PrizeRelation[]
+        .map((row) => {
+          const p = row.prize
+          if (!p) return null
+          return {
+            id: String(p.id || '').trim(),
+            rank: Number(row.rank || 0),
+            title: String(p.title || '').trim(),
+            description: p.description || null,
+            image_url: p.image_url || null,
+            image_path: p.image_path || null
+          } as PrizeRelation
+        })
+        .filter(Boolean) as PrizeRelation[]
   } catch (e: any) {
     prizesError.value = e?.message || 'পুরস্কারের তথ্য লোড করা যায়নি'
     assignedPrizes.value = []
@@ -469,9 +468,9 @@ async function fetchProfiles(ids: string[]) {
   for (const a of attempts) {
     try {
       const { data, error } = await (supabase as any)
-        .from('profiles')
-        .select(a.select)
-        .in(a.idKey, ids)
+          .from('profiles')
+          .select(a.select)
+          .in(a.idKey, ids)
 
       if (error) throw error
 
@@ -506,7 +505,7 @@ async function loadLeaderboard() {
   lbError.value = null
   lbPending.value = true
   try {
-    const res = await getLeaderboard(slug.value, 50)
+    const res = await getLeaderboard(slug.value, 15)
     lb.value = (res?.rows || []) as LbRow[]
     lbUpdatedAt.value = Date.now()
   } catch (e: any) {
@@ -518,7 +517,7 @@ async function loadLeaderboard() {
 }
 await loadLeaderboard()
 
-const leaderboardPreview = computed(() => lb.value.slice(0, 8))
+const leaderboardPreview = computed(() => lb.value.slice(0, 15))
 
 function lastUpdatedText() {
   const diff = Math.max(0, Date.now() - lbUpdatedAt.value)
@@ -532,30 +531,30 @@ function lastUpdatedText() {
 const lastBoundaryTick = ref<number>(0)
 
 watch(
-  () => now.value,
-  async () => {
-    if (!t.value) return
+    () => now.value,
+    async () => {
+      if (!t.value) return
 
-    const s = new Date(getStartsAt(t.value)).getTime()
-    const e = new Date(getEndsAt(t.value)).getTime()
-    if (!Number.isFinite(s) && !Number.isFinite(e)) return
+      const s = new Date(getStartsAt(t.value)).getTime()
+      const e = new Date(getEndsAt(t.value)).getTime()
+      if (!Number.isFinite(s) && !Number.isFinite(e)) return
 
-    const nearStart = Number.isFinite(s) ? Math.abs(now.value - s) < 1500 : false
-    const nearEnd = Number.isFinite(e) ? Math.abs(now.value - e) < 1500 : false
-    if (!nearStart && !nearEnd) return
+      const nearStart = Number.isFinite(s) ? Math.abs(now.value - s) < 1500 : false
+      const nearEnd = Number.isFinite(e) ? Math.abs(now.value - e) < 1500 : false
+      if (!nearStart && !nearEnd) return
 
-    if (now.value - lastBoundaryTick.value < 2000) return
-    lastBoundaryTick.value = now.value
+      if (now.value - lastBoundaryTick.value < 2000) return
+      lastBoundaryTick.value = now.value
 
-    await loadTournament()
-    await loadAssignedPrizes()
-    await refreshSub()
-    await loadLeaderboard()
+      await loadTournament()
+      await loadAssignedPrizes()
+      await refreshSub()
+      await loadLeaderboard()
 
-    if (effectiveStatus.value === 'ended') {
-      await loadWinners()
+      if (effectiveStatus.value === 'ended') {
+        await loadWinners()
+      }
     }
-  }
 )
 
 if (effectiveStatus.value === 'ended') {
@@ -568,501 +567,541 @@ function playHard(tournamentSlug: string) {
   const url = `/tournaments/embed/${encodeURIComponent(tournamentSlug)}?boot=${Date.now()}`
   window.location.assign(url)
 }
+
+const fullLeaderboardLink = computed(() => {
+  const gameSlug = getGameSlug(t.value)
+  const tournamentSlug = String(t.value?.slug || slug.value || '').trim()
+  return `/arcade/leaderboard?game=${encodeURIComponent(gameSlug)}&period=daily&tournament=${encodeURIComponent(tournamentSlug)}#tournament-leaderboard`
+})
 </script>
 
 <template>
-  <UContainer class="page-wrap py-8 sm:py-10">
-    <div
-      v-if="!t"
-      class="glass-card rounded-[26px] p-6 text-white"
-    >
-      <div class="text-lg font-semibold">টুর্নামেন্ট পাওয়া যায়নি</div>
-      <NuxtLink to="/tournaments" class="mt-3 inline-block text-sm text-white/70 hover:text-white">
-        ← টুর্নামেন্টে ফিরে যান
-      </NuxtLink>
-    </div>
-
-    <div v-else class="space-y-8 text-white">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <NuxtLink to="/tournaments" class="text-sm text-white/70 hover:text-white">
-          ← ফিরে যান
+  <div class="tournament-page">
+    <UContainer class="py-6 sm:py-8 lg:py-10">
+      <div
+          v-if="!t"
+          class="rounded-[26px] border border-black/10 bg-white p-5 text-slate-900 shadow-[0_14px_44px_rgba(15,23,42,0.08)] backdrop-blur sm:p-6 dark:border-white/10 dark:bg-white/5 dark:text-white dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+      >
+        <div class="text-lg font-semibold">টুর্নামেন্ট পাওয়া যায়নি</div>
+        <NuxtLink to="/tournaments" class="mt-3 inline-block text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white">
+          ← টুর্নামেন্টে ফিরে যান
         </NuxtLink>
-
-        <div class="flex items-center gap-2">
-          <UButton v-if="user && sub && !sub.active" to="/subscribe" size="sm" class="!rounded-full">
-            খেলতে সাবস্ক্রাইব করুন
-          </UButton>
-          <UButton v-else-if="user" to="/subscribe" size="sm" variant="soft" class="!rounded-full">
-            সাবস্ক্রিপশন
-          </UButton>
-        </div>
       </div>
 
-      <section class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div class="space-y-6">
-          <div class="space-y-3">
-            <div class="flex flex-wrap items-center gap-2">
-              <span
-                class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold"
-                :class="statusBadge.cls"
-              >
-                <span class="inline-flex h-1.5 w-1.5 rounded-full" :class="statusBadge.dot" />
-                {{ statusBadge.text }}
-              </span>
+      <div v-else class="space-y-6 text-slate-900 sm:space-y-8 dark:text-white">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <NuxtLink to="/tournaments" class="text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white">
+            ← ফিরে যান
+          </NuxtLink>
 
-              <span class="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/85">
-                {{ game?.name || getGameSlug(t) }}
-              </span>
-
-              <span
-                v-if="sub?.active"
-                class="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] text-emerald-200"
-              >
-                সাবস্ক্রিপশন চালু
-              </span>
-            </div>
-
-            <h1 class="text-4xl font-extrabold leading-none tracking-tight text-white sm:text-5xl">
-              {{ t.title }}
-            </h1>
-
-            <div class="text-base leading-7 text-white/72">
-              {{ introPitch }}
-            </div>
-
-            <div class="rounded-[18px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/78">
-              {{ introWindow }}
-            </div>
-
-            <div class="text-base text-white/70">
-              {{ fmt(getStartsAt(t)) }} – {{ fmt(getEndsAt(t)) }}
-            </div>
+          <div class="flex items-center gap-2">
+            <UButton v-if="user && sub && !sub.active" to="/subscribe" size="sm" class="!rounded-full">
+              খেলতে সাবস্ক্রাইব করুন
+            </UButton>
+            <UButton v-else-if="user" to="/subscribe" size="sm" variant="soft" class="!rounded-full">
+              সাবস্ক্রিপশন
+            </UButton>
           </div>
-
-          <div class="glass-card rounded-[28px] overflow-hidden">
-            <div class="aspect-[16/9] bg-black">
-              <video
-                v-if="promoVideoType === 'upload' && promoVideoUrl"
-                :src="promoVideoUrl"
-                controls
-                playsinline
-                preload="metadata"
-                class="h-full w-full object-cover"
-              />
-              <iframe
-                v-else-if="promoVideoType === 'youtube' && promoYoutubeEmbedUrl"
-                :src="promoYoutubeEmbedUrl"
-                :title="promoVideoTitle || 'টুর্নামেন্ট প্রোমো ভিডিও'"
-                class="h-full w-full"
-                frameborder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowfullscreen
-              />
-              <div v-else class="relative h-full w-full">
-                <img :src="thumb" :alt="t.title" class="h-full w-full object-cover opacity-90" />
-                <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                <div class="absolute inset-0 grid place-items-center">
-                  <div class="rounded-full border border-white/15 bg-black/35 px-5 py-3 text-white/80 backdrop-blur">
-                    প্রোমো ভিডিও শীঘ্রই আসছে
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="glass-card rounded-[26px] p-5 sm:p-6">
-            <div class="flex items-center justify-between gap-3">
-              <h2 class="text-3xl font-bold tracking-tight text-white">লিডারবোর্ড</h2>
-            </div>
-
-            <div v-if="lbError" class="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-100">
-              {{ lbError }}
-            </div>
-
-            <div
-              v-else-if="!lbPending && !leaderboardPreview.length"
-              class="mt-4 text-sm text-white/65"
-            >
-              এখনো কোনো স্কোর জমা পড়েনি।
-            </div>
-
-            <div v-else class="mt-4 space-y-2.5">
-              <div
-                v-for="(r, i) in leaderboardPreview"
-                :key="`${r.player_name}-${r.created_at}-${i}`"
-                class="leader-row flex items-center justify-between gap-3 rounded-[18px] px-4 py-3"
-                :class="i === 2 ? 'leader-row-active' : ''"
-              >
-                <div class="flex min-w-0 items-center gap-3">
-                  <div class="w-6 text-center text-lg">{{ medal(i + 1) }}</div>
-                  <div class="min-w-0">
-                    <div class="text-sm text-white/70">{{ toBnDigits(i + 1) }}</div>
-                  </div>
-                  <div class="truncate text-xl font-medium text-white">
-                    {{ safeName(r.player_name) }}
-                  </div>
-                </div>
-
-                <div class="text-xl font-semibold text-white">
-                  {{ toBnDigits(r.score) }}
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-5 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
-              <div class="text-sm text-white/55">
-                সর্বশেষ আপডেট: {{ lastUpdatedText() }}
-              </div>
-
-              <UButton size="sm" variant="soft" class="!rounded-full" :loading="lbPending" @click="loadLeaderboard">
-                রিফ্রেশ
-              </UButton>
-            </div>
-          </div>
-
-          <div class="space-y-4">
-            <div class="flex items-end justify-between gap-3">
-              <div>
-                <h2 class="text-3xl font-bold tracking-tight text-white">পুরস্কার</h2>
-                <div class="mt-1 text-sm text-white/60">
-                  {{ visiblePrizes.length ? `শীর্ষ ${toBnDigits(visiblePrizes.length)} জন বিজয়ী পুরস্কার পাবে` : 'পুরস্কারের তথ্য শীঘ্রই আসছে' }}
-                </div>
-              </div>
-            </div>
-
-            <div
-              v-if="prizesError && !visiblePrizes.length"
-              class="glass-card rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100"
-            >
-              {{ prizesError }}
-            </div>
-
-            <div
-              v-else-if="prizesPending && !visiblePrizes.length"
-              class="glass-card rounded-[22px] p-4 text-sm text-white/70"
-            >
-              পুরস্কারের তথ্য লোড হচ্ছে…
-            </div>
-
-            <div
-              v-else-if="!visiblePrizes.length"
-              class="glass-card rounded-[22px] p-4 text-sm text-white/70"
-            >
-              পুরস্কারের বিস্তারিত শীঘ্রই প্রকাশ করা হবে।
-            </div>
-
-            <div
-              v-else
-              class="prize-scroll-x glass-card rounded-[24px] p-3 sm:p-4"
-            >
-              <div class="prize-row">
-                <div
-                  v-for="p in visiblePrizes"
-                  :key="`${p.rank}-${p.id || p.title}`"
-                  class="prize-item prize-card-horizontal rounded-[22px] border border-white/10 bg-white/5 p-3 sm:p-4"
-                >
-                  <div class="relative h-40 w-full overflow-hidden rounded-[18px] border border-white/10 bg-white/5">
-                    <img
-                      v-if="p.image_url"
-                      :src="p.image_url"
-                      :alt="p.title"
-                      class="h-full w-full object-cover"
-                    />
-                    <div v-else class="grid h-full w-full place-items-center text-5xl">
-                      {{ medal(p.rank) }}
-                    </div>
-                  </div>
-
-                  <div class="mt-4">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span
-                        class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
-                        :class="rankChipClass(p.rank)"
-                      >
-                        {{ ordinalBn(p.rank) }}
-                      </span>
-                    </div>
-
-                    <div class="mt-2 text-lg font-semibold text-white">
-                      {{ p.title }}
-                    </div>
-
-                    <div v-if="p.description" class="mt-1 text-sm leading-6 text-white/65">
-                      {{ p.description }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="glass-card rounded-[24px] p-5 text-sm leading-7 text-white/75">
-              টপ <b class="text-white">{{ toBnDigits(20) }}</b> জন স্কোরার পুরস্কার পাবে।
-            </div>
-          </div>
-
-          <div class="space-y-4">
-            <h2 class="text-3xl font-bold tracking-tight text-white">{{ howToPlayTitle }}</h2>
-
-            <div class="glass-card rounded-[26px] p-5 sm:p-6">
-              <div class="grid gap-5 lg:grid-cols-[8px_minmax(0,1fr)]">
-                <div class="rounded-full bg-gradient-to-b from-emerald-400 via-emerald-500 to-transparent"></div>
-
-                <div>
-                  <div v-if="howToPlaySummary" class="mb-5 text-sm leading-7 text-white/70">
-                    {{ howToPlaySummary }}
-                  </div>
-
-                  <ul class="space-y-5">
-                    <li v-for="(c, i) in howToPlaySteps" :key="`ctl-${i}`" class="flex gap-3">
-                      <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-white/80"></span>
-                      <span class="text-base leading-8 text-white/88">{{ c }}</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="glass-card rounded-[26px] p-5 sm:p-6">
-            <h3 class="text-2xl font-bold tracking-tight text-white">শর্তাবলী</h3>
-
-            <ul class="mt-4 space-y-3">
-              <li v-for="(r, i) in termsList" :key="`terms-${i}`" class="flex gap-3">
-                <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-300"></span>
-                <span class="text-base leading-7 text-white/85">{{ r }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <section
-            v-if="isEnded"
-            class="space-y-4"
-          >
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <h2 class="text-3xl font-bold tracking-tight text-white">চূড়ান্ত ফলাফল</h2>
-                <div class="mt-1 text-sm text-white/60">টুর্নামেন্ট শেষ হলে বিজয়ীদের ফলাফল স্থির হয়ে যাবে।</div>
-              </div>
-
-              <UButton size="xs" variant="soft" class="!rounded-full" :loading="winnersPending" @click="loadWinners">
-                রিফ্রেশ
-              </UButton>
-            </div>
-
-            <div
-              v-if="winnersError"
-              class="glass-card rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-100"
-            >
-              {{ winnersError }}
-            </div>
-
-            <div
-              v-else-if="!winnersPending && !hasWinners"
-              class="glass-card rounded-[22px] p-4 text-sm text-white/70"
-            >
-              এখনো বিজয়ীদের তথ্য পাওয়া যায়নি। রিফ্রেশ করে দেখুন।
-            </div>
-
-            <div v-else class="grid gap-4 md:grid-cols-3">
-              <div
-                v-for="rank in [1, 2, 3]"
-                :key="`podium-${rank}`"
-                class="glass-card rounded-[24px] p-5 text-center"
-              >
-                <div class="text-4xl">{{ medal(rank) }}</div>
-                <div class="mt-2 text-xs uppercase tracking-[0.2em] text-white/50">
-                  {{ rank === 1 ? 'চ্যাম্পিয়ন' : rank === 2 ? 'রানার-আপ' : 'তৃতীয় স্থান' }}
-                </div>
-
-                <div class="mt-4 flex justify-center">
-                  <div class="h-16 w-16 overflow-hidden rounded-full border border-white/10 bg-white/5">
-                    <img
-                      v-if="avatarFor(winnerByRank(rank)?.user_id)"
-                      :src="avatarFor(winnerByRank(rank)?.user_id)"
-                      alt="avatar"
-                      class="h-full w-full object-cover"
-                      @error="onAvatarError(winnerByRank(rank)?.user_id)"
-                    />
-                    <div v-else class="grid h-full w-full place-items-center text-sm font-semibold text-white/85">
-                      {{ initials(winnerByRank(rank)?.player_name) }}
-                    </div>
-                  </div>
-                </div>
-
-                <div class="mt-3 text-xl font-semibold text-white">
-                  {{ safeName(winnerByRank(rank)?.player_name) }}
-                </div>
-
-                <div class="mt-1 text-xs text-white/55">
-                  ফোন:
-                  <b class="font-semibold text-white/85">{{ maskPhone(phoneFor(winnerByRank(rank)?.user_id)) }}</b>
-                </div>
-
-                <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/90">
-                  <UIcon name="i-heroicons-bolt" class="h-4 w-4 opacity-90" />
-                  <span class="font-semibold">{{ toBnDigits(winnerByRank(rank)?.score ?? '—') }}</span>
-                </div>
-
-                <div v-if="winnerPrizeText(winnerByRank(rank))" class="mt-3 text-sm text-white/70">
-                  <b class="text-white/90">পুরস্কার:</b> {{ winnerPrizeText(winnerByRank(rank)) }}
-                </div>
-              </div>
-            </div>
-          </section>
         </div>
 
-        <aside class="space-y-6 xl:sticky xl:top-6 xl:self-start">
-          <div class="live-card rounded-[30px] p-[1px]" :class="{
-            'live-state': isLive,
-            'scheduled-state': isScheduled,
-            'ended-state': isEnded || isCanceled
-          }">
-            <div class="live-card-inner rounded-[29px] p-5 sm:p-6">
-              <div class="flex justify-center">
-                <span
-                  class="inline-flex items-center gap-3 rounded-[18px] border px-5 py-3 text-2xl font-extrabold tracking-tight"
-                  :class="statusBadge.cls"
-                >
-                  <span class="inline-flex h-3.5 w-3.5 rounded-full" :class="statusBadge.dot" />
-                  {{ statusBadge.text }}
-                </span>
-              </div>
+        <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-6">
+          <div class="min-w-0 space-y-5 sm:space-y-6">
+            <div
+                class="hero-card relative overflow-hidden rounded-[26px] border border-black/10 bg-white/90 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)] sm:p-7 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_40px_rgba(0,0,0,0.25)]"
+            >
+              <div class="hero-glow hero-glow-a"></div>
+              <div class="hero-glow hero-glow-b"></div>
 
-              <div class="mt-8 text-center">
-                <div class="text-2xl text-white/90">
-                  {{ isLive ? 'শেষ হতে বাকি' : isScheduled ? 'শুরু হতে বাকি' : isEnded ? 'টুর্নামেন্ট শেষ' : 'টুর্নামেন্ট বাতিল' }}
-                </div>
-                <div class="mt-2 text-4xl font-extrabold tracking-tight" :class="{
-                  'text-emerald-300': isLive,
-                  'text-indigo-300': isScheduled,
-                  'text-red-300': isEnded || isCanceled
-                }">
-                  {{ isLive ? msToTournamentClock(endsInMs) : isScheduled ? msToTournamentClock(startsInMs) : '০০ দিন: ০০ ঘন্টা: ০০ মিনিট' }}
-                </div>
-              </div>
+              <div class="relative space-y-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span
+                      class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold"
+                      :class="statusBadge.cls"
+                  >
+                    <span class="inline-flex h-1.5 w-1.5 rounded-full" :class="statusBadge.dot" />
+                    {{ statusBadge.text }}
+                  </span>
 
-              <div class="mt-8 space-y-3 text-base text-white/80">
-                <div class="flex items-start gap-2">
-                  <span class="mt-1.5 inline-block h-2 w-2 rounded-full bg-blue-300"></span>
-                  <span>
-                    যোগ্যতা:
-                    <b class="font-semibold text-white">{{ sub?.active ? 'সাবস্ক্রিপশন চালু' : 'সাবস্ক্রিপশন প্রয়োজন' }}</b>
+                  <span class="inline-flex items-center gap-2 rounded-full border border-black/10 bg-black/5 px-3 py-1 text-[11px] text-slate-900 dark:border-white/10 dark:bg-white/10 dark:text-white">
+                    {{ game?.name || getGameSlug(t) }}
+                  </span>
+
+                  <span
+                      v-if="sub?.active"
+                      class="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] text-emerald-700 dark:text-emerald-200"
+                  >
+                    সাবস্ক্রিপশন চালু
                   </span>
                 </div>
+
+                <h1 class="text-3xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-4xl lg:text-5xl dark:text-white">
+                  {{ t.title }}
+                </h1>
+
+                <div class="max-w-4xl text-sm leading-7 text-black/70 sm:text-base dark:text-white/75">
+                  {{ introPitch }}
+                </div>
+
+                <div class="text-sm text-black/65 sm:text-base dark:text-white/70">
+                  {{ fmt(getStartsAt(t)) }} – {{ fmt(getEndsAt(t)) }}
+                </div>
+              </div>
+            </div>
+
+            <div class="overflow-hidden rounded-[24px] border border-black/10 bg-white shadow-[0_14px_44px_rgba(15,23,42,0.08)] backdrop-blur sm:rounded-[28px] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
+              <div class="aspect-[16/10] bg-black sm:aspect-[16/9]">
+                <video
+                    v-if="promoVideoType === 'upload' && promoVideoUrl"
+                    :src="promoVideoUrl"
+                    controls
+                    playsinline
+                    preload="metadata"
+                    class="h-full w-full object-cover"
+                />
+                <iframe
+                    v-else-if="promoVideoType === 'youtube' && promoYoutubeEmbedUrl"
+                    :src="promoYoutubeEmbedUrl"
+                    :title="promoVideoTitle || 'টুর্নামেন্ট প্রোমো ভিডিও'"
+                    class="h-full w-full"
+                    frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowfullscreen
+                />
+                <div v-else class="relative h-full w-full">
+                  <img :src="thumb" :alt="t.title" class="h-full w-full object-cover opacity-90" />
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div class="absolute inset-0 grid place-items-center px-4">
+                    <div class="rounded-full border border-white/15 bg-black/35 px-4 py-2 text-center text-sm text-white/80 backdrop-blur sm:px-5 sm:py-3">
+                      প্রোমো ভিডিও শীঘ্রই আসছে
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              <div class="flex items-end justify-between gap-3">
+                <div>
+                  <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">পুরস্কার</h2>
+                  <div class="mt-1 text-sm text-black/55 dark:text-white/55">
+                    {{ visiblePrizes.length ? `শীর্ষ ${toBnDigits(visiblePrizes.length)} জন বিজয়ী পুরস্কার পাবে` : 'পুরস্কারের তথ্য শীঘ্রই আসছে' }}
+                  </div>
+                </div>
               </div>
 
-              <div class="mt-8">
-                <UButton
-                  block
-                  size="xl"
-                  class="cta-glow !rounded-[18px] min-h-[56px]"
-                  @click="playHard(t.slug)"
-                >
-                  খেলুন
+              <div
+                  v-if="prizesError && !visiblePrizes.length"
+                  class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
+              >
+                {{ prizesError }}
+              </div>
+
+              <div
+                  v-else-if="prizesPending && !visiblePrizes.length"
+                  class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+              >
+                পুরস্কারের তথ্য লোড হচ্ছে…
+              </div>
+
+              <div
+                  v-else-if="!visiblePrizes.length"
+                  class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+              >
+                পুরস্কারের বিস্তারিত শীঘ্রই প্রকাশ করা হবে।
+              </div>
+
+              <div
+                  v-else
+                  class="prize-scroll-x rounded-[24px] border border-black/10 bg-white p-3 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:p-4 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+              >
+                <div class="prize-row">
+                  <div
+                      v-for="p in visiblePrizes"
+                      :key="`${p.rank}-${p.id || p.title}`"
+                      class="prize-item prize-card-horizontal rounded-[20px] border border-black/10 bg-black/5 p-3 sm:rounded-[22px] sm:p-4 dark:border-white/10 dark:bg-white/5"
+                  >
+                    <div class="relative h-36 w-full overflow-hidden rounded-[16px] border border-black/10 bg-white sm:h-40 sm:rounded-[18px] dark:border-white/10 dark:bg-white/10">
+                      <img
+                          v-if="p.image_url"
+                          :src="p.image_url"
+                          :alt="p.title"
+                          class="h-full w-full object-cover"
+                      />
+                      <div v-else class="grid h-full w-full place-items-center text-5xl">
+                        {{ medal(p.rank) }}
+                      </div>
+                    </div>
+
+                    <div class="mt-4">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span
+                            class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
+                            :class="rankChipClass(p.rank)"
+                        >
+                          {{ ordinalBn(p.rank) }}
+                        </span>
+                      </div>
+
+                      <div class="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
+                        {{ p.title }}
+                      </div>
+
+                      <div v-if="p.description" class="mt-1 text-sm leading-6 text-black/70 dark:text-white/75">
+                        {{ p.description }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-[24px] border border-black/10 bg-white p-5 text-sm leading-7 text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/75 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
+                টপ <b class="text-slate-900 dark:text-white">{{ toBnDigits(20) }}</b> জন স্কোরার পুরস্কার পাবে।
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">{{ howToPlayTitle }}</h2>
+
+              <div class="rounded-[24px] border border-black/10 bg-white p-4 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-6 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
+                <div class="grid gap-5 lg:grid-cols-[8px_minmax(0,1fr)]">
+                  <div class="hidden rounded-full bg-gradient-to-b from-emerald-400 via-emerald-500 to-transparent lg:block"></div>
+
+                  <div>
+                    <div v-if="howToPlaySummary" class="mb-5 text-sm leading-7 text-black/70 dark:text-white/75">
+                      {{ howToPlaySummary }}
+                    </div>
+
+                    <ul class="space-y-4 sm:space-y-5">
+                      <li v-for="(c, i) in howToPlaySteps" :key="`ctl-${i}`" class="flex gap-3">
+                        <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-black/80 dark:bg-white/80"></span>
+                        <span class="text-sm leading-7 text-slate-900 sm:text-base sm:leading-8 dark:text-white">{{ c }}</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-[24px] border border-black/10 bg-white p-4 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-6 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
+              <h3 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">শর্তাবলী</h3>
+
+              <ul class="mt-4 space-y-3">
+                <li v-for="(r, i) in termsList" :key="`terms-${i}`" class="flex gap-3">
+                  <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400 dark:bg-emerald-300"></span>
+                  <span class="text-sm leading-7 text-slate-900 sm:text-base dark:text-white">{{ r }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <section v-if="isEnded" class="space-y-4">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">চূড়ান্ত ফলাফল</h2>
+                  <div class="mt-1 text-sm text-black/55 dark:text-white/55">টুর্নামেন্ট শেষ হলে বিজয়ীদের ফলাফল স্থির হয়ে যাবে।</div>
+                </div>
+
+                <UButton size="xs" variant="soft" class="!rounded-full" :loading="winnersPending" @click="loadWinners">
+                  রিফ্রেশ
                 </UButton>
               </div>
 
-              <div class="mt-4 text-center text-sm text-white/60">
-                {{ visiblePrizes.length ? `শীর্ষ ${toBnDigits(visiblePrizes.length)} জন পুরস্কার পাবে` : 'পুরস্কারের তথ্য শীঘ্রই আসছে' }}
+              <div
+                  v-if="winnersError"
+                  class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
+              >
+                {{ winnersError }}
+              </div>
+
+              <div
+                  v-else-if="!winnersPending && !hasWinners"
+                  class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+              >
+                এখনো বিজয়ীদের তথ্য পাওয়া যায়নি। রিফ্রেশ করে দেখুন।
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-3">
+                <div
+                    v-for="rank in [1, 2, 3]"
+                    :key="`podium-${rank}`"
+                    class="rounded-[22px] border border-black/10 bg-white p-5 text-center shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[24px] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                >
+                  <div class="text-4xl">{{ medal(rank) }}</div>
+                  <div class="mt-2 text-xs uppercase tracking-[0.2em] text-black/55 dark:text-white/55">
+                    {{ rank === 1 ? 'চ্যাম্পিয়ন' : rank === 2 ? 'রানার-আপ' : 'তৃতীয় স্থান' }}
+                  </div>
+
+                  <div class="mt-4 flex justify-center">
+                    <div class="h-16 w-16 overflow-hidden rounded-full border border-black/10 bg-white dark:border-white/10 dark:bg-white/10">
+                      <img
+                          v-if="avatarFor(winnerByRank(rank)?.user_id)"
+                          :src="avatarFor(winnerByRank(rank)?.user_id)"
+                          alt="avatar"
+                          class="h-full w-full object-cover"
+                          @error="onAvatarError(winnerByRank(rank)?.user_id)"
+                      />
+                      <div v-else class="grid h-full w-full place-items-center text-sm font-semibold text-slate-900 dark:text-white">
+                        {{ initials(winnerByRank(rank)?.player_name) }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
+                    {{ safeName(winnerByRank(rank)?.player_name) }}
+                  </div>
+
+                  <div class="mt-1 text-xs text-black/55 dark:text-white/55">
+                    ফোন:
+                    <b class="font-semibold text-slate-900 dark:text-white">{{ maskPhone(phoneFor(winnerByRank(rank)?.user_id)) }}</b>
+                  </div>
+
+                  <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-black/10 bg-black/5 px-3 py-1.5 text-sm text-slate-900 dark:border-white/10 dark:bg-white/10 dark:text-white">
+                    <UIcon name="i-heroicons-bolt" class="h-4 w-4 opacity-90" />
+                    <span class="font-semibold">{{ toBnDigits(winnerByRank(rank)?.score ?? '—') }}</span>
+                  </div>
+
+                  <div v-if="winnerPrizeText(winnerByRank(rank))" class="mt-3 text-sm text-black/70 dark:text-white/75">
+                    <b class="text-slate-900 dark:text-white">পুরস্কার:</b> {{ winnerPrizeText(winnerByRank(rank)) }}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="space-y-5 xl:sticky xl:top-6 xl:self-start xl:space-y-6">
+            <div
+                class="state-shell rounded-[26px] p-[1px] sm:rounded-[30px]"
+                :class="{
+                'state-shell-live': isLive,
+                'state-shell-scheduled': isScheduled,
+                'state-shell-ended': isEnded || isCanceled
+              }"
+            >
+              <div class="rounded-[25px] bg-white p-4 sm:rounded-[29px] sm:p-6 dark:bg-[#0b1322]">
+                <div class="flex justify-center">
+                  <span
+                      class="inline-flex items-center gap-3 rounded-[16px] border px-4 py-2 text-xl font-extrabold tracking-tight sm:rounded-[18px] sm:px-5 sm:py-3 sm:text-2xl"
+                      :class="statusBadge.cls"
+                  >
+                    <span class="inline-flex h-3 w-3 rounded-full sm:h-3.5 sm:w-3.5" :class="statusBadge.dot" />
+                    {{ statusBadge.text }}
+                  </span>
+                </div>
+
+                <div class="mt-6 text-center sm:mt-8">
+                  <div class="text-lg text-slate-900 sm:text-2xl dark:text-white">
+                    {{ isLive ? 'শেষ হতে বাকি' : isScheduled ? 'শুরু হতে বাকি' : isEnded ? 'টুর্নামেন্ট শেষ' : 'টুর্নামেন্ট বাতিল' }}
+                  </div>
+                  <div
+                      class="mt-2 break-words text-2xl font-extrabold tracking-tight sm:text-4xl"
+                      :class="{
+                      'text-emerald-700 dark:text-emerald-300': isLive,
+                      'text-violet-700 dark:text-violet-300': isScheduled,
+                      'text-red-700 dark:text-red-300': isEnded || isCanceled
+                    }"
+                  >
+                    {{ isLive ? msToTournamentClock(endsInMs) : isScheduled ? msToTournamentClock(startsInMs) : '০০ দিন: ০০ ঘন্টা: ০০ মিনিট' }}
+                  </div>
+                </div>
+
+                <div class="mt-6 space-y-3 text-sm text-black/70 sm:mt-8 sm:text-base dark:text-white/75">
+                  <div class="flex items-start gap-2">
+                    <span class="mt-1.5 inline-block h-2 w-2 rounded-full bg-blue-400 dark:bg-blue-300"></span>
+                    <span>
+                      যোগ্যতা:
+                      <b class="font-semibold text-slate-900 dark:text-white">{{ sub?.active ? 'সাবস্ক্রিপশন চালু' : 'সাবস্ক্রিপশন প্রয়োজন' }}</b>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="mt-6 sm:mt-8">
+                  <UButton
+                      v-if="canPlay"
+                      block
+                      size="xl"
+                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                      @click="playHard(t.slug)"
+                  >
+                    খেলুন
+                  </UButton>
+
+                  <UButton
+                      v-else-if="isLive && user && sub && !sub.active"
+                      block
+                      size="xl"
+                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                      to="/subscribe"
+                  >
+                    খেলতে সাবস্ক্রাইব করুন
+                  </UButton>
+
+                  <UButton
+                      v-else
+                      block
+                      size="xl"
+                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                      @click="playHard(t.slug)"
+                  >
+                    খেলুন
+                  </UButton>
+                </div>
+
+                <div class="mt-4 text-center text-sm text-black/55 dark:text-white/55">
+                  {{ visiblePrizes.length ? `শীর্ষ ${toBnDigits(visiblePrizes.length)} জন পুরস্কার পাবে` : 'পুরস্কারের তথ্য শীঘ্রই আসছে' }}
+                </div>
               </div>
             </div>
-          </div>
-        </aside>
-      </section>
-    </div>
-  </UContainer>
+
+            <div class="rounded-[24px] border border-black/10 bg-white p-4 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-6 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
+              <div class="flex items-center justify-between gap-3">
+                <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">লিডারবোর্ড</h2>
+              </div>
+
+              <div v-if="lbError" class="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-700 dark:text-rose-100">
+                {{ lbError }}
+              </div>
+
+              <div
+                  v-else-if="!lbPending && !leaderboardPreview.length"
+                  class="mt-4 text-sm text-black/70 dark:text-white/75"
+              >
+                এখনো কোনো স্কোর জমা পড়েনি।
+              </div>
+
+              <div v-else class="mt-4 space-y-2.5">
+                <div
+                    v-for="(r, i) in leaderboardPreview"
+                    :key="`${r.player_name}-${r.created_at}-${i}`"
+                    class="leader-row flex items-center justify-between gap-3 rounded-[16px] border border-black/10 bg-black/5 px-3 py-3 sm:rounded-[18px] sm:px-4 dark:border-white/10 dark:bg-white/5"
+                    :class="i === 2 ? 'leader-row-active' : ''"
+                >
+                  <div class="flex min-w-0 items-center gap-3">
+                    <div class="w-6 shrink-0 text-center text-lg">{{ medal(i + 1) }}</div>
+                    <div class="min-w-0">
+                      <div class="text-sm text-black/65 dark:text-white/65">{{ toBnDigits(i + 1) }}</div>
+                    </div>
+                    <div class="truncate text-base font-medium text-slate-900 sm:text-xl dark:text-white">
+                      {{ safeName(r.player_name) }}
+                    </div>
+                  </div>
+
+                  <div class="shrink-0 text-base font-semibold text-slate-900 sm:text-xl dark:text-white">
+                    {{ toBnDigits(r.score) }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-5 flex items-center justify-between gap-3 border-t border-black/10 pt-4 dark:border-white/10">
+                <div class="text-sm text-black/55 dark:text-white/55">
+                  সর্বশেষ আপডেট: {{ lastUpdatedText() }}
+                </div>
+
+                <UButton size="sm" variant="soft" class="!rounded-full" :loading="lbPending" @click="loadLeaderboard">
+                  রিফ্রেশ
+                </UButton>
+              </div>
+
+              <div class="mt-4">
+                <UButton
+                    :to="fullLeaderboardLink"
+                    variant="soft"
+                    block
+                    class="!rounded-full"
+                >
+                  View Full Leaderboard
+                </UButton>
+              </div>
+            </div>
+          </aside>
+        </section>
+      </div>
+    </UContainer>
+  </div>
 </template>
 
 <style scoped>
-.page-wrap {
-  --page-bg-1: rgba(17, 34, 84, 0.6);
-  --page-bg-2: rgba(1, 10, 31, 0.96);
-}
-
-.page-wrap :deep(.container),
-.page-wrap {
+.tournament-page {
   position: relative;
+  min-height: 100%;
 }
 
-.page-wrap::before {
+.tournament-page::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -2;
   background:
-    radial-gradient(circle at 20% 10%, rgba(50, 140, 255, 0.18), transparent 28%),
-    radial-gradient(circle at 80% 15%, rgba(0, 255, 140, 0.12), transparent 24%),
-    linear-gradient(180deg, #07112c 0%, #030918 52%, #020715 100%);
+      radial-gradient(circle at 18% 10%, rgba(139, 92, 246, 0.12), transparent 28%),
+      radial-gradient(circle at 82% 14%, rgba(16, 185, 129, 0.1), transparent 24%),
+      linear-gradient(180deg, #f7faff 0%, #eef4ff 52%, #f9fbff 100%);
 }
 
-.page-wrap::after {
+.tournament-page::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.16;
+  opacity: 0.08;
   background-image:
-    linear-gradient(rgba(65, 255, 160, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(65, 255, 160, 0.08) 1px, transparent 1px);
+      linear-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(99, 102, 241, 0.08) 1px, transparent 1px);
   background-size: 38px 38px;
   mask-image: radial-gradient(circle at center, black 35%, transparent 100%);
 }
 
-.glass-card {
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  background:
-    linear-gradient(180deg, rgba(16, 28, 63, 0.92), rgba(8, 17, 40, 0.92));
+.hero-glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(64px);
+  pointer-events: none;
+}
+
+.hero-glow-a {
+  top: -72px;
+  right: 8%;
+  width: 220px;
+  height: 220px;
+  background: rgba(139, 92, 246, 0.16);
+}
+
+.hero-glow-b {
+  bottom: -92px;
+  left: 10%;
+  width: 240px;
+  height: 240px;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.state-shell {
   box-shadow:
-    0 10px 40px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(14px);
+      0 0 0 1px rgba(255, 255, 255, 0.03),
+      0 18px 48px rgba(15, 23, 42, 0.12);
 }
 
-.live-card {
-  box-shadow:
-    0 0 0 1px rgba(120, 255, 155, 0.18),
-    0 0 34px rgba(84, 255, 146, 0.18),
-    0 0 70px rgba(64, 255, 136, 0.1);
+.state-shell-live {
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.72), rgba(5, 150, 105, 0.34));
 }
 
-.live-state {
-  background: linear-gradient(180deg, rgba(92, 255, 130, 0.95), rgba(70, 212, 109, 0.7));
+.state-shell-scheduled {
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.72), rgba(99, 102, 241, 0.34));
 }
 
-.scheduled-state {
-  background: linear-gradient(180deg, rgba(120, 131, 255, 0.95), rgba(79, 70, 229, 0.72));
-  box-shadow:
-    0 0 0 1px rgba(129, 140, 248, 0.18),
-    0 0 34px rgba(99, 102, 241, 0.18),
-    0 0 70px rgba(79, 70, 229, 0.1);
-}
-
-.ended-state {
-  background: linear-gradient(180deg, rgba(255, 107, 107, 0.95), rgba(220, 38, 38, 0.72));
-  box-shadow:
-    0 0 0 1px rgba(248, 113, 113, 0.18),
-    0 0 34px rgba(239, 68, 68, 0.18),
-    0 0 70px rgba(220, 38, 38, 0.1);
-}
-
-.live-card-inner {
-  background:
-    radial-gradient(circle at top center, rgba(92, 255, 130, 0.1), transparent 40%),
-    linear-gradient(180deg, rgba(10, 22, 54, 0.98), rgba(5, 12, 28, 0.98));
+.state-shell-ended {
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.72), rgba(220, 38, 38, 0.34));
 }
 
 .cta-glow {
   box-shadow:
-    0 0 0 1px rgba(110, 255, 150, 0.12),
-    0 8px 30px rgba(84, 255, 146, 0.2);
+      0 0 0 1px rgba(16, 185, 129, 0.14),
+      0 12px 28px rgba(16, 185, 129, 0.18);
 }
 
 .prize-scroll-x {
   overflow-x: auto;
   overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scrollbar-color: rgba(85, 255, 155, 0.45) rgba(255, 255, 255, 0.06);
+  scrollbar-color: rgba(16, 185, 129, 0.4) rgba(0, 0, 0, 0.06);
 }
 
 .prize-scroll-x::-webkit-scrollbar {
@@ -1070,12 +1109,12 @@ function playHard(tournamentSlug: string) {
 }
 
 .prize-scroll-x::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.06);
   border-radius: 999px;
 }
 
 .prize-scroll-x::-webkit-scrollbar-thumb {
-  background: rgba(85, 255, 155, 0.45);
+  background: rgba(16, 185, 129, 0.4);
   border-radius: 999px;
 }
 
@@ -1093,26 +1132,50 @@ function playHard(tournamentSlug: string) {
 }
 
 .prize-item {
-  transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .prize-item:hover {
   transform: translateY(-2px);
-  border-color: rgba(96, 255, 150, 0.22);
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.leader-row {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
 }
 
 .leader-row-active {
-  border-color: rgba(95, 255, 145, 0.45);
-  background:
-    linear-gradient(180deg, rgba(67, 255, 146, 0.13), rgba(67, 255, 146, 0.06));
+  border-color: rgba(16, 185, 129, 0.4) !important;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.13), rgba(16, 185, 129, 0.06)) !important;
   box-shadow:
-    inset 0 0 0 1px rgba(95, 255, 145, 0.1),
-    0 0 18px rgba(67, 255, 146, 0.08);
+      inset 0 0 0 1px rgba(16, 185, 129, 0.08),
+      0 0 18px rgba(16, 185, 129, 0.08);
+}
+
+@media (max-width: 1279px) {
+  .tournament-page :deep(.container) {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 1023px) {
+  .prize-card-horizontal {
+    width: 250px;
+    min-width: 250px;
+    max-width: 250px;
+    flex-basis: 250px;
+  }
+}
+
+@media (max-width: 640px) {
+  .tournament-page::after {
+    background-size: 24px 24px;
+  }
+
+  .prize-row {
+    gap: 12px;
+  }
+
+  .prize-card-horizontal {
+    width: 220px;
+    min-width: 220px;
+    max-width: 220px;
+    flex-basis: 220px;
+  }
 }
 </style>

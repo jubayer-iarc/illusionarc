@@ -1,4 +1,5 @@
 export type TournamentLeaderboardRow = {
+  user_id?: string | null
   player_name: string
   score: number
   created_at: string
