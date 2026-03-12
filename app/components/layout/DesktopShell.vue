@@ -57,6 +57,24 @@ function cycleTheme() {
   ;(colorMode as any).preference = next
 }
 
+/* ---------------- Preload important routes ---------------- */
+onMounted(() => {
+  if (!import.meta.client) return
+
+  const preload = () => {
+    preloadRouteComponents('/tournaments')
+    preloadRouteComponents('/arcade')
+  }
+
+  if ('requestIdleCallback' in window) {
+    ;(window as Window & {
+      requestIdleCallback: (cb: () => void) => number
+    }).requestIdleCallback(preload)
+  } else {
+    window.setTimeout(preload, 250)
+  }
+})
+
 /* ✅ Avoid new Date() in template (SSR hydration-safe) */
 const year = new Date().getFullYear()
 </script>
@@ -70,14 +88,9 @@ const year = new Date().getFullYear()
              border-b border-black/10 dark:border-white/5
              bg-white/70 dark:bg-black/25"
     >
-      <!-- ✅ No flex-col gap here; banner adds spacing only when it renders -->
       <UContainer class="py-3">
-        <!-- Live tournament banner (global)
-             ✅ Give it margin, but it will only apply if the component actually renders a root element.
-             IMPORTANT: LiveTournamentBanner.vue must return NO DOM when not live (v-if on root). -->
         <LiveTournamentBanner class="mb-3" />
 
-        <!-- Header row -->
         <div class="flex items-center justify-between gap-3">
           <NuxtLink to="/" class="flex items-center gap-2 min-w-0">
             <img
@@ -90,32 +103,35 @@ const year = new Date().getFullYear()
             </span>
           </NuxtLink>
 
-          <!-- Desktop nav (admin-managed) -->
+          <!-- Desktop nav -->
           <nav class="flex items-center gap-1">
-            <UButton v-for="n in desktopNav" :key="n.label + n.to" variant="ghost" :to="n.to">
+            <UButton
+              v-for="n in desktopNav"
+              :key="n.label + n.to"
+              variant="ghost"
+              :to="n.to"
+              :prefetch="true"
+              prefetch-on="interaction"
+            >
               {{ n.label }}
             </UButton>
           </nav>
 
           <div class="flex items-center gap-2">
-            <!-- Contact CTA -->
             <UButton color="primary" to="/contact">
               {{ contactLabel }}
             </UButton>
 
-            <!-- Avatar / Login -->
             <UserMenu />
           </div>
         </div>
       </UContainer>
     </header>
 
-    <!-- Page -->
     <main class="flex-1">
       <slot />
     </main>
 
-    <!-- Footer -->
     <footer class="border-t border-black/10 dark:border-white/5 bg-white/50 dark:bg-black/10">
       <UContainer class="py-10 grid gap-6 md:grid-cols-3">
         <div>
@@ -172,7 +188,6 @@ const year = new Date().getFullYear()
         </div>
       </UContainer>
 
-      <!-- Footer bottom bar -->
       <UContainer
         class="py-4 border-t border-black/10 dark:border-white/5
                flex flex-col sm:flex-row sm:items-center justify-between gap-3"

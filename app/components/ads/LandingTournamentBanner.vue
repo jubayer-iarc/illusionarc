@@ -16,17 +16,28 @@ const props = withDefaults(defineProps<Props>(), {
 const route = useRoute()
 const router = useRouter()
 
-/**
- * Show once per fresh app load.
- * This resets on a full refresh / new visit,
- * but stays closed during internal SPA navigation.
- */
 const hasShown = useState<boolean>('landing-tournament-banner-shown', () => false)
 const isOpen = ref(false)
 
+const blockedPrefixes = [
+  '/tournaments',
+  '/arcade',
+  '/admin',
+]
+
+const blockedExactPaths = [
+  props.to // also hide on the same tournament page the banner points to
+]
+
 const shouldAppearOnThisPage = computed(() => {
   if (!props.enabled) return false
+
   if (props.showOnlyOnHome && route.path !== '/') return false
+
+  if (blockedExactPaths.includes(route.path)) return false
+
+  if (blockedPrefixes.some(prefix => route.path.startsWith(prefix))) return false
+
   return true
 })
 
@@ -50,6 +61,15 @@ watch(isOpen, (open) => {
     }
   }
 })
+
+watch(
+  () => route.path,
+  () => {
+    if (!shouldAppearOnThisPage.value) {
+      isOpen.value = false
+    }
+  }
+)
 
 onBeforeUnmount(() => {
   if (import.meta.client) {
