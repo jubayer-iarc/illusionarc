@@ -1,5 +1,6 @@
 <template>
   <UApp>
+    <RouteLoader />
     <Analytics />
     <NuxtLayout>
       <NuxtPage />
@@ -16,5 +17,6 @@
 
 <script setup lang="ts">
 import { Analytics } from '@vercel/analytics/nuxt';
+import RouteLoader from '~/components/RouteLoader.vue';
 import LandingTournamentBanner from '~/components/ads/LandingTournamentBanner.vue';
 </script>
