@@ -657,6 +657,7 @@ const fullLeaderboardLink = computed(() => {
                     playsinline
                     preload="metadata"
                     class="h-full w-full object-cover"
+                    autoplay="true"
                 />
                 <iframe
                     v-else-if="promoVideoType === 'youtube' && promoYoutubeEmbedUrl"
