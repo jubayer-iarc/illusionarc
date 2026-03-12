@@ -1,5 +1,6 @@
 <!-- app/components/layout/MobileAppShell.vue -->
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref, computed } from 'vue'
 import LiveTournamentBanner from '~/components/tournaments/LiveTournamentBanner.vue'
 import UserMenu from '@/components/nav/UserMenu.vue'
 
@@ -41,6 +42,48 @@ function cycleTheme() {
   const next = order[(i + 1) % order.length]
   ;(colorMode as any).preference = next
 }
+
+/* Hide bottom tabs on scroll down, show on scroll up */
+const showBottomNav = ref(true)
+let lastScrollY = 0
+
+function handleScroll() {
+  if (typeof window === 'undefined') return
+
+  const currentScrollY = window.scrollY || 0
+  const delta = currentScrollY - lastScrollY
+
+  // Always show near top
+  if (currentScrollY <= 20) {
+    showBottomNav.value = true
+    lastScrollY = currentScrollY
+    return
+  }
+
+  // Ignore tiny scroll movement to prevent flicker
+  if (Math.abs(delta) < 8) return
+
+  if (delta > 0) {
+    // Scrolling down
+    showBottomNav.value = false
+  } else {
+    // Scrolling up
+    showBottomNav.value = true
+  }
+
+  lastScrollY = currentScrollY
+}
+
+onMounted(() => {
+  if (typeof window === 'undefined') return
+  lastScrollY = window.scrollY || 0
+  window.addEventListener('scroll', handleScroll, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  if (typeof window === 'undefined') return
+  window.removeEventListener('scroll', handleScroll)
+})
 </script>
 
 <template>
@@ -93,7 +136,8 @@ function cycleTheme() {
 
     <!-- Bottom tab bar -->
     <nav
-      class="fixed bottom-0 left-0 right-0 z-50 border-t border-black/10 dark:border-white/10 bg-white/85 dark:bg-black/45 backdrop-blur"
+      class="fixed bottom-0 left-0 right-0 z-50 border-t border-black/10 dark:border-white/10 bg-white/85 dark:bg-black/45 backdrop-blur transition-transform duration-300"
+      :class="showBottomNav ? 'translate-y-0' : 'translate-y-full'"
       style="padding-bottom: env(safe-area-inset-bottom);"
     >
       <UContainer class="py-2">
