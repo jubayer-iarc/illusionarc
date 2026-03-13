@@ -24,8 +24,15 @@ export default defineNuxtPlugin((nuxtApp) => {
     return window.location.pathname.startsWith('/arcade/')
   }
 
+  function isLoginRoute() {
+    return window.location.pathname.startsWith('/login')
+  }
+  function isUpdatePasswordRoute() {
+    return window.location.pathname.startsWith('/update-password/')
+  }
+
   function shouldDisableLoader() {
-    return isTournamentEmbedRoute() || isArcadeChildRoute()
+    return isTournamentEmbedRoute() || isArcadeChildRoute() || isLoginRoute() || isUpdatePasswordRoute()
   }
 
   function clearAll() {
