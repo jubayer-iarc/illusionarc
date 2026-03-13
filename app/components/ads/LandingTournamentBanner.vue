@@ -23,6 +23,9 @@ const blockedPrefixes = [
   '/tournaments',
   '/arcade',
   '/admin',
+    '/login',
+    '/update-password',
+    '/forget-password',
 ]
 
 const blockedExactPaths = [
