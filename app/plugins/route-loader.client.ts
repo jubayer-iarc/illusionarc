@@ -28,7 +28,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     return window.location.pathname.startsWith('/login')
   }
   function isUpdatePasswordRoute() {
-    return window.location.pathname.startsWith('/update-password/')
+    return window.location.pathname.startsWith('/update-password')
   }
 
   function shouldDisableLoader() {
