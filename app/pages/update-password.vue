@@ -22,6 +22,12 @@ const confirm = ref('')
 const showPass = ref(false)
 const showConfirm = ref(false)
 
+const debugText = computed(() => {
+  const err = typeof route.query.error === 'string' ? route.query.error.trim() : ''
+  const dbg = typeof route.query.debug === 'string' ? route.query.debug.trim() : ''
+  return err || dbg
+})
+
 function isStrongEnough(p: string) {
   return String(p || '').length >= 6
 }
@@ -35,8 +41,6 @@ const canSubmit = computed(() => {
 })
 
 onMounted(() => {
-  // In the new server-ticket flow, the server already verifies the email link
-  // and redirects here only after issuing the reset ticket cookie.
   stage.value = 'form'
   ready.value = true
 
@@ -85,19 +89,18 @@ async function setNewPassword() {
 
     await navigateTo('/login', { replace: true })
   } catch (e: any) {
-    const msg =
-      String(
+    const msg = String(
         e?.data?.statusMessage ||
         e?.data?.message ||
         e?.statusMessage ||
         e?.message ||
         'Please try again.'
-      ).trim()
+    ).trim()
 
     if (
-      msg.toLowerCase().includes('expired') ||
-      msg.toLowerCase().includes('invalid') ||
-      msg.toLowerCase().includes('reset session')
+        msg.toLowerCase().includes('expired') ||
+        msg.toLowerCase().includes('invalid') ||
+        msg.toLowerCase().includes('reset session')
     ) {
       stage.value = 'error'
       ready.value = false
@@ -171,10 +174,10 @@ async function cancelRecovery() {
                   <div class="text-xs opacity-70 mt-1">
                     {{
                       stage === 'validating'
-                        ? 'Validating reset link…'
-                        : stage === 'error'
-                          ? 'Reset link problem'
-                          : 'Enter and confirm your new password.'
+                          ? 'Validating reset link…'
+                          : stage === 'error'
+                              ? 'Reset link problem'
+                              : 'Enter and confirm your new password.'
                     }}
                   </div>
                 </div>
@@ -187,6 +190,13 @@ async function cancelRecovery() {
             </div>
 
             <div class="cardBody">
+              <div
+                  v-if="debugText"
+                  class="mb-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs opacity-90"
+              >
+                Debug: {{ debugText }}
+              </div>
+
               <div v-if="stage === 'error'" class="errorBox">
                 <div class="errorTitle">
                   <UIcon name="i-heroicons-exclamation-triangle" class="w-5 h-5" />
@@ -210,13 +220,13 @@ async function cancelRecovery() {
               <form v-else class="grid gap-4" @submit.prevent="setNewPassword">
                 <UFormField label="New password" required>
                   <UInput
-                    v-model="password"
-                    class="w-full"
-                    :type="showPass ? 'text' : 'password'"
-                    placeholder="••••••••"
-                    autocomplete="new-password"
-                    icon="i-heroicons-key"
-                    :disabled="loading || !ready"
+                      v-model="password"
+                      class="w-full"
+                      :type="showPass ? 'text' : 'password'"
+                      placeholder="••••••••"
+                      autocomplete="new-password"
+                      icon="i-heroicons-key"
+                      :disabled="loading || !ready"
                   />
                   <div class="mt-2 flex items-center justify-between">
                     <UButton type="button" size="xs" variant="ghost" :disabled="loading || !ready" @click="showPass = !showPass">
@@ -229,13 +239,13 @@ async function cancelRecovery() {
 
                 <UFormField label="Confirm password" required>
                   <UInput
-                    v-model="confirm"
-                    class="w-full"
-                    :type="showConfirm ? 'text' : 'password'"
-                    placeholder="••••••••"
-                    autocomplete="new-password"
-                    icon="i-heroicons-check-badge"
-                    :disabled="loading || !ready"
+                      v-model="confirm"
+                      class="w-full"
+                      :type="showConfirm ? 'text' : 'password'"
+                      placeholder="••••••••"
+                      autocomplete="new-password"
+                      icon="i-heroicons-check-badge"
+                      :disabled="loading || !ready"
                   />
                   <div class="mt-2 flex items-center justify-between">
                     <UButton type="button" size="xs" variant="ghost" :disabled="loading || !ready" @click="showConfirm = !showConfirm">
@@ -249,13 +259,13 @@ async function cancelRecovery() {
                 </UFormField>
 
                 <UButton
-                  type="submit"
-                  class="w-full"
-                  color="primary"
-                  variant="solid"
-                  size="lg"
-                  :loading="loading"
-                  :disabled="!canSubmit"
+                    type="submit"
+                    class="w-full"
+                    color="primary"
+                    variant="solid"
+                    size="lg"
+                    :loading="loading"
+                    :disabled="!canSubmit"
                 >
                   <UIcon name="i-heroicons-check-circle" class="w-5 h-5" />
                   Save new password
