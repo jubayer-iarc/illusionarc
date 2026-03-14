@@ -37,7 +37,7 @@
             -webkit-user-select: none;
             user-select: none;
             opacity: 0;
-            transition: opacity 0.18s ease;
+            transition: opacity 0.12s ease;
         }
 
         #unity-canvas.ready {
@@ -50,13 +50,9 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(
-                    to bottom,
-                    rgba(0, 0, 0, 0.12),
-                    rgba(0, 0, 0, 0.32)
-            );
+            background: rgba(0, 0, 0, 0.18);
             z-index: 5;
-            transition: opacity 0.18s ease;
+            transition: opacity 0.12s ease;
         }
 
         #loading-overlay.hidden {
@@ -64,46 +60,14 @@
             pointer-events: none;
         }
 
-        .loader-wrap {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 12px;
-            padding: 18px 20px;
-            border-radius: 16px;
-            background: rgba(0, 0, 0, 0.22);
-        }
-
         .spinner {
             width: 46px;
             height: 46px;
             border-radius: 50%;
-            border: 4px solid rgba(255, 255, 255, 0.16);
+            border: 4px solid rgba(255,255,255,0.14);
             border-top-color: #22d3ee;
-            animation: spin 0.8s linear infinite;
+            animation: spin 0.75s linear infinite;
             box-sizing: border-box;
-        }
-
-        .loading-text {
-            color: rgba(255, 255, 255, 0.92);
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            letter-spacing: 0.3px;
-        }
-
-        .progress-track {
-            width: 180px;
-            height: 8px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.14);
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            width: 0%;
-            height: 100%;
-            background: #22d3ee;
-            transition: width 0.15s linear;
         }
 
         @keyframes spin {
@@ -114,12 +78,11 @@
 
         @media (prefers-reduced-motion: reduce) {
             .spinner {
-                animation-duration: 1.6s;
+                animation-duration: 1.4s;
             }
 
             #unity-canvas,
-            #loading-overlay,
-            .progress-fill {
+            #loading-overlay {
                 transition: none;
             }
         }
@@ -131,13 +94,7 @@
     <canvas id="unity-canvas" tabindex="-1"></canvas>
 
     <div id="loading-overlay">
-        <div class="loader-wrap">
-            <div class="spinner"></div>
-            <div class="loading-text" id="loading-text">Loading game... 0%</div>
-            <div class="progress-track">
-                <div class="progress-fill" id="progress-fill"></div>
-            </div>
-        </div>
+        <div class="spinner"></div>
     </div>
 </div>
 
@@ -146,21 +103,19 @@
     window.addEventListener("load", () => {
         const canvas = document.querySelector("#unity-canvas");
         const loadingOverlay = document.querySelector("#loading-overlay");
-        const loadingText = document.querySelector("#loading-text");
-        const progressFill = document.querySelector("#progress-fill");
 
         function hideLoader() {
             canvas.classList.add("ready");
             loadingOverlay.classList.add("hidden");
 
             setTimeout(() => {
-                if (loadingOverlay) loadingOverlay.remove();
-            }, 220);
+                loadingOverlay.remove();
+            }, 140);
         }
 
         // const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-        const config = {
+        createUnityInstance(canvas, {
             arguments: [],
             dataUrl: "Build/boss2.data.unityweb",
             frameworkUrl: "Build/boss2.framework.js.unityweb",
@@ -169,26 +124,14 @@
             companyName: "illusion Lab",
             productName: "Boss Rush",
             productVersion: "0.11",
-
-            // Helps reduce startup/render cost on many devices
             // devicePixelRatio: isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.5)
-        };
-
-        // Delay one frame so browser can paint splash first
-        requestAnimationFrame(() => {
-            createUnityInstance(canvas, config, (progress) => {
-                const percent = Math.round(progress * 100);
-                progressFill.style.width = percent + "%";
-                loadingText.textContent = "Loading game... " + percent + "%";
+        })
+            .then(() => {
+                hideLoader();
             })
-                .then(() => {
-                    hideLoader();
-                })
-                .catch((message) => {
-                    loadingText.textContent = "Failed to load game";
-                    alert(message);
-                });
-        });
+            .catch((message) => {
+                alert(message);
+            });
     });
 </script>
 </body>
