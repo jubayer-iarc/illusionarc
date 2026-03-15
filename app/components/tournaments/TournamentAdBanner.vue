@@ -52,12 +52,12 @@ const props = withDefaults(
 const supabase = useSupabaseClient()
 
 const ad = ref<AdRow | null>(null)
-const loading = ref(true) // ✅ real loading state
+const loading = ref(true)
 
 /* ✅ reactive ticker so countdown updates */
 const nowTick = ref(Date.now())
-let timer: any = null
-let refreshTimer: any = null
+let timer: ReturnType<typeof setInterval> | null = null
+let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   timer = setInterval(() => {
@@ -92,7 +92,6 @@ async function load() {
       )
       .eq('slot', props.slot)
       .eq('is_active', true)
-      // window: (starts is null OR starts <= now) AND (ends is null OR ends >= now)
       .or(`starts_at.is.null,starts_at.lte.${nowIso}`)
       .or(`ends_at.is.null,ends_at.gte.${nowIso}`)
       .order('created_at', { ascending: false })
@@ -129,7 +128,7 @@ function normalizeRatio(r?: string | null) {
 /** ✅ Prefer DB ratio if present (tournament_ads.ratio), else fallback to prop ratio */
 const effectiveRatio = computed<'16/9' | '21/9' | '3/1'>(() => {
   const db = props.preferDbRatio ? normalizeRatio(ad.value?.ratio ?? null) : null
-  return (db || props.ratio || '16/9') as any
+  return (db || props.ratio || '16/9') as '16/9' | '21/9' | '3/1'
 })
 
 const ratioClass = computed(() => {
@@ -148,6 +147,10 @@ function toMs(v?: string | null) {
   if (!v) return NaN
   const t = new Date(v).getTime()
   return Number.isFinite(t) ? t : NaN
+}
+
+function pad2(n: number) {
+  return String(Math.max(0, Math.floor(n))).padStart(2, '0')
 }
 
 /**
@@ -176,20 +179,20 @@ const isLive = computed(() => {
   return false
 })
 
+/** ✅ Countdown format: XXD: XXH: XXM */
 const timeLeft = computed(() => {
   const t = ad.value?.tournaments
   const e = toMs(t?.ends_at ?? null)
   if (!Number.isFinite(e)) return null
 
   const ms = Math.max(0, e - nowTick.value)
-  const total = Math.floor(ms / 1000)
-  const h = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  const s = total % 60
+  const totalMinutes = Math.floor(ms / 1000 / 60)
 
-  if (h > 0) return `${h}h ${m}m`
-  if (m > 0) return `${m}m ${s}s`
-  return `${s}s`
+  const days = Math.floor(totalMinutes / (24 * 60))
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
+  const minutes = totalMinutes % 60
+
+  return `${pad2(days)}D: ${pad2(hours)}H: ${pad2(minutes)}M`
 })
 
 /** Accessible alt */
@@ -229,7 +232,7 @@ const showPlaceholder = computed(() => props.showPlaceholderWhileLoading && load
 
     <!-- ✅ SIDEBAR -->
     <div v-if="isSidebar" class="relative w-full" :class="sidebarHeightClass">
-      <img :src="img!" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
+      <img :src="img!" :alt="altText" class="adImg absolute inset-0 h-full w-full object-cover" />
       <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-black/10" />
 
       <div v-if="showLiveBadge && isLive" class="absolute right-4 top-4 z-10">
@@ -240,17 +243,20 @@ const showPlaceholder = computed(() => props.showPlaceholderWhileLoading && load
         >
           <span class="liveDot" aria-hidden="true" />
           LIVE
-          <span v-if="timeLeft" class="opacity-90 font-semibold">• {{ timeLeft }}</span>
+          <span v-if="timeLeft" class="font-semibold opacity-90">• {{ timeLeft }}</span>
         </div>
       </div>
     </div>
 
     <!-- ✅ BANNER -->
     <div v-else class="relative w-full" :class="ratioClass">
-      <img :src="img!" :alt="altText" class="adImg absolute inset-0 w-full h-full object-cover" />
+      <img :src="img!" :alt="altText" class="adImg absolute inset-0 h-full w-full object-cover" />
       <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10" />
 
-      <div aria-hidden="true" class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-700">
+      <div
+        aria-hidden="true"
+        class="pointer-events-none absolute inset-0 opacity-0 transition duration-700 group-hover:opacity-100"
+      >
         <div class="absolute -inset-y-10 -left-1/2 w-1/2 rotate-12 bg-white/12 blur-xl animate-[adSweep_1.2s_ease-in-out_1]" />
       </div>
 
@@ -258,16 +264,19 @@ const showPlaceholder = computed(() => props.showPlaceholderWhileLoading && load
         <div
           class="inline-flex items-center gap-2 rounded-full
                  border border-red-400/30 bg-red-500/20
-                 px-4 py-2 text-sm sm:text-base font-extrabold tracking-wide text-red-50"
+                 px-4 py-2 text-sm font-extrabold tracking-wide text-red-50 sm:text-base"
         >
           <span class="liveDot" aria-hidden="true" />
           LIVE
-          <span v-if="timeLeft" class="opacity-90 font-semibold">• {{ timeLeft }}</span>
+          <span v-if="timeLeft" class="font-semibold opacity-90">• {{ timeLeft }}</span>
         </div>
       </div>
     </div>
 
-    <div aria-hidden="true" class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-500">
+    <div
+      aria-hidden="true"
+      class="pointer-events-none absolute inset-0 opacity-0 transition duration-500 group-hover:opacity-100"
+    >
       <div class="absolute inset-0 bg-gradient-to-br from-white/18 via-white/0 to-white/0" />
     </div>
   </NuxtLink>
@@ -275,9 +284,9 @@ const showPlaceholder = computed(() => props.showPlaceholderWhileLoading && load
   <!-- ✅ Placeholder ONLY while loading (optional) -->
   <div
     v-else-if="showPlaceholder"
-    class="rounded-3xl border border-black/10 dark:border-white/10
-           bg-white/60 dark:bg-white/5 backdrop-blur
-           overflow-hidden animate-pulse"
+    class="overflow-hidden rounded-3xl border border-black/10
+           bg-white/60 backdrop-blur animate-pulse
+           dark:border-white/10 dark:bg-white/5"
   >
     <div v-if="isSidebar" class="relative w-full" :class="sidebarHeightClass">
       <div class="absolute inset-0 bg-black/10 dark:bg-white/5" />
