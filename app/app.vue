@@ -6,7 +6,7 @@
       <NuxtPage />
     </NuxtLayout>
     <LandingTournamentBanner
-    image="/img/banners/salami.png"
+    image="/img/banners/salamirush.jpg"
     to="/tournaments/salami-rush-eid-tournament"
     alt="Join the Salami Rush Eid Tournament and win amazing prizes!"
     :enabled="true"

@@ -23,9 +23,19 @@ const blockedPrefixes = [
   '/tournaments',
   '/arcade',
   '/admin',
-    '/login',
-    '/update-password',
-    '/forget-password',
+  '/login',
+  '/update-password',
+  '/forget-password',
+  '/payment/success',
+  '/payment/cancel',
+  '/payment/fail',
+  '/tournaments/embed/',
+  '/profile',
+  '/services',
+  '/works',
+  '/contact',
+  '/terms',
+  '/privacy-policy',
 ]
 
 const blockedExactPaths = [
@@ -126,7 +136,7 @@ async function goToTournament() {
             <NuxtImg
               :src="image"
               :alt="alt"
-              class="block max-h-[70vh] w-full object-contain transition duration-300 group-hover:scale-[1.01]"
+              class="block max-h-[70vh] w-full object-cover transition duration-300 group-hover:scale-[1.01]"
               sizes="100vw sm:70vw md:600px"
               format="webp"
               preload

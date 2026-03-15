@@ -18,7 +18,7 @@ const toast = useToast()
 const { bySlug } = useTournaments()
 
 const tournamentSlug = computed(() =>
-    String(route.params.tournamentSlug || '').trim()
+  String(route.params.tournamentSlug || '').trim()
 )
 
 type AnyTournament = any
@@ -46,31 +46,37 @@ function getEndsAt(x: AnyTournament) {
 }
 function getStatus(x: AnyTournament) {
   return String(x?.status || 'scheduled') as
-      | 'scheduled'
-      | 'live'
-      | 'ended'
-      | 'canceled'
+    | 'scheduled'
+    | 'live'
+    | 'ended'
+    | 'canceled'
 }
 function safeTimeMs(s: string) {
   const ms = new Date(s).getTime()
   return Number.isFinite(ms) ? ms : 0
 }
 function msToClock(ms: number) {
-  if (!Number.isFinite(ms) || ms <= 0) return '00:00:00'
-  const total = Math.floor(ms / 1000)
-  const h = String(Math.floor(total / 3600)).padStart(2, '0')
-  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0')
-  const s2 = String(total % 60).padStart(2, '0')
-  return `${h}:${m}:${s2}`
+  if (!Number.isFinite(ms) || ms <= 0) return '00D:00H:00M'
+
+  const totalMinutes = Math.floor(ms / 1000 / 60)
+  const days = Math.floor(totalMinutes / (60 * 24))
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60)
+  const minutes = totalMinutes % 60
+
+  const d = String(days).padStart(2, '0')
+  const h = String(hours).padStart(2, '0')
+  const m = String(minutes).padStart(2, '0')
+
+  return `${d}D:${h}H:${m}M`
 }
 
 function getFullscreenRequestEl(el: any) {
   if (!el) return null
   return (
-      el.requestFullscreen ||
-      el.webkitRequestFullscreen ||
-      el.webkitEnterFullscreen ||
-      null
+    el.requestFullscreen ||
+    el.webkitRequestFullscreen ||
+    el.webkitEnterFullscreen ||
+    null
   )
 }
 
@@ -84,26 +90,26 @@ function detectFullscreenSupport() {
   const el: any = rootEl.value || document.documentElement
   const requestFn = getFullscreenRequestEl(el)
   const enabled =
-      typeof document.fullscreenEnabled === 'boolean'
-          ? document.fullscreenEnabled
-          : true
+    typeof document.fullscreenEnabled === 'boolean'
+      ? document.fullscreenEnabled
+      : true
 
   return !!requestFn && enabled
 }
 
 /* ---------------- Time Logic ---------------- */
 const startMs = computed(() =>
-    t.value ? safeTimeMs(getStartsAt(t.value)) : 0
+  t.value ? safeTimeMs(getStartsAt(t.value)) : 0
 )
 const endMs = computed(() =>
-    t.value ? safeTimeMs(getEndsAt(t.value)) : 0
+  t.value ? safeTimeMs(getEndsAt(t.value)) : 0
 )
 
 const startsInMs = computed(() =>
-    Math.max(0, startMs.value - now.value)
+  Math.max(0, startMs.value - now.value)
 )
 const endsInMs = computed(() =>
-    Math.max(0, endMs.value - now.value)
+  Math.max(0, endMs.value - now.value)
 )
 
 const inTimeWindow = computed(() => {
@@ -131,7 +137,7 @@ useHead(() => ({
     {
       name: 'viewport',
       content:
-          'width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no'
+        'width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no'
     },
     { name: 'mobile-web-app-capable', content: 'yes' },
     { name: 'apple-mobile-web-app-capable', content: 'yes' }
@@ -214,9 +220,9 @@ async function loadTournamentSafe() {
   } catch {}
 
   return (
-      (FALLBACK as any).find(
-          (x: any) => x.slug === tournamentSlug.value
-      ) || null
+    (FALLBACK as any).find(
+      (x: any) => x.slug === tournamentSlug.value
+    ) || null
   )
 }
 
@@ -303,8 +309,8 @@ onMounted(async () => {
 
   document.addEventListener('fullscreenchange', onFullscreenChange)
   document.addEventListener(
-      'webkitfullscreenchange',
-      onFullscreenChange as EventListener
+    'webkitfullscreenchange',
+    onFullscreenChange as EventListener
   )
   window.addEventListener('popstate', onPopState)
 
@@ -316,18 +322,18 @@ onBeforeUnmount(() => {
   if (tick) clearInterval(tick)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener(
-      'webkitfullscreenchange',
-      onFullscreenChange as EventListener
+    'webkitfullscreenchange',
+    onFullscreenChange as EventListener
   )
   window.removeEventListener('popstate', onPopState)
 })
 
 watch(
-    () => tournamentSlug.value,
-    async () => {
-      refreshPlayerMount()
-      await init()
-    }
+  () => tournamentSlug.value,
+  async () => {
+    refreshPlayerMount()
+    await init()
+  }
 )
 
 watch(isPlayable, (v, prev) => {
@@ -339,13 +345,13 @@ watch(isPlayable, (v, prev) => {
 
 <template>
   <div
-      ref="rootEl"
-      class="fixed inset-0 z-[9999] overflow-hidden bg-black text-white"
+    ref="rootEl"
+    class="fixed inset-0 z-[9999] overflow-hidden bg-black text-white"
   >
     <div
-        v-if="!isFullscreen"
-        class="absolute left-0 right-0 top-0 z-[220] border-b border-white/10 bg-black/70 backdrop-blur"
-        :style="{ paddingTop: 'env(safe-area-inset-top)' }"
+      v-if="!isFullscreen"
+      class="absolute left-0 right-0 top-0 z-[220] border-b border-white/10 bg-black/70 backdrop-blur"
+      :style="{ paddingTop: 'env(safe-area-inset-top)' }"
     >
       <div class="flex h-14 items-center justify-between gap-2 px-3">
         <div class="min-w-0 flex-1">
@@ -371,19 +377,19 @@ watch(isPlayable, (v, prev) => {
 
         <div class="flex shrink-0 items-center gap-2">
           <UButton
-              v-if="canUseFullscreen"
-              variant="soft"
-              color="primary"
-              class="!rounded-full"
-              @click="toggleFullscreen"
+            v-if="canUseFullscreen"
+            variant="soft"
+            color="primary"
+            class="!rounded-full"
+            @click="toggleFullscreen"
           >
             <UIcon
-                :name="
+              :name="
                 isFullscreen
                   ? 'i-heroicons-arrows-pointing-in'
                   : 'i-heroicons-arrows-pointing-out'
               "
-                class="h-5 w-5"
+              class="h-5 w-5"
             />
             <span class="hidden sm:inline">
               {{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
@@ -391,10 +397,10 @@ watch(isPlayable, (v, prev) => {
           </UButton>
 
           <UButton
-              variant="soft"
-              color="primary"
-              class="!rounded-full"
-              @click="closePage"
+            variant="soft"
+            color="primary"
+            class="!rounded-full"
+            @click="closePage"
           >
             <UIcon name="i-heroicons-x-mark" class="h-5 w-5" />
             <span class="hidden sm:inline">Close</span>
@@ -404,40 +410,40 @@ watch(isPlayable, (v, prev) => {
     </div>
 
     <div
-        v-if="isFullscreen && canUseFullscreen"
-        class="absolute right-3 top-3 z-[230] flex items-center gap-2"
-        :style="{ top: 'calc(env(safe-area-inset-top) + 12px)' }"
+      v-if="isFullscreen && canUseFullscreen"
+      class="absolute right-3 top-3 z-[230] flex items-center gap-2"
+      :style="{ top: 'calc(env(safe-area-inset-top) + 12px)' }"
     >
       <UButton
-          variant="soft"
-          color="primary"
-          class="!rounded-full bg-black/60 backdrop-blur"
-          @click="exitFullscreen"
+        variant="soft"
+        color="primary"
+        class="!rounded-full bg-black/60 backdrop-blur"
+        @click="exitFullscreen"
       >
         <UIcon name="i-heroicons-arrows-pointing-in" class="h-5 w-5" />
       </UButton>
 
       <UButton
-          variant="soft"
-          color="primary"
-          class="!rounded-full bg-black/60 backdrop-blur"
-          @click="closePage"
+        variant="soft"
+        color="primary"
+        class="!rounded-full bg-black/60 backdrop-blur"
+        @click="closePage"
       >
         <UIcon name="i-heroicons-x-mark" class="h-5 w-5" />
       </UButton>
     </div>
 
     <div
-        class="absolute inset-0 z-[210]"
-        :style="{
+      class="absolute inset-0 z-[210]"
+      :style="{
         paddingTop: isFullscreen ? '0px' : 'calc(env(safe-area-inset-top) + 56px)',
         paddingBottom: isFullscreen ? '0px' : 'env(safe-area-inset-bottom)'
       }"
     >
       <ClientOnly>
         <div
-            v-if="loading"
-            class="grid h-full w-full place-items-center bg-black"
+          v-if="loading"
+          class="grid h-full w-full place-items-center bg-black"
         >
           <div class="px-6 text-center">
             <div class="text-lg font-semibold">Loading…</div>
@@ -448,22 +454,22 @@ watch(isPlayable, (v, prev) => {
         </div>
 
         <div
-            v-else-if="err"
-            class="grid h-full w-full place-items-center bg-black p-6"
+          v-else-if="err"
+          class="grid h-full w-full place-items-center bg-black p-6"
         >
           <div class="max-w-md text-center">
             <div class="text-lg font-semibold">{{ err }}</div>
             <div class="mt-4 flex justify-center gap-2">
               <UButton
-                  class="!rounded-full"
-                  :to="`/tournaments/${tournamentSlug}`"
+                class="!rounded-full"
+                :to="`/tournaments/${tournamentSlug}`"
               >
                 Back to details
               </UButton>
               <UButton
-                  variant="soft"
-                  class="!rounded-full"
-                  to="/tournaments"
+                variant="soft"
+                class="!rounded-full"
+                to="/tournaments"
               >
                 All tournaments
               </UButton>
@@ -472,8 +478,8 @@ watch(isPlayable, (v, prev) => {
         </div>
 
         <div
-            v-else-if="!isPlayable"
-            class="grid h-full w-full place-items-center bg-black p-6"
+          v-else-if="!isPlayable"
+          class="grid h-full w-full place-items-center bg-black p-6"
         >
           <div class="max-w-md text-center">
             <div class="text-lg font-semibold">Tournament is not live</div>
@@ -485,11 +491,11 @@ watch(isPlayable, (v, prev) => {
 
         <div v-else class="h-full w-full bg-black">
           <GamePlayer
-              :key="`${tournamentSlug}-${playerMountKey}`"
-              :game="game!"
-              :defer="false"
-              :fullscreen="true"
-              @score="e => onScore(e.score)"
+            :key="`${tournamentSlug}-${playerMountKey}`"
+            :game="game!"
+            :defer="false"
+            :fullscreen="true"
+            @score="e => onScore(e.score)"
           />
         </div>
       </ClientOnly>
