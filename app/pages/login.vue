@@ -417,8 +417,8 @@ async function submit() {
   }
 }
 
-function continueBrowsing() {
-  navigateTo('/', { replace: true })
+function toggleAuthMode() {
+  mode.value = mode.value === 'signin' ? 'signup' : 'signin'
 }
 
 function goToForgotPassword() {
@@ -615,9 +615,19 @@ function goToForgotPassword() {
                     {{ mode === 'signin' ? 'Login' : 'Create account' }}
                   </UButton>
 
-                  <UButton type="button" class="w-full" variant="soft" size="lg" @click="continueBrowsing">
-                    <UIcon name="i-heroicons-home" class="w-5 h-5" />
-                    Continue browsing
+                  <UButton
+                    type="button"
+                    class="w-full"
+                    variant="solid"
+                    color="secondary"
+                    size="lg"
+                    @click="toggleAuthMode"
+                  >
+                    <UIcon
+                      :name="mode === 'signin' ? 'i-heroicons-user-plus' : 'i-heroicons-arrow-left-circle'"
+                      class="w-5 h-5"
+                    />
+                    {{ mode === 'signin' ? 'Sign Up' : 'Back to Login' }}
                   </UButton>
                 </div>
 
