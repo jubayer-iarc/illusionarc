@@ -36,6 +36,14 @@ export default defineNuxtConfig({
     layoutTransition: { name: 'layout', mode: 'out-in' }
   },
 
+  scripts: {
+    registry: {
+      googleAnalytics: {
+        id: process.env.NUXT_PUBLIC_GA_ID
+      }
+    }
+  },
+
   ui: {},
 
   pwa: {
@@ -90,7 +98,8 @@ export default defineNuxtConfig({
     resetTicketSecret: process.env.RESET_TICKET_SECRET,
     public: {
       supabaseUrl: process.env.SUPABASE_URL,
-      supabaseAnonKey: process.env.SUPABASE_KEY
+      supabaseAnonKey: process.env.SUPABASE_KEY,
+      gaId: process.env.NUXT_PUBLIC_GA_ID
     }
   },
 
@@ -168,7 +177,7 @@ export default defineNuxtConfig({
         'img-src': ["'self'", 'data:', 'blob:', 'https:'],
         'font-src': ["'self'", 'data:', 'https:'],
         'style-src': ["'self'", 'https:', "'unsafe-inline'"],
-        'script-src': ["'self'", "'nonce-{{nonce}}'", 'https://va.vercel-scripts.com'],
+        'script-src': ["'self'", "'nonce-{{nonce}}'", 'https://va.vercel-scripts.com', 'https://www.googletagmanager.com'],
         'script-src-attr': ["'none'"],
         'worker-src': ["'self'", 'blob:'],
         'frame-src': ["'self'", 'https:'],
