@@ -39,14 +39,14 @@ const perPageOptions = [10, 20, 50]
 
 /* ---------------- Query sync ---------------- */
 watch(
-    [selected, period],
-    async () => {
-      const q: Record<string, any> = { ...route.query }
-      q.game = selected.value
-      q.period = period.value
-      await router.replace({ query: q })
-    },
-    { flush: 'post' }
+  [selected, period],
+  async () => {
+    const q: Record<string, any> = { ...route.query }
+    q.game = selected.value
+    q.period = period.value
+    await router.replace({ query: q })
+  },
+  { flush: 'post' }
 )
 
 /* ---------------- Game label map ---------------- */
@@ -130,6 +130,7 @@ const rows = ref<Row[]>([])
 
 const avatarMap = ref<Record<string, string>>({})
 const phoneMap = ref<Record<string, string>>({})
+const displayNameMap = ref<Record<string, string>>({})
 
 function initials(name: string) {
   const s = String(name || '').trim()
@@ -143,6 +144,12 @@ function initials(name: string) {
 function avatarFor(r: Row) {
   const id = r.userId || ''
   return id ? avatarMap.value[id] || '' : ''
+}
+
+function displayNameForArcade(r: Row) {
+  const id = String(r.userId || '').trim()
+  if (id && displayNameMap.value[id]) return displayNameMap.value[id]
+  return r.player
 }
 
 function maskPhone(raw?: string) {
@@ -167,9 +174,9 @@ async function loadProfilesByIds(ids: string[]) {
 
   try {
     const { data, error } = await (supabase as any)
-        .from('profiles')
-        .select('user_id, avatar_url, phone')
-        .in('user_id', cleanIds)
+      .from('profiles')
+      .select('user_id, avatar_url, phone, display_name')
+      .in('user_id', cleanIds)
 
     if (error) {
       console.warn('Profile fetch blocked:', error.message)
@@ -178,18 +185,24 @@ async function loadProfilesByIds(ids: string[]) {
 
     const aMap: Record<string, string> = { ...avatarMap.value }
     const pMap: Record<string, string> = { ...phoneMap.value }
+    const nMap: Record<string, string> = { ...displayNameMap.value }
 
     for (const p of data || []) {
       const uid = String(p?.user_id || '').trim()
       if (!uid) continue
+
       const url = String(p?.avatar_url || '').trim()
       const phone = String(p?.phone || '').trim()
+      const displayName = String(p?.display_name || '').trim()
+
       if (url) aMap[uid] = url
       if (phone) pMap[uid] = phone
+      if (displayName) nMap[uid] = displayName
     }
 
     avatarMap.value = aMap
     phoneMap.value = pMap
+    displayNameMap.value = nMap
   } catch (e) {
     console.warn('Profile fetch failed:', e)
   }
@@ -336,6 +349,12 @@ function tournamentAvatarFor(r: TournamentRow) {
   return id ? avatarMap.value[id] || '' : ''
 }
 
+function displayNameForTournament(r: TournamentRow) {
+  const id = String(r.user_id || '').trim()
+  if (id && displayNameMap.value[id]) return displayNameMap.value[id]
+  return r.player_name
+}
+
 function maskedPhoneForTournament(r: TournamentRow) {
   const id = String(r.user_id || '').trim()
   const p = id ? phoneMap.value[id] || '' : ''
@@ -358,7 +377,7 @@ async function loadTournaments() {
   } catch (e) {
     console.warn('Failed to load live tournaments, using fallback:', e)
     tournaments.value = (Array.isArray(FALLBACK_TOURNAMENTS) ? FALLBACK_TOURNAMENTS : []).filter(
-        (t: any) => getTournamentGameSlug(t) === selected.value
+      (t: any) => getTournamentGameSlug(t) === selected.value
     ) as TournamentLite[]
   } finally {
     tournamentsLoading.value = false
@@ -408,15 +427,15 @@ watch(selectedTournamentSlug, async () => {
 }, { immediate: true })
 
 watch(
-    selected,
-    async () => {
-      tournaments.value = []
-      selectedTournamentSlug.value = ''
-      tournamentRows.value = []
-      tournamentPage.value = 1
-      await loadTournaments()
-    },
-    { immediate: true }
+  selected,
+  async () => {
+    tournaments.value = []
+    selectedTournamentSlug.value = ''
+    tournamentRows.value = []
+    tournamentPage.value = 1
+    await loadTournaments()
+  },
+  { immediate: true }
 )
 
 const hasTournaments = computed(() => tournaments.value.length > 0)
@@ -477,12 +496,12 @@ onMounted(async () => {
 })
 
 watch(
-    () => [route.query.tournament, route.hash, selectedTournamentSlug.value, hasTournaments.value],
-    async ([queryTournament, hash]) => {
-      if (String(queryTournament || '').trim() || String(hash || '').trim() === '#tournament-leaderboard') {
-        await scrollToTournamentSection()
-      }
+  () => [route.query.tournament, route.hash, selectedTournamentSlug.value, hasTournaments.value],
+  async ([queryTournament, hash]) => {
+    if (String(queryTournament || '').trim() || String(hash || '').trim() === '#tournament-leaderboard') {
+      await scrollToTournamentSection()
     }
+  }
 )
 </script>
 
@@ -499,12 +518,12 @@ watch(
       <div class="flex flex-wrap gap-2 items-center justify-end">
         <div class="flex flex-wrap gap-2">
           <UButton
-              v-for="g in GAMES"
-              :key="g.slug"
-              size="sm"
-              :variant="selected === g.slug ? 'solid' : 'soft'"
-              :color="selected === g.slug ? 'primary' : 'info'"
-              @click="selected = g.slug"
+            v-for="g in GAMES"
+            :key="g.slug"
+            size="sm"
+            :variant="selected === g.slug ? 'solid' : 'soft'"
+            :color="selected === g.slug ? 'primary' : 'info'"
+            @click="selected = g.slug"
           >
             {{ g.name }}
           </UButton>
@@ -513,23 +532,23 @@ watch(
         <div class="w-full md:w-auto flex flex-wrap gap-2 items-center justify-end">
           <div class="inline-flex rounded-full border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-1 backdrop-blur">
             <button
-                type="button"
-                class="px-3 py-1.5 rounded-full text-sm transition"
-                :class="period === 'daily'
+              type="button"
+              class="px-3 py-1.5 rounded-full text-sm transition"
+              :class="period === 'daily'
                 ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white'
                 : 'text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white'"
-                @click="period = 'daily'"
+              @click="period = 'daily'"
             >
               Daily
             </button>
 
             <button
-                type="button"
-                class="px-3 py-1.5 rounded-full text-sm transition"
-                :class="period === 'weekly'
+              type="button"
+              class="px-3 py-1.5 rounded-full text-sm transition"
+              :class="period === 'weekly'
                 ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white'
                 : 'text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white'"
-                @click="period = 'weekly'"
+              @click="period = 'weekly'"
             >
               Weekly
             </button>
@@ -562,16 +581,16 @@ watch(
     </div>
 
     <section
-        v-if="hasTournaments"
-        id="tournament-leaderboard"
-        ref="tournamentSectionRef"
-        class="mt-6 rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-4 sm:p-5"
+      v-if="hasTournaments"
+      id="tournament-leaderboard"
+      ref="tournamentSectionRef"
+      class="mt-6 rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-4 sm:p-5"
     >
       <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div class="min-w-0">
           <div
-              class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs"
-              :class="liveTournament
+            class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs"
+            :class="liveTournament
               ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
               : 'border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-200'"
           >
@@ -588,8 +607,8 @@ watch(
           </p>
 
           <div
-              v-if="liveTournament"
-              class="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-700 dark:text-emerald-200"
+            v-if="liveTournament"
+            class="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-700 dark:text-emerald-200"
           >
             <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
             <span class="font-medium">{{ liveTournament.title }}</span>
@@ -599,18 +618,18 @@ watch(
 
         <div class="flex flex-wrap gap-2 shrink-0">
           <UButton
-              v-if="selectedTournament"
-              variant="soft"
-              class="!rounded-full"
-              :to="`/tournaments/${selectedTournament.slug}`"
+            v-if="selectedTournament"
+            variant="soft"
+            class="!rounded-full"
+            :to="`/tournaments/${selectedTournament.slug}`"
           >
             Open Tournament
           </UButton>
 
           <UButton
-              v-if="selectedTournament && getTournamentStatus(selectedTournament) === 'live'"
-              class="!rounded-full"
-              :to="`/tournaments/${selectedTournament.slug}`"
+            v-if="selectedTournament && getTournamentStatus(selectedTournament) === 'live'"
+            class="!rounded-full"
+            :to="`/tournaments/${selectedTournament.slug}`"
           >
             Play Tournament
           </UButton>
@@ -624,22 +643,22 @@ watch(
       <template v-else>
         <div class="mt-4 flex flex-wrap gap-2">
           <button
-              v-for="t in tournaments"
-              :key="t.slug"
-              type="button"
-              class="rounded-2xl border px-3 py-2 text-left transition"
-              :class="
+            v-for="t in tournaments"
+            :key="t.slug"
+            type="button"
+            class="rounded-2xl border px-3 py-2 text-left transition"
+            :class="
               selectedTournamentSlug === t.slug
                 ? 'border-black/15 bg-black/5 text-black dark:border-white/15 dark:bg-white/10 dark:text-white'
                 : 'border-black/10 bg-white text-black/70 hover:bg-black/5 hover:text-black dark:border-white/10 dark:bg-black/10 dark:text-white/70 dark:hover:bg-white/5 dark:hover:text-white'
             "
-              @click="selectedTournamentSlug = t.slug"
+            @click="selectedTournamentSlug = t.slug"
           >
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-medium">{{ t.title }}</span>
               <span
-                  class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px]"
-                  :class="tournamentStatusPillClass(getTournamentStatus(t))"
+                class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px]"
+                :class="tournamentStatusPillClass(getTournamentStatus(t))"
               >
                 {{ getTournamentStatus(t).toUpperCase() }}
               </span>
@@ -651,8 +670,8 @@ watch(
         </div>
 
         <div
-            v-if="selectedTournament"
-            class="mt-5 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-black/20 p-4"
+          v-if="selectedTournament"
+          class="mt-5 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-black/20 p-4"
         >
           <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div class="min-w-0">
@@ -666,17 +685,17 @@ watch(
 
             <div class="flex flex-wrap gap-2">
               <UButton
-                  variant="soft"
-                  class="!rounded-full"
-                  :to="`/tournaments/${selectedTournament.slug}`"
+                variant="soft"
+                class="!rounded-full"
+                :to="`/tournaments/${selectedTournament.slug}`"
               >
                 View Details
               </UButton>
 
               <UButton
-                  v-if="getTournamentStatus(selectedTournament) === 'live'"
-                  class="!rounded-full"
-                  :to="`/tournaments/${selectedTournament.slug}`"
+                v-if="getTournamentStatus(selectedTournament) === 'live'"
+                class="!rounded-full"
+                :to="`/tournaments/${selectedTournament.slug}`"
               >
                 Play Now
               </UButton>
@@ -686,17 +705,17 @@ watch(
 
         <div v-if="!tournamentBoardLoading && !tournamentError && tournamentTop3.length" class="mt-5 grid gap-3 md:grid-cols-3">
           <div
-              v-for="(r, i) in tournamentTop3"
-              :key="`${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
-              class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-4"
+            v-for="(r, i) in tournamentTop3"
+            :key="`${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
+            class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-4"
           >
             <div class="flex items-center justify-between">
               <div class="text-sm font-semibold text-black dark:text-white">
                 {{ medal(i) }} Rank #{{ i + 1 }}
               </div>
               <div
-                  class="text-xs"
-                  :class="selectedTournament && getTournamentStatus(selectedTournament) === 'live'
+                class="text-xs"
+                :class="selectedTournament && getTournamentStatus(selectedTournament) === 'live'
                   ? 'text-emerald-700 dark:text-emerald-200'
                   : 'text-black/60 dark:text-white/60'"
               >
@@ -707,20 +726,20 @@ watch(
             <div class="mt-3 flex items-center gap-3">
               <div class="relative h-12 w-12 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
                 <img
-                    v-if="tournamentAvatarFor(r)"
-                    :src="tournamentAvatarFor(r)"
-                    class="h-full w-full object-cover"
-                    alt="avatar"
-                    referrerpolicy="no-referrer"
+                  v-if="tournamentAvatarFor(r)"
+                  :src="tournamentAvatarFor(r)"
+                  class="h-full w-full object-cover"
+                  alt="avatar"
+                  referrerpolicy="no-referrer"
                 />
                 <div v-else class="h-full w-full grid place-items-center text-sm font-semibold text-black/70 dark:text-white/70">
-                  {{ initials(r.player_name) }}
+                  {{ initials(displayNameForTournament(r)) }}
                 </div>
               </div>
 
               <div class="min-w-0">
                 <div class="font-semibold text-black dark:text-white truncate">
-                  {{ r.player_name }}
+                  {{ displayNameForTournament(r) }}
                 </div>
                 <div v-if="maskedPhoneForTournament(r)" class="mt-0.5 text-[11px] text-black/60 dark:text-white/60 truncate">
                   {{ maskedPhoneForTournament(r) }}
@@ -748,8 +767,8 @@ watch(
               <div class="flex items-center gap-2">
                 <div class="text-sm text-black/60 dark:text-white/60" v-if="tournamentBoardLoading">Loading…</div>
                 <select
-                    v-model.number="tournamentPerPage"
-                    class="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-black outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
+                  v-model.number="tournamentPerPage"
+                  class="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-black outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
                 >
                   <option v-for="n in perPageOptions" :key="`tp-${n}`" :value="n">{{ n }} / page</option>
                 </select>
@@ -767,26 +786,26 @@ watch(
           <div v-if="!tournamentError" class="block md:hidden">
             <div v-if="!tournamentBoardLoading && pagedTournamentRows.length" class="space-y-3 p-4">
               <div
-                  v-for="(r, i) in pagedTournamentRows"
-                  :key="`m-${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
-                  class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4"
+                v-for="(r, i) in pagedTournamentRows"
+                :key="`m-${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
+                class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4"
               >
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0 flex items-center gap-3">
                     <div class="relative h-10 w-10 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-white dark:bg-black/20">
                       <img
-                          v-if="tournamentAvatarFor(r)"
-                          :src="tournamentAvatarFor(r)"
-                          class="h-full w-full object-cover"
-                          alt="avatar"
-                          referrerpolicy="no-referrer"
+                        v-if="tournamentAvatarFor(r)"
+                        :src="tournamentAvatarFor(r)"
+                        class="h-full w-full object-cover"
+                        alt="avatar"
+                        referrerpolicy="no-referrer"
                       />
                       <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
-                        {{ initials(r.player_name) }}
+                        {{ initials(displayNameForTournament(r)) }}
                       </div>
                     </div>
                     <div class="min-w-0">
-                      <div class="font-semibold text-black dark:text-white truncate">{{ r.player_name }}</div>
+                      <div class="font-semibold text-black dark:text-white truncate">{{ displayNameForTournament(r) }}</div>
                       <div class="text-xs text-black/60 dark:text-white/60">
                         Rank #{{ (tournamentPage - 1) * tournamentPerPage + i + 1 }}
                         <span v-if="maskedPhoneForTournament(r)">• {{ maskedPhoneForTournament(r) }}</span>
@@ -812,70 +831,70 @@ watch(
           <div v-if="!tournamentError" class="hidden md:block overflow-auto">
             <table class="w-full text-sm">
               <thead class="text-black/60 dark:text-white/60">
-              <tr class="text-left border-b border-black/10 dark:border-white/10">
-                <th class="py-3 pr-3">#</th>
-                <th class="py-3 pr-3">Player</th>
-                <th class="py-3 pr-3">Phone</th>
-                <th class="py-3 pr-3">Score</th>
-                <th class="py-3 pr-3">Achieved</th>
-              </tr>
+                <tr class="text-left border-b border-black/10 dark:border-white/10">
+                  <th class="py-3 pr-3">#</th>
+                  <th class="py-3 pr-3">Player</th>
+                  <th class="py-3 pr-3">Phone</th>
+                  <th class="py-3 pr-3">Score</th>
+                  <th class="py-3 pr-3">Achieved</th>
+                </tr>
               </thead>
 
               <tbody>
-              <tr
+                <tr
                   v-for="(r, i) in pagedTournamentRows"
                   :key="`${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
                   class="border-b border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition"
-              >
-                <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ (tournamentPage - 1) * tournamentPerPage + i + 1 }}</td>
+                >
+                  <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ (tournamentPage - 1) * tournamentPerPage + i + 1 }}</td>
 
-                <td class="py-3 pr-3">
-                  <div class="flex items-center gap-3">
-                    <div class="relative h-9 w-9 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
-                      <img
+                  <td class="py-3 pr-3">
+                    <div class="flex items-center gap-3">
+                      <div class="relative h-9 w-9 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+                        <img
                           v-if="tournamentAvatarFor(r)"
                           :src="tournamentAvatarFor(r)"
                           class="h-full w-full object-cover"
                           alt="avatar"
                           referrerpolicy="no-referrer"
-                      />
-                      <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
-                        {{ initials(r.player_name) }}
+                        />
+                        <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
+                          {{ initials(displayNameForTournament(r)) }}
+                        </div>
+                      </div>
+
+                      <div class="min-w-0">
+                        <div class="font-medium text-black dark:text-white truncate">
+                          {{ displayNameForTournament(r) }}
+                        </div>
+                        <div class="text-[11px] text-black/50 dark:text-white/50 truncate">
+                          {{ r.user_id ? 'Player' : 'Guest' }}
+                        </div>
                       </div>
                     </div>
+                  </td>
 
-                    <div class="min-w-0">
-                      <div class="font-medium text-black dark:text-white truncate">
-                        {{ r.player_name }}
-                      </div>
-                      <div class="text-[11px] text-black/50 dark:text-white/50 truncate">
-                        {{ r.user_id ? 'Player' : 'Guest' }}
-                      </div>
-                    </div>
-                  </div>
-                </td>
+                  <td class="py-3 pr-3 text-black/70 dark:text-white/70 tabular-nums">
+                    <span v-if="maskedPhoneForTournament(r)">{{ maskedPhoneForTournament(r) }}</span>
+                    <span v-else class="text-black/40 dark:text-white/40">—</span>
+                  </td>
 
-                <td class="py-3 pr-3 text-black/70 dark:text-white/70 tabular-nums">
-                  <span v-if="maskedPhoneForTournament(r)">{{ maskedPhoneForTournament(r) }}</span>
-                  <span v-else class="text-black/40 dark:text-white/40">—</span>
-                </td>
+                  <td class="py-3 pr-3 font-semibold tabular-nums text-black dark:text-white">{{ r.score }}</td>
+                  <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ fmtDate(r.created_at) }}</td>
+                </tr>
 
-                <td class="py-3 pr-3 font-semibold tabular-nums text-black dark:text-white">{{ r.score }}</td>
-                <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ fmtDate(r.created_at) }}</td>
-              </tr>
-
-              <tr v-if="!tournamentBoardLoading && pagedTournamentRows.length === 0">
-                <td colspan="5" class="py-10 text-center text-black/60 dark:text-white/60">
-                  No tournament scores found yet.
-                </td>
-              </tr>
+                <tr v-if="!tournamentBoardLoading && pagedTournamentRows.length === 0">
+                  <td colspan="5" class="py-10 text-center text-black/60 dark:text-white/60">
+                    No tournament scores found yet.
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
 
           <div
-              v-if="tournamentTotal > 0"
-              class="flex flex-col gap-3 border-t border-black/10 dark:border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+            v-if="tournamentTotal > 0"
+            class="flex flex-col gap-3 border-t border-black/10 dark:border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div class="text-sm text-black/60 dark:text-white/60">
               Showing
@@ -888,11 +907,11 @@ watch(
             <div class="flex flex-wrap items-center gap-2">
               <UButton size="sm" variant="soft" :disabled="tournamentPage <= 1" @click="tournamentPage--">Prev</UButton>
               <UButton
-                  v-for="p in tournamentPageWindow"
-                  :key="`tpw-${p}`"
-                  size="sm"
-                  :variant="p === tournamentPage ? 'solid' : 'soft'"
-                  @click="tournamentPage = p"
+                v-for="p in tournamentPageWindow"
+                :key="`tpw-${p}`"
+                size="sm"
+                :variant="p === tournamentPage ? 'solid' : 'soft'"
+                @click="tournamentPage = p"
               >
                 {{ p }}
               </UButton>
@@ -905,9 +924,9 @@ watch(
 
     <div v-if="!arcadeLoading && !arcadeError && top3.length" class="mt-6 grid gap-3 md:grid-cols-3">
       <div
-          v-for="(r, i) in top3"
-          :key="r.userId ?? `${r.player}_${r.score}_${r.createdAt}_${i}`"
-          class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-4"
+        v-for="(r, i) in top3"
+        :key="r.userId ?? `${r.player}_${r.score}_${r.createdAt}_${i}`"
+        class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-4"
       >
         <div class="flex items-center justify-between">
           <div class="text-sm font-semibold text-black dark:text-white">
@@ -921,20 +940,20 @@ watch(
         <div class="mt-3 flex items-center gap-3">
           <div class="relative h-12 w-12 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
             <img
-                v-if="avatarFor(r)"
-                :src="avatarFor(r)"
-                class="h-full w-full object-cover"
-                alt="avatar"
-                referrerpolicy="no-referrer"
+              v-if="avatarFor(r)"
+              :src="avatarFor(r)"
+              class="h-full w-full object-cover"
+              alt="avatar"
+              referrerpolicy="no-referrer"
             />
             <div v-else class="h-full w-full grid place-items-center text-sm font-semibold text-black/70 dark:text-white/70">
-              {{ initials(r.player) }}
+              {{ initials(displayNameForArcade(r)) }}
             </div>
           </div>
 
           <div class="min-w-0">
             <div class="font-semibold text-black dark:text-white truncate">
-              {{ r.player }}
+              {{ displayNameForArcade(r) }}
             </div>
 
             <div v-if="maskedPhoneFor(r)" class="mt-0.5 text-[11px] text-black/60 dark:text-white/60 truncate">
@@ -964,8 +983,8 @@ watch(
           <div class="flex items-center gap-2">
             <div class="text-sm text-black/60 dark:text-white/60" v-if="arcadeLoading">Loading…</div>
             <select
-                v-model.number="arcadePerPage"
-                class="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-black outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
+              v-model.number="arcadePerPage"
+              class="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-black outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
             >
               <option v-for="n in perPageOptions" :key="`ap-${n}`" :value="n">{{ n }} / page</option>
             </select>
@@ -983,27 +1002,27 @@ watch(
       <div v-if="!arcadeError" class="block md:hidden">
         <div v-if="!arcadeLoading && pagedArcadeRows.length" class="space-y-3 p-4">
           <div
-              v-for="(r, i) in pagedArcadeRows"
-              :key="`am-${r.userId ?? `${r.player}_${r.score}_${r.createdAt}_${i}`}`"
-              class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4"
+            v-for="(r, i) in pagedArcadeRows"
+            :key="`am-${r.userId ?? `${r.player}_${r.score}_${r.createdAt}_${i}`}`"
+            class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4"
           >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0 flex items-center gap-3">
                 <div class="relative h-10 w-10 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-white dark:bg-black/20">
                   <img
-                      v-if="avatarFor(r)"
-                      :src="avatarFor(r)"
-                      class="h-full w-full object-cover"
-                      alt="avatar"
-                      referrerpolicy="no-referrer"
+                    v-if="avatarFor(r)"
+                    :src="avatarFor(r)"
+                    class="h-full w-full object-cover"
+                    alt="avatar"
+                    referrerpolicy="no-referrer"
                   />
                   <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
-                    {{ initials(r.player) }}
+                    {{ initials(displayNameForArcade(r)) }}
                   </div>
                 </div>
 
                 <div class="min-w-0">
-                  <div class="font-semibold text-black dark:text-white truncate">{{ r.player }}</div>
+                  <div class="font-semibold text-black dark:text-white truncate">{{ displayNameForArcade(r) }}</div>
                   <div class="text-xs text-black/60 dark:text-white/60">
                     Rank #{{ (arcadePage - 1) * arcadePerPage + i + 1 }}
                     <span v-if="maskedPhoneFor(r)">• {{ maskedPhoneFor(r) }}</span>
@@ -1031,70 +1050,70 @@ watch(
       <div v-if="!arcadeError" class="hidden md:block overflow-auto">
         <table class="w-full text-sm">
           <thead class="text-black/60 dark:text-white/60">
-          <tr class="text-left border-b border-black/10 dark:border-white/10">
-            <th class="py-3 pr-3">#</th>
-            <th class="py-3 pr-3">Player</th>
-            <th class="py-3 pr-3">Phone</th>
-            <th class="py-3 pr-3">Best score</th>
-            <th class="py-3 pr-3">Achieved</th>
-          </tr>
+            <tr class="text-left border-b border-black/10 dark:border-white/10">
+              <th class="py-3 pr-3">#</th>
+              <th class="py-3 pr-3">Player</th>
+              <th class="py-3 pr-3">Phone</th>
+              <th class="py-3 pr-3">Best score</th>
+              <th class="py-3 pr-3">Achieved</th>
+            </tr>
           </thead>
 
           <tbody>
-          <tr
+            <tr
               v-for="(r, i) in pagedArcadeRows"
               :key="r.userId ?? `${r.player}_${r.score}_${r.createdAt}_${i}`"
               class="border-b border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition"
-          >
-            <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ (arcadePage - 1) * arcadePerPage + i + 1 }}</td>
+            >
+              <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ (arcadePage - 1) * arcadePerPage + i + 1 }}</td>
 
-            <td class="py-3 pr-3">
-              <div class="flex items-center gap-3">
-                <div class="relative h-9 w-9 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
-                  <img
+              <td class="py-3 pr-3">
+                <div class="flex items-center gap-3">
+                  <div class="relative h-9 w-9 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+                    <img
                       v-if="avatarFor(r)"
                       :src="avatarFor(r)"
                       class="h-full w-full object-cover"
                       alt="avatar"
                       referrerpolicy="no-referrer"
-                  />
-                  <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
-                    {{ initials(r.player) }}
+                    />
+                    <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
+                      {{ initials(displayNameForArcade(r)) }}
+                    </div>
+                  </div>
+
+                  <div class="min-w-0">
+                    <div class="font-medium text-black dark:text-white truncate">
+                      {{ displayNameForArcade(r) }}
+                    </div>
+                    <div class="text-[11px] text-black/50 dark:text-white/50 truncate">
+                      {{ r.userId ? 'Player' : 'Guest' }}
+                    </div>
                   </div>
                 </div>
+              </td>
 
-                <div class="min-w-0">
-                  <div class="font-medium text-black dark:text-white truncate">
-                    {{ r.player }}
-                  </div>
-                  <div class="text-[11px] text-black/50 dark:text-white/50 truncate">
-                    {{ r.userId ? 'Player' : 'Guest' }}
-                  </div>
-                </div>
-              </div>
-            </td>
+              <td class="py-3 pr-3 text-black/70 dark:text-white/70 tabular-nums">
+                <span v-if="maskedPhoneFor(r)">{{ maskedPhoneFor(r) }}</span>
+                <span v-else class="text-black/40 dark:text-white/40">—</span>
+              </td>
 
-            <td class="py-3 pr-3 text-black/70 dark:text-white/70 tabular-nums">
-              <span v-if="maskedPhoneFor(r)">{{ maskedPhoneFor(r) }}</span>
-              <span v-else class="text-black/40 dark:text-white/40">—</span>
-            </td>
+              <td class="py-3 pr-3 font-semibold tabular-nums text-black dark:text-white">{{ r.score }}</td>
+              <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ fmtDate(r.createdAt) }}</td>
+            </tr>
 
-            <td class="py-3 pr-3 font-semibold tabular-nums text-black dark:text-white">{{ r.score }}</td>
-            <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ fmtDate(r.createdAt) }}</td>
-          </tr>
-
-          <tr v-if="!arcadeLoading && pagedArcadeRows.length === 0">
-            <td colspan="5" class="py-10 text-center text-black/60 dark:text-white/60">
-              No scores found for this {{ period }} period yet.
-            </td>
-          </tr>
+            <tr v-if="!arcadeLoading && pagedArcadeRows.length === 0">
+              <td colspan="5" class="py-10 text-center text-black/60 dark:text-white/60">
+                No scores found for this {{ period }} period yet.
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
 
       <div
-          v-if="arcadeTotal > 0"
-          class="flex flex-col gap-3 border-t border-black/10 dark:border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+        v-if="arcadeTotal > 0"
+        class="flex flex-col gap-3 border-t border-black/10 dark:border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
       >
         <div class="text-sm text-black/60 dark:text-white/60">
           Showing
@@ -1107,11 +1126,11 @@ watch(
         <div class="flex flex-wrap items-center gap-2">
           <UButton size="sm" variant="soft" :disabled="arcadePage <= 1" @click="arcadePage--">Prev</UButton>
           <UButton
-              v-for="p in arcadePageWindow"
-              :key="`apw-${p}`"
-              size="sm"
-              :variant="p === arcadePage ? 'solid' : 'soft'"
-              @click="arcadePage = p"
+            v-for="p in arcadePageWindow"
+            :key="`apw-${p}`"
+            size="sm"
+            :variant="p === arcadePage ? 'solid' : 'soft'"
+            @click="arcadePage = p"
           >
             {{ p }}
           </UButton>
