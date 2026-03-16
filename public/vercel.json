@@ -12,6 +12,24 @@
           "value": "frame-ancestors 'self' https://illusionarc.com https://www.illusionarc.com;"
         }
       ]
+    },
+    {
+      "source": "/games/(.*)\\.(data|wasm|js|symbols|json)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/games/(.*)\\.(data\\.br|wasm\\.br|js\\.br|symbols\\.br|data\\.gz|wasm\\.gz|js\\.gz|symbols\\.gz)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
   ]
 }

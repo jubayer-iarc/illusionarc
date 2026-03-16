@@ -128,12 +128,7 @@ export default defineNuxtConfig({
     hidePoweredBy: true,
     removeLoggers: true,
 
-    rateLimiter: {
-      tokensPerInterval: 150,
-      interval: 300000,
-      headers: false,
-      throwError: true
-    },
+    rateLimiter: false,
 
     requestSizeLimiter: {
       maxRequestSizeInBytes: 2_000_000,
