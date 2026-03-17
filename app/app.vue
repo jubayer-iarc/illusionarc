@@ -15,7 +15,7 @@
         </p>
 
         <p class="time">
-          আমরা আজ রাত <strong>৮টা</strong>র মধ্যে ফিরে আসব
+          আমরা আজ রাত <strong>১১টা</strong>র মধ্যে ফিরে আসব
         </p>
 
         <!-- Animated Loader -->
@@ -50,7 +50,7 @@ import RouteLoader from '~/components/RouteLoader.vue'
 import LandingTournamentBanner from '~/components/ads/LandingTournamentBanner.vue'
 
 // Toggle this
-const isMaintenance = false
+const isMaintenance = true
 </script>
 
 <style scoped>
