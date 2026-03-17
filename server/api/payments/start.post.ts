@@ -43,11 +43,16 @@ export default defineEventHandler(async (event) => {
 
   const { data: auth, error: authErr } = await sb.auth.getUser()
   const user = auth?.user
-  if (authErr || !user?.id) throw createError({ statusCode: 401, statusMessage: 'Login required' })
+  if (authErr || !user?.id) {
+    throw createError({ statusCode: 401, statusMessage: 'Login required' })
+  }
 
   const body = await readBody(event)
   let planCode = String(body?.planCode || '').trim()
-  if (!planCode) throw createError({ statusCode: 400, statusMessage: 'Missing planCode' })
+  if (!planCode) {
+    throw createError({ statusCode: 400, statusMessage: 'Missing planCode' })
+  }
+
   planCode = normalizePlanCode(planCode)
 
   const { data: plan, error: planErr } = await sb
@@ -57,42 +62,58 @@ export default defineEventHandler(async (event) => {
     .eq('is_active', true)
     .maybeSingle<PlanRow>()
 
-  if (planErr || !plan) throw createError({ statusCode: 400, statusMessage: 'Invalid plan' })
+  if (planErr || !plan) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid plan' })
+  }
 
-  // ✅ compute discounted amount on the server
   const amount_bdt = effectivePrice(plan)
 
-  // Create transaction id
   const tran_id = `IA-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
 
-  // Insert pending payment row
   const { error: payErr } = await sb.from('payments').insert({
     user_id: user.id,
     plan_code: plan.code,
-    amount_bdt, // ✅ discounted amount saved
+    amount_bdt,
     currency: 'BDT',
     provider: 'sslcommerz',
     tran_id,
     status: 'pending'
   })
-  if (payErr) throw createError({ statusCode: 500, statusMessage: payErr.message })
+
+  if (payErr) {
+    throw createError({ statusCode: 500, statusMessage: payErr.message })
+  }
 
   const isLive = process.env.SSLCZ_IS_LIVE === 'true'
-  const base = isLive ? 'https://securepay.sslcommerz.com' : 'https://sandbox.sslcommerz.com'
+  const base = isLive
+    ? 'https://securepay.sslcommerz.com'
+    : 'https://sandbox.sslcommerz.com'
 
-  const site = process.env.PUBLIC_SITE_URL
-  if (!site) throw createError({ statusCode: 500, statusMessage: 'Missing PUBLIC_SITE_URL' })
+  const site = String(process.env.PUBLIC_SITE_URL || '').trim().replace(/\/+$/, '')
+  if (!site) {
+    throw createError({ statusCode: 500, statusMessage: 'Missing PUBLIC_SITE_URL' })
+  }
 
+  const storeId = process.env.SSLCZ_STORE_ID
+  const storePasswd = process.env.SSLCZ_STORE_PASSWD
+
+  if (!storeId || !storePasswd) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Missing SSLCZ_STORE_ID or SSLCZ_STORE_PASSWD'
+    })
+  }
+
+  // Keep success page as the place where finalize.post.ts runs
   const success_url = `${site}/payment/success?tran_id=${encodeURIComponent(tran_id)}`
   const fail_url = `${site}/payment/fail?tran_id=${encodeURIComponent(tran_id)}`
   const cancel_url = `${site}/payment/cancel?tran_id=${encodeURIComponent(tran_id)}`
   const ipn_url = `${site}/api/payments/sslcommerz/ipn`
 
   const params = new URLSearchParams({
-    store_id: process.env.SSLCZ_STORE_ID!,
-    store_passwd: process.env.SSLCZ_STORE_PASSWD!,
+    store_id: storeId,
+    store_passwd: storePasswd,
 
-    // ✅ must match what you inserted to payments.amount_bdt
     total_amount: String(amount_bdt),
     currency: 'BDT',
     tran_id,
@@ -124,21 +145,66 @@ export default defineEventHandler(async (event) => {
     res = await $fetch(`${base}/gwprocess/v4/api.php`, {
       method: 'POST',
       body: params,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
     })
   } catch (e: any) {
-    throw createError({ statusCode: 502, statusMessage: e?.message || 'SSLCOMMERZ session request failed' })
+    await sb
+      .from('payments')
+      .update({
+        status: 'failed'
+      })
+      .eq('tran_id', tran_id)
+
+    throw createError({
+      statusCode: 502,
+      statusMessage: e?.message || 'SSLCOMMERZ session request failed'
+    })
   }
 
   console.log('[SSLCOMMERZ session response]', res)
 
   const gatewayUrl = res?.GatewayPageURL
+  const ssl_sessionkey = res?.sessionkey || null
+
   if (!gatewayUrl) {
-    const reason = res?.failedreason || res?.failedReason || res?.status || res?.message || 'No GatewayPageURL returned'
-    throw createError({ statusCode: 500, statusMessage: `Failed to create SSLCOMMERZ session: ${reason}` })
+    const reason =
+      res?.failedreason ||
+      res?.failedReason ||
+      res?.status ||
+      res?.message ||
+      'No GatewayPageURL returned'
+
+    await sb
+      .from('payments')
+      .update({
+        status: 'failed',
+        ssl_sessionkey
+      })
+      .eq('tran_id', tran_id)
+
+    throw createError({
+      statusCode: 500,
+      statusMessage: `Failed to create SSLCOMMERZ session: ${reason}`
+    })
   }
 
-  await sb.from('payments').update({ ssl_sessionkey: res?.sessionkey || null }).eq('tran_id', tran_id)
+  const { error: updErr } = await sb
+    .from('payments')
+    .update({
+      ssl_sessionkey
+    })
+    .eq('tran_id', tran_id)
 
-  return { ok: true, tran_id, gatewayUrl, amount_bdt }
+  if (updErr) {
+    throw createError({ statusCode: 500, statusMessage: updErr.message })
+  }
+
+  return {
+    ok: true,
+    tran_id,
+    gatewayUrl,
+    amount_bdt
+  }
 })
