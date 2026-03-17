@@ -50,7 +50,7 @@ import RouteLoader from '~/components/RouteLoader.vue'
 import LandingTournamentBanner from '~/components/ads/LandingTournamentBanner.vue'
 
 // Toggle this
-const isMaintenance = false
+const isMaintenance = true
 </script>
 
 <style scoped>
