@@ -38,6 +38,9 @@ type WinnerRow = {
   prize_label?: string | null
   prize_bdt?: number | null
   tournament_prize?: PrizeRelation | null
+  display_name?: string | null
+  avatar_url?: string | null
+  masked_phone?: string | null
 }
 
 type AssignedPrizeRow = {
@@ -58,6 +61,16 @@ type LbRow = {
   player_name: string
   score: number
   created_at: string
+  display_name?: string | null
+  avatar_url?: string | null
+  masked_phone?: string | null
+}
+
+type ProfileLite = {
+  user_id: string
+  display_name?: string | null
+  avatar_url?: string | null
+  phone?: string | null
 }
 
 const t = ref<AnyTournament | null>(null)
@@ -192,6 +205,9 @@ function rankChipClass(rank: number) {
   if (rank === 3) return 'border-orange-300/40 bg-orange-400/20 text-orange-700 dark:text-orange-100'
   return 'border-black/10 bg-black/5 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-white/90'
 }
+function normalizeUid(v: any) {
+  return String(v || '').trim()
+}
 
 /* ---------------- Status ---------------- */
 const effectiveStatus = computed<'scheduled' | 'live' | 'ended' | 'canceled'>(() => {
@@ -317,10 +333,6 @@ const promoYoutubeEmbedUrl = computed(() => {
 })
 
 /* ---------------- Issue report ---------------- */
-/**
- * নিজের WhatsApp নম্বর বসান, শুধু digits ফরম্যাটে।
- * Example: 8801XXXXXXXXX
- */
 const supportWhatsAppNumber = '8801329662037'
 
 const issueReportMessage = computed(() => {
@@ -416,6 +428,69 @@ function winnerPrizeText(w?: WinnerRow | null) {
   return String(w?.prize || w?.prize_label || w?.tournament_prize?.title || '').trim()
 }
 
+/* ---------------- Profiles ---------------- */
+const profileMap = ref<Record<string, { displayName: string; avatarUrl: string; phone: string }>>({})
+
+function avatarFor(uid?: string | null, fallbackAvatar?: string | null) {
+  const id = normalizeUid(uid)
+  if (id && profileMap.value[id]?.avatarUrl) return profileMap.value[id].avatarUrl
+  return String(fallbackAvatar || '').trim()
+}
+function phoneFor(uid?: string | null, fallbackMaskedPhone?: string | null) {
+  const id = normalizeUid(uid)
+  if (id && profileMap.value[id]?.phone) return profileMap.value[id].phone
+  return String(fallbackMaskedPhone || '').trim()
+}
+function displayNameForUid(uid?: string | null, fallbackDisplayName?: string | null, fallbackPlayerName?: string | null) {
+  const id = normalizeUid(uid)
+  if (id && profileMap.value[id]?.displayName) return profileMap.value[id].displayName
+  return safeName(fallbackDisplayName || fallbackPlayerName)
+}
+function onAvatarError(uid?: string | null) {
+  const id = normalizeUid(uid)
+  if (!id) return
+  if (!profileMap.value[id]) return
+  profileMap.value = {
+    ...profileMap.value,
+    [id]: {
+      ...profileMap.value[id],
+      avatarUrl: ''
+    }
+  }
+}
+
+async function fetchProfiles(ids: string[]) {
+  const cleanIds = Array.from(new Set(ids.map((x) => normalizeUid(x)).filter(Boolean)))
+  if (!cleanIds.length) return
+
+  try {
+    const { data, error } = await (supabase as any)
+      .from('profiles')
+      .select('user_id, display_name, avatar_url, phone')
+      .in('user_id', cleanIds)
+
+    if (error) throw error
+
+    const nextMap = { ...profileMap.value }
+
+    for (const row of (data || []) as ProfileLite[]) {
+      const uid = normalizeUid(row?.user_id)
+      if (!uid) continue
+
+      nextMap[uid] = {
+        displayName: String(row?.display_name || '').trim(),
+        avatarUrl: String(row?.avatar_url || '').trim(),
+        phone: maskPhone(row?.phone)
+      }
+    }
+
+    profileMap.value = nextMap
+  } catch {
+    // ignore profile hydration errors so page still works
+  }
+}
+
+/* ---------------- Winners + prizes ---------------- */
 const visiblePrizes = computed(() => {
   if (assignedPrizes.value.length) return assignedPrizes.value
 
@@ -463,72 +538,13 @@ async function loadWinners() {
     const arr = Array.isArray(res?.winners) ? (res.winners as WinnerRow[]) : []
     winners.value = arr
 
-    const ids = Array.from(new Set(arr.map((w) => w.user_id).filter(Boolean))) as string[]
+    const ids = Array.from(new Set(arr.map((w) => normalizeUid(w.user_id)).filter(Boolean))) as string[]
     if (ids.length) await fetchProfiles(ids)
   } catch (e: any) {
     winnersError.value = e?.data?.message || e?.message || 'বিজয়ীদের তথ্য লোড করা যায়নি'
     winners.value = []
   } finally {
     winnersPending.value = false
-  }
-}
-
-/* ---------------- Profiles ---------------- */
-const avatarMap = ref<Record<string, string>>({})
-const phoneMap = ref<Record<string, string>>({})
-
-function avatarFor(uid?: string | null) {
-  if (!uid) return ''
-  return avatarMap.value[uid] || ''
-}
-function phoneFor(uid?: string | null) {
-  if (!uid) return ''
-  return phoneMap.value[uid] || ''
-}
-function onAvatarError(uid?: string | null) {
-  if (!uid) return
-  avatarMap.value = { ...avatarMap.value, [uid]: '' }
-}
-
-async function fetchProfiles(ids: string[]) {
-  const attempts: Array<{
-    select: string
-    idKey: 'user_id' | 'id'
-    phoneKey: 'phone' | 'phone_number'
-  }> = [
-    { select: 'user_id, avatar_url, phone', idKey: 'user_id', phoneKey: 'phone' },
-    { select: 'user_id, avatar_url, phone_number', idKey: 'user_id', phoneKey: 'phone_number' },
-    { select: 'id, avatar_url, phone', idKey: 'id', phoneKey: 'phone' },
-    { select: 'id, avatar_url, phone_number', idKey: 'id', phoneKey: 'phone_number' }
-  ]
-
-  for (const a of attempts) {
-    try {
-      const { data, error } = await (supabase as any)
-        .from('profiles')
-        .select(a.select)
-        .in(a.idKey, ids)
-
-      if (error) throw error
-
-      const nextA: Record<string, string> = { ...avatarMap.value }
-      const nextP: Record<string, string> = { ...phoneMap.value }
-
-      for (const row of data || []) {
-        const uid = String(row?.[a.idKey] || '').trim()
-        if (!uid) continue
-        const av = String(row?.avatar_url || '').trim()
-        const ph = String(row?.[a.phoneKey] || '').trim()
-        if (av) nextA[uid] = av
-        if (ph) nextP[uid] = ph
-      }
-
-      avatarMap.value = nextA
-      phoneMap.value = nextP
-      return
-    } catch {
-      // continue
-    }
   }
 }
 
@@ -545,6 +561,9 @@ async function loadLeaderboard() {
     const res = await getLeaderboard(slug.value, 15)
     lb.value = (res?.rows || []) as LbRow[]
     lbUpdatedAt.value = Date.now()
+
+    const ids = Array.from(new Set(lb.value.map((r) => normalizeUid(r.user_id)).filter(Boolean))) as string[]
+    if (ids.length) await fetchProfiles(ids)
   } catch (e: any) {
     lbError.value = e?.data?.message || e?.message || 'লিডারবোর্ড লোড করা যায়নি'
     lb.value = []
@@ -555,6 +574,26 @@ async function loadLeaderboard() {
 await loadLeaderboard()
 
 const leaderboardPreview = computed(() => lb.value.slice(0, 15))
+
+function leaderboardName(r: LbRow) {
+  return displayNameForUid(r.user_id, r.display_name, r.player_name)
+}
+function leaderboardAvatar(r: LbRow) {
+  return avatarFor(r.user_id, r.avatar_url)
+}
+function leaderboardPhone(r: LbRow) {
+  return phoneFor(r.user_id, r.masked_phone)
+}
+function winnerName(w?: WinnerRow | null) {
+  if (!w) return 'Player'
+  return displayNameForUid(w.user_id, w.display_name, w.player_name)
+}
+function winnerAvatar(w?: WinnerRow | null) {
+  return avatarFor(w?.user_id, w?.avatar_url)
+}
+function winnerPhone(w?: WinnerRow | null) {
+  return phoneFor(w?.user_id, w?.masked_phone)
+}
 
 function lastUpdatedText() {
   const diff = Math.max(0, Date.now() - lbUpdatedAt.value)
@@ -730,7 +769,6 @@ const fullLeaderboardLink = computed(() => {
               </div>
             </div>
 
-            <!-- Mobile state card -->
             <div class="xl:hidden">
               <div
                 class="state-shell rounded-[26px] p-[1px] sm:rounded-[30px]"
@@ -908,7 +946,6 @@ const fullLeaderboardLink = computed(() => {
               </div>
             </div>
 
-            <!-- Mobile leaderboard: after prize list -->
             <div class="xl:hidden rounded-[24px] border border-black/10 bg-white p-4 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-6 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
               <div class="flex items-center justify-between gap-3">
                 <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">লিডারবোর্ড</h2>
@@ -928,7 +965,7 @@ const fullLeaderboardLink = computed(() => {
               <div v-else class="mt-4 space-y-2.5">
                 <div
                   v-for="(r, i) in leaderboardPreview"
-                  :key="`${r.player_name}-${r.created_at}-${i}`"
+                  :key="`${r.user_id || ''}-${r.player_name}-${r.created_at}-${i}`"
                   class="leader-row flex items-center justify-between gap-3 rounded-[16px] border border-black/10 bg-black/5 px-3 py-3 sm:rounded-[18px] sm:px-4 dark:border-white/10 dark:bg-white/5"
                   :class="i === 2 ? 'leader-row-active' : ''"
                 >
@@ -938,7 +975,7 @@ const fullLeaderboardLink = computed(() => {
                       <div class="text-sm text-black/65 dark:text-white/65">{{ toBnDigits(i + 1) }}</div>
                     </div>
                     <div class="truncate text-base font-medium text-slate-900 sm:text-xl dark:text-white">
-                      {{ safeName(r.player_name) }}
+                      {{ leaderboardName(r) }}
                     </div>
                   </div>
 
@@ -1033,25 +1070,25 @@ const fullLeaderboardLink = computed(() => {
                   <div class="mt-4 flex justify-center">
                     <div class="h-16 w-16 overflow-hidden rounded-full border border-black/10 bg-white dark:border-white/10 dark:bg-white/10">
                       <img
-                        v-if="avatarFor(winnerByRank(rank)?.user_id)"
-                        :src="avatarFor(winnerByRank(rank)?.user_id)"
+                        v-if="winnerAvatar(winnerByRank(rank))"
+                        :src="winnerAvatar(winnerByRank(rank))"
                         alt="avatar"
                         class="h-full w-full object-cover"
                         @error="onAvatarError(winnerByRank(rank)?.user_id)"
                       />
                       <div v-else class="grid h-full w-full place-items-center text-sm font-semibold text-slate-900 dark:text-white">
-                        {{ initials(winnerByRank(rank)?.player_name) }}
+                        {{ initials(winnerName(winnerByRank(rank))) }}
                       </div>
                     </div>
                   </div>
 
                   <div class="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
-                    {{ safeName(winnerByRank(rank)?.player_name) }}
+                    {{ winnerName(winnerByRank(rank)) }}
                   </div>
 
                   <div class="mt-1 text-xs text-black/55 dark:text-white/55">
                     ফোন:
-                    <b class="font-semibold text-slate-900 dark:text-white">{{ maskPhone(phoneFor(winnerByRank(rank)?.user_id)) }}</b>
+                    <b class="font-semibold text-slate-900 dark:text-white">{{ winnerPhone(winnerByRank(rank)) || '—' }}</b>
                   </div>
 
                   <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-black/10 bg-black/5 px-3 py-1.5 text-sm text-slate-900 dark:border-white/10 dark:bg-white/10 dark:text-white">
@@ -1066,7 +1103,6 @@ const fullLeaderboardLink = computed(() => {
               </div>
             </section>
 
-            <!-- Issue report section -->
             <section class="space-y-4">
               <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">সমস্যা রিপোর্ট</h2>
 
@@ -1106,7 +1142,6 @@ const fullLeaderboardLink = computed(() => {
               </div>
             </section>
 
-            <!-- Terms at bottom on mobile and desktop -->
             <div class="rounded-[24px] border border-black/10 bg-white p-4 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-6 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
               <h3 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">শর্তাবলী</h3>
 
@@ -1119,7 +1154,6 @@ const fullLeaderboardLink = computed(() => {
             </div>
           </div>
 
-          <!-- Desktop aside unchanged -->
           <aside class="hidden space-y-5 xl:sticky xl:top-6 xl:block xl:self-start xl:space-y-6">
             <div
               class="state-shell rounded-[26px] p-[1px] sm:rounded-[30px]"
@@ -1235,7 +1269,7 @@ const fullLeaderboardLink = computed(() => {
               <div v-else class="mt-4 space-y-2.5">
                 <div
                   v-for="(r, i) in leaderboardPreview"
-                  :key="`${r.player_name}-${r.created_at}-${i}`"
+                  :key="`${r.user_id || ''}-${r.player_name}-${r.created_at}-${i}`"
                   class="leader-row flex items-center justify-between gap-3 rounded-[16px] border border-black/10 bg-black/5 px-3 py-3 sm:rounded-[18px] sm:px-4 dark:border-white/10 dark:bg-white/5"
                   :class="i === 2 ? 'leader-row-active' : ''"
                 >
@@ -1245,7 +1279,7 @@ const fullLeaderboardLink = computed(() => {
                       <div class="text-sm text-black/65 dark:text-white/65">{{ toBnDigits(i + 1) }}</div>
                     </div>
                     <div class="truncate text-base font-medium text-slate-900 sm:text-xl dark:text-white">
-                      {{ safeName(r.player_name) }}
+                      {{ leaderboardName(r) }}
                     </div>
                   </div>
 

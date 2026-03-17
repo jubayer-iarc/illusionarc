@@ -8,7 +8,6 @@ useHead({ title: 'Leaderboard' })
 
 const route = useRoute()
 const router = useRouter()
-const supabase = useSupabaseClient()
 
 const { getLeaderboard: getTournamentLeaderboard } = useTournamentLeaderboard()
 const { list: listTournaments } = useTournaments()
@@ -58,13 +57,17 @@ const gameNameBySlug = computed(() => {
 
 /* ---------------- Shared time helpers ---------------- */
 const now = ref(Date.now())
-let timer: any = null
+let timer: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
-  timer = setInterval(() => (now.value = Date.now()), 1000)
+  timer = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
 })
 
-onBeforeUnmount(() => timer && clearInterval(timer))
+onBeforeUnmount(() => {
+  if (timer) clearInterval(timer)
+})
 
 function msToHMS(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -73,7 +76,11 @@ function msToHMS(ms: number) {
   const mm = Math.floor((total % 3600) / 60)
   const ss = total % 60
   const pad = (n: number) => String(n).padStart(2, '0')
-  return dd > 0 ? `${dd}d ${pad(hh)}:${pad(mm)}:${pad(ss)}` : hh > 0 ? `${hh}:${pad(mm)}:${pad(ss)}` : `${mm}:${pad(ss)}`
+  return dd > 0
+    ? `${dd}d ${pad(hh)}:${pad(mm)}:${pad(ss)}`
+    : hh > 0
+      ? `${hh}:${pad(mm)}:${pad(ss)}`
+      : `${mm}:${pad(ss)}`
 }
 
 function nextUtcMidnightMs() {
@@ -94,10 +101,14 @@ function nextUtcSaturdayStartMs() {
   return Date.UTC(y, m, day + daysUntilNextSat, 0, 0, 0, 0)
 }
 
-const resetAtMs = computed(() => (period.value === 'daily' ? nextUtcMidnightMs() : nextUtcSaturdayStartMs()))
+const resetAtMs = computed(() => (
+  period.value === 'daily' ? nextUtcMidnightMs() : nextUtcSaturdayStartMs()
+))
 const timeLeftMs = computed(() => resetAtMs.value - now.value)
 const timeLeftText = computed(() => msToHMS(timeLeftMs.value))
-const resetLabel = computed(() => (period.value === 'daily' ? 'Resets at 00:00 UTC' : 'Resets Saturday 00:00 UTC'))
+const resetLabel = computed(() => (
+  period.value === 'daily' ? 'Resets at 00:00 UTC' : 'Resets Saturday 00:00 UTC'
+))
 
 function fmtDate(ts?: string) {
   if (!ts) return ''
@@ -121,16 +132,17 @@ const arcadeLoading = ref(true)
 const arcadeError = ref<string | null>(null)
 
 type Row = {
+  id?: string
   userId?: string
   player: string
   score: number
   createdAt: string
+  displayName?: string
+  avatarUrl?: string
+  maskedPhone?: string
 }
-const rows = ref<Row[]>([])
 
-const avatarMap = ref<Record<string, string>>({})
-const phoneMap = ref<Record<string, string>>({})
-const displayNameMap = ref<Record<string, string>>({})
+const rows = ref<Row[]>([])
 
 function initials(name: string) {
   const s = String(name || '').trim()
@@ -142,75 +154,15 @@ function initials(name: string) {
 }
 
 function avatarFor(r: Row) {
-  const id = r.userId || ''
-  return id ? avatarMap.value[id] || '' : ''
+  return String(r.avatarUrl || '').trim()
 }
 
 function displayNameForArcade(r: Row) {
-  const id = String(r.userId || '').trim()
-  if (id && displayNameMap.value[id]) return displayNameMap.value[id]
-  return r.player
-}
-
-function maskPhone(raw?: string) {
-  const s = String(raw || '').trim().replace(/\s+/g, '')
-  if (!s) return ''
-  if (s.startsWith('+880') && s.length >= 14) return `0${s.slice(4, 7)}XXXXXXXX`
-  if (s.startsWith('880') && s.length >= 13) return `0${s.slice(3, 6)}XXXXXXXX`
-  if (s.startsWith('01') && s.length >= 11) return `${s.slice(0, 3)}XXXXXXXX`
-  const keep = Math.min(3, s.length)
-  return s.slice(0, keep) + 'X'.repeat(Math.max(0, s.length - keep))
+  return String(r.displayName || r.player || 'Player').trim()
 }
 
 function maskedPhoneFor(r: Row) {
-  const id = r.userId || ''
-  const p = id ? phoneMap.value[id] || '' : ''
-  return maskPhone(p)
-}
-
-async function loadProfilesByIds(ids: string[]) {
-  const cleanIds = Array.from(new Set(ids.map((x) => String(x || '').trim()).filter(Boolean)))
-  if (!cleanIds.length) return
-
-  try {
-    const { data, error } = await (supabase as any)
-      .from('profiles')
-      .select('user_id, avatar_url, phone, display_name')
-      .in('user_id', cleanIds)
-
-    if (error) {
-      console.warn('Profile fetch blocked:', error.message)
-      return
-    }
-
-    const aMap: Record<string, string> = { ...avatarMap.value }
-    const pMap: Record<string, string> = { ...phoneMap.value }
-    const nMap: Record<string, string> = { ...displayNameMap.value }
-
-    for (const p of data || []) {
-      const uid = String(p?.user_id || '').trim()
-      if (!uid) continue
-
-      const url = String(p?.avatar_url || '').trim()
-      const phone = String(p?.phone || '').trim()
-      const displayName = String(p?.display_name || '').trim()
-
-      if (url) aMap[uid] = url
-      if (phone) pMap[uid] = phone
-      if (displayName) nMap[uid] = displayName
-    }
-
-    avatarMap.value = aMap
-    phoneMap.value = pMap
-    displayNameMap.value = nMap
-  } catch (e) {
-    console.warn('Profile fetch failed:', e)
-  }
-}
-
-async function loadProfilesForRows(items: Row[]) {
-  const ids = items.map((r) => r.userId || '').filter(Boolean) as string[]
-  await loadProfilesByIds(ids)
+  return String(r.maskedPhone || '').trim()
 }
 
 async function loadArcade() {
@@ -232,7 +184,6 @@ async function loadArcade() {
 
     const items: Row[] = Array.isArray(res?.items) ? res.items : []
     rows.value = items
-    await loadProfilesForRows(items)
   } catch (e: any) {
     arcadeError.value = e?.data?.message || e?.message || 'Failed to load leaderboard.'
   } finally {
@@ -240,10 +191,14 @@ async function loadArcade() {
   }
 }
 
-watch([selected, period], async () => {
-  arcadePage.value = 1
-  await loadArcade()
-}, { immediate: true })
+watch(
+  [selected, period],
+  async () => {
+    arcadePage.value = 1
+    await loadArcade()
+  },
+  { immediate: true }
+)
 
 const top3 = computed(() => rows.value.slice(0, 3))
 const arcadeTotal = computed(() => rows.value.length)
@@ -265,7 +220,7 @@ function medal(i: number) {
 }
 
 function goWinners() {
-  navigateTo(`/arcade/winners`)
+  navigateTo('/arcade/winners')
 }
 
 /* =========================
@@ -290,6 +245,9 @@ type TournamentRow = {
   player_name: string
   score: number
   created_at: string
+  display_name?: string
+  avatar_url?: string
+  masked_phone?: string
 }
 
 const tournamentsLoading = ref(false)
@@ -345,25 +303,15 @@ function tournamentChipCountdown(t: TournamentLite) {
 }
 
 function tournamentAvatarFor(r: TournamentRow) {
-  const id = String(r.user_id || '').trim()
-  return id ? avatarMap.value[id] || '' : ''
+  return String(r.avatar_url || '').trim()
 }
 
 function displayNameForTournament(r: TournamentRow) {
-  const id = String(r.user_id || '').trim()
-  if (id && displayNameMap.value[id]) return displayNameMap.value[id]
-  return r.player_name
+  return String(r.display_name || r.player_name || 'Player').trim()
 }
 
 function maskedPhoneForTournament(r: TournamentRow) {
-  const id = String(r.user_id || '').trim()
-  const p = id ? phoneMap.value[id] || '' : ''
-  return maskPhone(p)
-}
-
-async function loadProfilesForTournamentRows(items: TournamentRow[]) {
-  const ids = items.map((r) => String(r.user_id || '').trim()).filter(Boolean)
-  await loadProfilesByIds(ids)
+  return String(r.masked_phone || '').trim()
 }
 
 async function loadTournaments() {
@@ -412,7 +360,6 @@ async function loadTournamentBoard() {
     const res: any = await getTournamentLeaderboard(selectedTournamentSlug.value, 200)
     const items: TournamentRow[] = Array.isArray(res?.rows) ? res.rows : []
     tournamentRows.value = items
-    await loadProfilesForTournamentRows(items)
   } catch (e: any) {
     tournamentRows.value = []
     tournamentError.value = e?.data?.message || e?.message || 'Failed to load tournament leaderboard.'
@@ -421,10 +368,14 @@ async function loadTournamentBoard() {
   }
 }
 
-watch(selectedTournamentSlug, async () => {
-  tournamentPage.value = 1
-  await loadTournamentBoard()
-}, { immediate: true })
+watch(
+  selectedTournamentSlug,
+  async () => {
+    tournamentPage.value = 1
+    await loadTournamentBoard()
+  },
+  { immediate: true }
+)
 
 watch(
   selected,
@@ -511,11 +462,11 @@ watch(
       <div>
         <h1 class="text-3xl font-semibold text-[var(--app-fg)]">Leaderboard</h1>
         <p class="mt-2 text-black/70 dark:text-white/70">
-          {{ gameNameBySlug[selected] || selected }} • Arcade & Tournament Rankings
+          {{ gameNameBySlug[selected] || selected }} • Arcade &amp; Tournament Rankings
         </p>
       </div>
 
-      <div class="flex flex-wrap gap-2 items-center justify-end">
+      <div class="flex flex-wrap items-center justify-end gap-2">
         <div class="flex flex-wrap gap-2">
           <UButton
             v-for="g in GAMES"
@@ -529,14 +480,14 @@ watch(
           </UButton>
         </div>
 
-        <div class="w-full md:w-auto flex flex-wrap gap-2 items-center justify-end">
-          <div class="inline-flex rounded-full border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-1 backdrop-blur">
+        <div class="flex w-full flex-wrap items-center justify-end gap-2 md:w-auto">
+          <div class="inline-flex rounded-full border border-black/10 bg-white/60 p-1 backdrop-blur dark:border-white/10 dark:bg-white/5">
             <button
               type="button"
-              class="px-3 py-1.5 rounded-full text-sm transition"
+              class="rounded-full px-3 py-1.5 text-sm transition"
               :class="period === 'daily'
-                ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white'
-                : 'text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white'"
+                ? 'bg-black/10 text-black dark:bg-white/10 dark:text-white'
+                : 'text-black/70 hover:text-black dark:text-white/70 dark:hover:text-white'"
               @click="period = 'daily'"
             >
               Daily
@@ -544,30 +495,30 @@ watch(
 
             <button
               type="button"
-              class="px-3 py-1.5 rounded-full text-sm transition"
+              class="rounded-full px-3 py-1.5 text-sm transition"
               :class="period === 'weekly'
-                ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white'
-                : 'text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white'"
+                ? 'bg-black/10 text-black dark:bg-white/10 dark:text-white'
+                : 'text-black/70 hover:text-black dark:text-white/70 dark:hover:text-white'"
               @click="period = 'weekly'"
             >
               Weekly
             </button>
           </div>
 
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 px-3 py-2 backdrop-blur">
+          <div class="rounded-2xl border border-black/10 bg-white/60 px-3 py-2 backdrop-blur dark:border-white/10 dark:bg-white/5">
             <div class="flex items-start gap-2">
-              <div class="mt-0.5 grid place-items-center h-8 w-8 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-black/30">
+              <div class="mt-0.5 grid h-8 w-8 place-items-center rounded-xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-black/30">
                 <UIcon name="i-heroicons-clock" class="h-4 w-4 opacity-80" />
               </div>
 
               <div class="min-w-0">
-                <div class="text-[11px] leading-4 text-black/60 dark:text-white/60 whitespace-nowrap">
+                <div class="whitespace-nowrap text-[11px] leading-4 text-black/60 dark:text-white/60">
                   {{ resetLabel }}
                 </div>
 
-                <div class="mt-0.5 text-sm font-semibold tabular-nums leading-5 whitespace-nowrap text-black dark:text-white">
+                <div class="mt-0.5 whitespace-nowrap text-sm font-semibold leading-5 tabular-nums text-black dark:text-white">
                   {{ timeLeftText }}
-                  <span class="text-black/60 dark:text-white/60 font-medium">left</span>
+                  <span class="font-medium text-black/60 dark:text-white/60">left</span>
                 </div>
               </div>
             </div>
@@ -584,7 +535,7 @@ watch(
       v-if="hasTournaments"
       id="tournament-leaderboard"
       ref="tournamentSectionRef"
-      class="mt-6 rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-4 sm:p-5"
+      class="mt-6 rounded-3xl border border-black/10 bg-white/70 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5 sm:p-5"
     >
       <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div class="min-w-0">
@@ -598,11 +549,11 @@ watch(
             <span>{{ liveTournament ? 'Live tournament available' : 'Tournament leaderboard available' }}</span>
           </div>
 
-          <h2 class="mt-3 text-xl sm:text-2xl font-semibold text-black dark:text-white">
+          <h2 class="mt-3 text-xl font-semibold text-black dark:text-white sm:text-2xl">
             Tournament Leaderboard
           </h2>
 
-          <p class="mt-1 text-sm text-black/70 dark:text-white/70 max-w-3xl">
+          <p class="mt-1 max-w-3xl text-sm text-black/70 dark:text-white/70">
             Tournament scores are separate from normal arcade scores. Choose a tournament below to view its ranking.
           </p>
 
@@ -616,7 +567,7 @@ watch(
           </div>
         </div>
 
-        <div class="flex flex-wrap gap-2 shrink-0">
+        <div class="shrink-0 flex flex-wrap gap-2">
           <UButton
             v-if="selectedTournament"
             variant="soft"
@@ -671,7 +622,7 @@ watch(
 
         <div
           v-if="selectedTournament"
-          class="mt-5 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-black/20 p-4"
+          class="mt-5 rounded-2xl border border-black/10 bg-black/5 p-4 dark:border-white/10 dark:bg-black/20"
         >
           <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div class="min-w-0">
@@ -703,11 +654,14 @@ watch(
           </div>
         </div>
 
-        <div v-if="!tournamentBoardLoading && !tournamentError && tournamentTop3.length" class="mt-5 grid gap-3 md:grid-cols-3">
+        <div
+          v-if="!tournamentBoardLoading && !tournamentError && tournamentTop3.length"
+          class="mt-5 grid gap-3 md:grid-cols-3"
+        >
           <div
             v-for="(r, i) in tournamentTop3"
             :key="`${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
-            class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-4"
+            class="rounded-3xl border border-black/10 bg-white/70 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5"
           >
             <div class="flex items-center justify-between">
               <div class="text-sm font-semibold text-black dark:text-white">
@@ -724,7 +678,7 @@ watch(
             </div>
 
             <div class="mt-3 flex items-center gap-3">
-              <div class="relative h-12 w-12 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+              <div class="relative h-12 w-12 overflow-hidden rounded-full border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
                 <img
                   v-if="tournamentAvatarFor(r)"
                   :src="tournamentAvatarFor(r)"
@@ -732,16 +686,19 @@ watch(
                   alt="avatar"
                   referrerpolicy="no-referrer"
                 />
-                <div v-else class="h-full w-full grid place-items-center text-sm font-semibold text-black/70 dark:text-white/70">
+                <div v-else class="grid h-full w-full place-items-center text-sm font-semibold text-black/70 dark:text-white/70">
                   {{ initials(displayNameForTournament(r)) }}
                 </div>
               </div>
 
               <div class="min-w-0">
-                <div class="font-semibold text-black dark:text-white truncate">
+                <div class="truncate font-semibold text-black dark:text-white">
                   {{ displayNameForTournament(r) }}
                 </div>
-                <div v-if="maskedPhoneForTournament(r)" class="mt-0.5 text-[11px] text-black/60 dark:text-white/60 truncate">
+                <div
+                  v-if="maskedPhoneForTournament(r)"
+                  class="mt-0.5 truncate text-[11px] text-black/60 dark:text-white/60"
+                >
                   {{ maskedPhoneForTournament(r) }}
                 </div>
                 <div class="text-xs text-black/60 dark:text-white/60">
@@ -757,7 +714,7 @@ watch(
           </div>
         </div>
 
-        <UCard class="mt-5 border border-black/10 dark:border-white/10 bg-white/80 dark:bg-white/5">
+        <UCard class="mt-5 border border-black/10 bg-white/80 dark:border-white/10 dark:bg-white/5">
           <template #header>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div class="font-semibold text-black dark:text-white">
@@ -765,7 +722,7 @@ watch(
               </div>
 
               <div class="flex items-center gap-2">
-                <div class="text-sm text-black/60 dark:text-white/60" v-if="tournamentBoardLoading">Loading…</div>
+                <div v-if="tournamentBoardLoading" class="text-sm text-black/60 dark:text-white/60">Loading…</div>
                 <select
                   v-model.number="tournamentPerPage"
                   class="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-black outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
@@ -788,11 +745,11 @@ watch(
               <div
                 v-for="(r, i) in pagedTournamentRows"
                 :key="`m-${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
-                class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4"
+                class="rounded-2xl border border-black/10 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5"
               >
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0 flex items-center gap-3">
-                    <div class="relative h-10 w-10 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-white dark:bg-black/20">
+                    <div class="relative h-10 w-10 overflow-hidden rounded-full border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
                       <img
                         v-if="tournamentAvatarFor(r)"
                         :src="tournamentAvatarFor(r)"
@@ -800,12 +757,12 @@ watch(
                         alt="avatar"
                         referrerpolicy="no-referrer"
                       />
-                      <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
+                      <div v-else class="grid h-full w-full place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
                         {{ initials(displayNameForTournament(r)) }}
                       </div>
                     </div>
                     <div class="min-w-0">
-                      <div class="font-semibold text-black dark:text-white truncate">{{ displayNameForTournament(r) }}</div>
+                      <div class="truncate font-semibold text-black dark:text-white">{{ displayNameForTournament(r) }}</div>
                       <div class="text-xs text-black/60 dark:text-white/60">
                         Rank #{{ (tournamentPage - 1) * tournamentPerPage + i + 1 }}
                         <span v-if="maskedPhoneForTournament(r)">• {{ maskedPhoneForTournament(r) }}</span>
@@ -828,10 +785,10 @@ watch(
             </div>
           </div>
 
-          <div v-if="!tournamentError" class="hidden md:block overflow-auto">
+          <div v-if="!tournamentError" class="hidden overflow-auto md:block">
             <table class="w-full text-sm">
               <thead class="text-black/60 dark:text-white/60">
-                <tr class="text-left border-b border-black/10 dark:border-white/10">
+                <tr class="border-b border-black/10 text-left dark:border-white/10">
                   <th class="py-3 pr-3">#</th>
                   <th class="py-3 pr-3">Player</th>
                   <th class="py-3 pr-3">Phone</th>
@@ -844,13 +801,15 @@ watch(
                 <tr
                   v-for="(r, i) in pagedTournamentRows"
                   :key="`${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
-                  class="border-b border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition"
+                  class="border-b border-black/10 transition hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
                 >
-                  <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ (tournamentPage - 1) * tournamentPerPage + i + 1 }}</td>
+                  <td class="py-3 pr-3 text-black/60 dark:text-white/60">
+                    {{ (tournamentPage - 1) * tournamentPerPage + i + 1 }}
+                  </td>
 
                   <td class="py-3 pr-3">
                     <div class="flex items-center gap-3">
-                      <div class="relative h-9 w-9 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+                      <div class="relative h-9 w-9 overflow-hidden rounded-full border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
                         <img
                           v-if="tournamentAvatarFor(r)"
                           :src="tournamentAvatarFor(r)"
@@ -858,23 +817,23 @@ watch(
                           alt="avatar"
                           referrerpolicy="no-referrer"
                         />
-                        <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
+                        <div v-else class="grid h-full w-full place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
                           {{ initials(displayNameForTournament(r)) }}
                         </div>
                       </div>
 
                       <div class="min-w-0">
-                        <div class="font-medium text-black dark:text-white truncate">
+                        <div class="truncate font-medium text-black dark:text-white">
                           {{ displayNameForTournament(r) }}
                         </div>
-                        <div class="text-[11px] text-black/50 dark:text-white/50 truncate">
+                        <div class="truncate text-[11px] text-black/50 dark:text-white/50">
                           {{ r.user_id ? 'Player' : 'Guest' }}
                         </div>
                       </div>
                     </div>
                   </td>
 
-                  <td class="py-3 pr-3 text-black/70 dark:text-white/70 tabular-nums">
+                  <td class="py-3 pr-3 tabular-nums text-black/70 dark:text-white/70">
                     <span v-if="maskedPhoneForTournament(r)">{{ maskedPhoneForTournament(r) }}</span>
                     <span v-else class="text-black/40 dark:text-white/40">—</span>
                   </td>
@@ -894,7 +853,7 @@ watch(
 
           <div
             v-if="tournamentTotal > 0"
-            class="flex flex-col gap-3 border-t border-black/10 dark:border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+            class="flex flex-col gap-3 border-t border-black/10 px-4 py-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between"
           >
             <div class="text-sm text-black/60 dark:text-white/60">
               Showing
@@ -926,7 +885,7 @@ watch(
       <div
         v-for="(r, i) in top3"
         :key="r.userId ?? `${r.player}_${r.score}_${r.createdAt}_${i}`"
-        class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-4"
+        class="rounded-3xl border border-black/10 bg-white/70 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5"
       >
         <div class="flex items-center justify-between">
           <div class="text-sm font-semibold text-black dark:text-white">
@@ -938,7 +897,7 @@ watch(
         </div>
 
         <div class="mt-3 flex items-center gap-3">
-          <div class="relative h-12 w-12 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+          <div class="relative h-12 w-12 overflow-hidden rounded-full border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
             <img
               v-if="avatarFor(r)"
               :src="avatarFor(r)"
@@ -946,17 +905,20 @@ watch(
               alt="avatar"
               referrerpolicy="no-referrer"
             />
-            <div v-else class="h-full w-full grid place-items-center text-sm font-semibold text-black/70 dark:text-white/70">
+            <div v-else class="grid h-full w-full place-items-center text-sm font-semibold text-black/70 dark:text-white/70">
               {{ initials(displayNameForArcade(r)) }}
             </div>
           </div>
 
           <div class="min-w-0">
-            <div class="font-semibold text-black dark:text-white truncate">
+            <div class="truncate font-semibold text-black dark:text-white">
               {{ displayNameForArcade(r) }}
             </div>
 
-            <div v-if="maskedPhoneFor(r)" class="mt-0.5 text-[11px] text-black/60 dark:text-white/60 truncate">
+            <div
+              v-if="maskedPhoneFor(r)"
+              class="mt-0.5 truncate text-[11px] text-black/60 dark:text-white/60"
+            >
               {{ maskedPhoneFor(r) }}
             </div>
 
@@ -973,7 +935,7 @@ watch(
       </div>
     </div>
 
-    <UCard class="mt-6 border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur">
+    <UCard class="mt-6 border border-black/10 bg-white/70 backdrop-blur dark:border-white/10 dark:bg-white/5">
       <template #header>
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="font-semibold text-black dark:text-white">
@@ -981,7 +943,7 @@ watch(
           </div>
 
           <div class="flex items-center gap-2">
-            <div class="text-sm text-black/60 dark:text-white/60" v-if="arcadeLoading">Loading…</div>
+            <div v-if="arcadeLoading" class="text-sm text-black/60 dark:text-white/60">Loading…</div>
             <select
               v-model.number="arcadePerPage"
               class="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-black outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
@@ -1004,11 +966,11 @@ watch(
           <div
             v-for="(r, i) in pagedArcadeRows"
             :key="`am-${r.userId ?? `${r.player}_${r.score}_${r.createdAt}_${i}`}`"
-            class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4"
+            class="rounded-2xl border border-black/10 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5"
           >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0 flex items-center gap-3">
-                <div class="relative h-10 w-10 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-white dark:bg-black/20">
+                <div class="relative h-10 w-10 overflow-hidden rounded-full border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
                   <img
                     v-if="avatarFor(r)"
                     :src="avatarFor(r)"
@@ -1016,13 +978,13 @@ watch(
                     alt="avatar"
                     referrerpolicy="no-referrer"
                   />
-                  <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
+                  <div v-else class="grid h-full w-full place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
                     {{ initials(displayNameForArcade(r)) }}
                   </div>
                 </div>
 
                 <div class="min-w-0">
-                  <div class="font-semibold text-black dark:text-white truncate">{{ displayNameForArcade(r) }}</div>
+                  <div class="truncate font-semibold text-black dark:text-white">{{ displayNameForArcade(r) }}</div>
                   <div class="text-xs text-black/60 dark:text-white/60">
                     Rank #{{ (arcadePage - 1) * arcadePerPage + i + 1 }}
                     <span v-if="maskedPhoneFor(r)">• {{ maskedPhoneFor(r) }}</span>
@@ -1047,10 +1009,10 @@ watch(
         </div>
       </div>
 
-      <div v-if="!arcadeError" class="hidden md:block overflow-auto">
+      <div v-if="!arcadeError" class="hidden overflow-auto md:block">
         <table class="w-full text-sm">
           <thead class="text-black/60 dark:text-white/60">
-            <tr class="text-left border-b border-black/10 dark:border-white/10">
+            <tr class="border-b border-black/10 text-left dark:border-white/10">
               <th class="py-3 pr-3">#</th>
               <th class="py-3 pr-3">Player</th>
               <th class="py-3 pr-3">Phone</th>
@@ -1063,13 +1025,15 @@ watch(
             <tr
               v-for="(r, i) in pagedArcadeRows"
               :key="r.userId ?? `${r.player}_${r.score}_${r.createdAt}_${i}`"
-              class="border-b border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition"
+              class="border-b border-black/10 transition hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
             >
-              <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ (arcadePage - 1) * arcadePerPage + i + 1 }}</td>
+              <td class="py-3 pr-3 text-black/60 dark:text-white/60">
+                {{ (arcadePage - 1) * arcadePerPage + i + 1 }}
+              </td>
 
               <td class="py-3 pr-3">
                 <div class="flex items-center gap-3">
-                  <div class="relative h-9 w-9 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+                  <div class="relative h-9 w-9 overflow-hidden rounded-full border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
                     <img
                       v-if="avatarFor(r)"
                       :src="avatarFor(r)"
@@ -1077,23 +1041,23 @@ watch(
                       alt="avatar"
                       referrerpolicy="no-referrer"
                     />
-                    <div v-else class="h-full w-full grid place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
+                    <div v-else class="grid h-full w-full place-items-center text-xs font-semibold text-black/70 dark:text-white/70">
                       {{ initials(displayNameForArcade(r)) }}
                     </div>
                   </div>
 
                   <div class="min-w-0">
-                    <div class="font-medium text-black dark:text-white truncate">
+                    <div class="truncate font-medium text-black dark:text-white">
                       {{ displayNameForArcade(r) }}
                     </div>
-                    <div class="text-[11px] text-black/50 dark:text-white/50 truncate">
+                    <div class="truncate text-[11px] text-black/50 dark:text-white/50">
                       {{ r.userId ? 'Player' : 'Guest' }}
                     </div>
                   </div>
                 </div>
               </td>
 
-              <td class="py-3 pr-3 text-black/70 dark:text-white/70 tabular-nums">
+              <td class="py-3 pr-3 tabular-nums text-black/70 dark:text-white/70">
                 <span v-if="maskedPhoneFor(r)">{{ maskedPhoneFor(r) }}</span>
                 <span v-else class="text-black/40 dark:text-white/40">—</span>
               </td>
@@ -1113,7 +1077,7 @@ watch(
 
       <div
         v-if="arcadeTotal > 0"
-        class="flex flex-col gap-3 border-t border-black/10 dark:border-white/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+        class="flex flex-col gap-3 border-t border-black/10 px-4 py-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between"
       >
         <div class="text-sm text-black/60 dark:text-white/60">
           Showing

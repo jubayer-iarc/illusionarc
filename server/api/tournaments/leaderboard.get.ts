@@ -1,5 +1,5 @@
 // server/api/tournaments/leaderboard.get.ts
-import { serverSupabaseClient, serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseClient } from '#supabase/server'
 import { createError, getQuery } from 'h3'
 
 function computeEffectiveStatus(t: any, nowMs = Date.now()) {
@@ -17,95 +17,151 @@ function computeEffectiveStatus(t: any, nowMs = Date.now()) {
   return 'scheduled'
 }
 
+function maskPhone(raw?: string | null) {
+  const s = String(raw || '').trim().replace(/\s+/g, '')
+  if (!s) return ''
+
+  if (s.startsWith('+880') && s.length >= 14) {
+    return `0${s.slice(4, 7)}XXXXXXXX`
+  }
+
+  if (s.startsWith('880') && s.length >= 13) {
+    return `0${s.slice(3, 6)}XXXXXXXX`
+  }
+
+  if (s.startsWith('01') && s.length >= 11) {
+    return `${s.slice(0, 3)}XXXXXXXX`
+  }
+
+  const keep = Math.min(3, s.length)
+  return s.slice(0, keep) + 'X'.repeat(Math.max(0, s.length - keep))
+}
+
 export default defineEventHandler(async (event) => {
-  const supabase = await serverSupabaseClient(event)
-  const adminDb = await serverSupabaseServiceRole(event)
+  try {
+    const supabase = await serverSupabaseClient(event)
 
-  const q = getQuery(event)
-  const slug = String(q.slug || '').trim()
-  const limit = Math.min(Math.max(Number(q.limit || 50), 1), 200)
+    const q = getQuery(event)
+    const slug = String(q.slug || '').trim()
 
-  if (!slug) {
-    throw createError({ statusCode: 400, statusMessage: 'Missing slug' })
-  }
+    const limitRaw = Number(q.limit || 50)
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(Math.floor(limitRaw), 1), 200)
+      : 50
 
-  let t: any = null
-  {
-    const { data, error } = await adminDb
-        .from('tournaments')
-        .select('id, slug, status, starts_at, ends_at, game_slug, title, finalized')
-        .eq('slug', slug)
-        .maybeSingle()
-
-    if (error) {
-      const fb = await supabase
-          .from('tournaments')
-          .select('id, slug, status, starts_at, ends_at, game_slug, title, finalized')
-          .eq('slug', slug)
-          .maybeSingle()
-
-      if (fb.error) {
-        throw createError({ statusCode: 500, statusMessage: fb.error.message })
-      }
-
-      t = fb.data
-    } else {
-      t = data
+    if (!slug) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Missing slug'
+      })
     }
-  }
 
-  if (!t?.id) {
-    return { tournament: null, rows: [] }
-  }
+    const { data: tournament, error: tournamentError } = await (supabase as any)
+      .from('tournaments')
+      .select('id, slug, status, starts_at, ends_at, game_slug, title, finalized')
+      .eq('slug', slug)
+      .maybeSingle()
 
-  const effective_status = computeEffectiveStatus(t)
-
-  let rows: any[] = []
-  {
-    const { data, error } = await adminDb
-        .from('tournament_scores')
-        .select('user_id, player_name, score, created_at')
-        .eq('tournament_id', t.id)
-        .order('score', { ascending: false })
-        .order('created_at', { ascending: true })
-        .limit(limit)
-
-    if (error) {
-      const fb = await supabase
-          .from('tournament_scores')
-          .select('user_id, player_name, score, created_at')
-          .eq('tournament_id', t.id)
-          .order('score', { ascending: false })
-          .order('created_at', { ascending: true })
-          .limit(limit)
-
-      if (fb.error) {
-        throw createError({ statusCode: 500, statusMessage: fb.error.message })
-      }
-
-      rows = fb.data || []
-    } else {
-      rows = data || []
+    if (tournamentError) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: tournamentError.message || 'Failed to load tournament'
+      })
     }
-  }
 
-  return {
-    tournament: {
-      id: t.id,
-      slug: t.slug,
-      title: t.title,
-      game_slug: t.game_slug,
-      starts_at: t.starts_at,
-      ends_at: t.ends_at,
-      status: t.status,
-      effective_status,
-      finalized: Boolean(t.finalized)
-    },
-    rows: (rows || []).map((r) => ({
-      user_id: r?.user_id || null,
-      player_name: String(r?.player_name || '').trim() || 'Player',
-      score: Number(r?.score || 0),
-      created_at: r?.created_at || null
-    }))
+    if (!tournament?.id) {
+      return {
+        tournament: null,
+        rows: []
+      }
+    }
+
+    const effective_status = computeEffectiveStatus(tournament)
+
+    const { data: scoreRows, error: rowsError } = await (supabase as any)
+      .from('tournament_scores')
+      .select('user_id, player_name, score, created_at')
+      .eq('tournament_id', tournament.id)
+      .order('score', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(limit)
+
+    if (rowsError) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: rowsError.message || 'Failed to load tournament leaderboard'
+      })
+    }
+
+    const rows = Array.isArray(scoreRows) ? scoreRows : []
+
+    const userIds = Array.from(
+      new Set(
+        rows
+          .map((r: any) => String(r?.user_id || '').trim())
+          .filter(Boolean)
+      )
+    )
+
+    let profileMap: Record<string, { display_name: string; avatar_url: string; masked_phone: string }> = {}
+
+    if (userIds.length > 0) {
+      const { data: profiles, error: profilesError } = await (supabase as any)
+        .from('profiles')
+        .select('user_id, display_name, avatar_url, phone')
+        .in('user_id', userIds)
+
+      if (!profilesError && Array.isArray(profiles)) {
+        profileMap = Object.fromEntries(
+          profiles.map((p: any) => [
+            String(p.user_id),
+            {
+              display_name: String(p.display_name || '').trim(),
+              avatar_url: String(p.avatar_url || '').trim(),
+              masked_phone: maskPhone(p.phone)
+            }
+          ])
+        )
+      }
+    }
+
+    return {
+      tournament: {
+        id: tournament.id,
+        slug: tournament.slug,
+        title: tournament.title,
+        game_slug: tournament.game_slug,
+        starts_at: tournament.starts_at,
+        ends_at: tournament.ends_at,
+        status: tournament.status,
+        effective_status,
+        finalized: Boolean(tournament.finalized)
+      },
+      rows: rows.map((r: any) => {
+        const uid = String(r?.user_id || '').trim()
+        const profile = uid ? profileMap[uid] : undefined
+
+        return {
+          user_id: r?.user_id || null,
+          player_name: String(r?.player_name || '').trim() || 'Player',
+          score: Number(r?.score || 0),
+          created_at: r?.created_at || null,
+          display_name: profile?.display_name || String(r?.player_name || '').trim() || 'Player',
+          avatar_url: profile?.avatar_url || '',
+          masked_phone: profile?.masked_phone || ''
+        }
+      })
+    }
+  } catch (e: any) {
+    const statusCode = Number(e?.statusCode) || 500
+    const statusMessage =
+      e?.statusMessage ||
+      e?.message ||
+      'Tournament leaderboard unavailable'
+
+    throw createError({
+      statusCode,
+      statusMessage
+    })
   }
 })
