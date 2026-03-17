@@ -1,25 +1,57 @@
-import { createError, readBody, readRawBody, getHeader } from 'h3'
+// server/api/payments/sslcommerz/ipn.post.ts
+import { createError, readBody, readRawBody, getHeader, setResponseStatus } from 'h3'
 import { createClient } from '@supabase/supabase-js'
 
-function serviceClient() {
-  return createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } }
-  )
+type PaymentLookupRow = {
+  user_id: string
+  plan_code: string
+  amount_bdt: number | null
+  currency: string | null
+  tran_id: string
+}
+
+function publicClient() {
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_KEY
+
+  if (!url || !key) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Missing SUPABASE_URL or SUPABASE_KEY'
+    })
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false }
+  })
 }
 
 async function readPayload(event: any) {
   const ct = String(getHeader(event, 'content-type') || '').toLowerCase()
+
   if (ct.includes('application/x-www-form-urlencoded')) {
-    const raw = (await readRawBody(event)) || ''
+    const raw = (await readRawBody(event, 'utf8')) || ''
     const sp = new URLSearchParams(raw)
     const obj: Record<string, any> = {}
     for (const [k, v] of sp.entries()) obj[k] = v
     return obj
   }
-  // fallback JSON
+
   return (await readBody(event)) || {}
+}
+
+function up(v: unknown) {
+  return String(v || '').trim().toUpperCase()
+}
+
+function num(v: unknown) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : NaN
+}
+
+function amountsMatch(a: number | null | undefined, b: number | null | undefined) {
+  if (a == null || b == null) return false
+  return Math.abs(Number(a) - Number(b)) < 0.000001
 }
 
 export default defineEventHandler(async (event) => {
@@ -27,70 +59,144 @@ export default defineEventHandler(async (event) => {
 
   const tran_id = String(payload?.tran_id || '').trim()
   const val_id = String(payload?.val_id || '').trim()
-  const ipnStatus = String(payload?.status || '').toUpperCase()
+  const ipnStatus = up(payload?.status)
 
-  if (!tran_id) throw createError({ statusCode: 400, statusMessage: 'Missing tran_id' })
-
-  const sb = serviceClient()
-
-  // Find payment
-  const { data: pay, error: payErr } = await sb.from('payments').select('*').eq('tran_id', tran_id).maybeSingle()
-  if (payErr || !pay) throw createError({ statusCode: 404, statusMessage: 'Payment not found' })
-
-  // Save IPN payload
-  await sb.from('payments').update({ raw_ipn: payload }).eq('tran_id', tran_id)
-
-  // If IPN says not valid, mark and exit early
-  if (ipnStatus && ipnStatus !== 'VALID' && ipnStatus !== 'VALIDATED') {
-    const newStatus = ipnStatus === 'CANCELLED' ? 'cancelled' : 'failed'
-    await sb.from('payments').update({ status: newStatus }).eq('tran_id', tran_id)
-    return { ok: true }
+  if (!tran_id) {
+    throw createError({ statusCode: 400, statusMessage: 'Missing tran_id' })
   }
 
-  if (!val_id) throw createError({ statusCode: 400, statusMessage: 'Missing val_id' })
+  const sb = publicClient()
+
+  // IMPORTANT:
+  // With publishable key, this select only works if your RLS allows this route to
+  // read the minimum fields needed for the transaction OR you expose a safe view/RPC.
+  const { data: pay, error: payErr } = await sb
+    .from('payments')
+    .select('user_id, plan_code, amount_bdt, currency, tran_id')
+    .eq('tran_id', tran_id)
+    .maybeSingle<PaymentLookupRow>()
+
+  if (payErr) {
+    throw createError({ statusCode: 500, statusMessage: payErr.message })
+  }
+
+  if (!pay) {
+    throw createError({ statusCode: 404, statusMessage: 'Payment not found' })
+  }
+
+  // If IPN itself says failed/cancelled, hand off to RPC to record it safely.
+  if (ipnStatus && ipnStatus !== 'VALID' && ipnStatus !== 'VALIDATED') {
+    const { error: rpcErr } = await sb.rpc('process_sslcommerz_ipn', {
+      p_tran_id: tran_id,
+      p_val_id: val_id || null,
+      p_user_id: pay.user_id,
+      p_plan_code: pay.plan_code,
+      p_amount_bdt: pay.amount_bdt,
+      p_currency: pay.currency || 'BDT',
+      p_raw_ipn: payload,
+      p_raw_validation: {
+        status: ipnStatus,
+        source: 'ipn_non_valid'
+      }
+    })
+
+    if (rpcErr) {
+      throw createError({ statusCode: 500, statusMessage: rpcErr.message })
+    }
+
+    setResponseStatus(event, 200)
+    return 'OK'
+  }
+
+  if (!val_id) {
+    throw createError({ statusCode: 400, statusMessage: 'Missing val_id' })
+  }
 
   const isLive = process.env.SSLCZ_IS_LIVE === 'true'
-  const base = isLive ? 'https://securepay.sslcommerz.com' : 'https://sandbox.sslcommerz.com'
+  const storeId = process.env.SSLCZ_STORE_ID
+  const storePass = process.env.SSLCZ_STORE_PASSWD
 
-  // Validate payment server-to-server
+  if (!storeId || !storePass) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Missing SSLCZ_STORE_ID or SSLCZ_STORE_PASSWD'
+    })
+  }
+
+  const base = isLive
+    ? 'https://securepay.sslcommerz.com'
+    : 'https://sandbox.sslcommerz.com'
+
   const validateUrl =
     `${base}/validator/api/validationserverAPI.php` +
     `?val_id=${encodeURIComponent(val_id)}` +
-    `&store_id=${encodeURIComponent(process.env.SSLCZ_STORE_ID!)}` +
-    `&store_passwd=${encodeURIComponent(process.env.SSLCZ_STORE_PASSWD!)}` +
+    `&store_id=${encodeURIComponent(storeId)}` +
+    `&store_passwd=${encodeURIComponent(storePass)}` +
     `&v=1&format=json`
 
-  const validation: any = await $fetch(validateUrl, { method: 'GET' })
-  const vStatus = String(validation?.status || '').toUpperCase()
-
-  // Save validation
-  await sb.from('payments')
-    .update({ raw_validation: validation, val_id })
-    .eq('tran_id', tran_id)
-
-  if (vStatus !== 'VALID' && vStatus !== 'VALIDATED') {
-    await sb.from('payments').update({ status: 'failed' }).eq('tran_id', tran_id)
-    return { ok: true }
+  let validation: any
+  try {
+    validation = await $fetch(validateUrl, { method: 'GET' })
+  } catch (e: any) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: e?.message || 'SSLCOMMERZ validation request failed'
+    })
   }
 
-  // Idempotent: avoid double extension
-  if (pay.applied) return { ok: true }
+  const vStatus = up(validation?.status)
+  const vTranId = String(validation?.tran_id || '').trim()
+  const vCurrency = up(validation?.currency)
+  const vAmount = num(validation?.amount)
 
-  // Mark paid
-  await sb.from('payments')
-    .update({ status: 'paid', paid_at: new Date().toISOString() })
-    .eq('tran_id', tran_id)
+  if (vStatus !== 'VALID' && vStatus !== 'VALIDATED') {
+    const { error: rpcErr } = await sb.rpc('process_sslcommerz_ipn', {
+      p_tran_id: tran_id,
+      p_val_id: val_id,
+      p_user_id: pay.user_id,
+      p_plan_code: pay.plan_code,
+      p_amount_bdt: pay.amount_bdt,
+      p_currency: pay.currency || 'BDT',
+      p_raw_ipn: payload,
+      p_raw_validation: validation
+    })
 
-  // ✅ Extend subscription time (stacking)
-  // You must have this RPC that works without auth cookie (takes user_id)
-  const { error: rpcErr } = await sb.rpc('activate_subscription_for_user', {
+    if (rpcErr) {
+      throw createError({ statusCode: 500, statusMessage: rpcErr.message })
+    }
+
+    setResponseStatus(event, 200)
+    return 'OK'
+  }
+
+  if (!vTranId || vTranId !== pay.tran_id) {
+    throw createError({ statusCode: 400, statusMessage: 'Validation tran_id mismatch' })
+  }
+
+  if (!amountsMatch(pay.amount_bdt, vAmount)) {
+    throw createError({ statusCode: 400, statusMessage: 'Validation amount mismatch' })
+  }
+
+  if (up(pay.currency) !== vCurrency) {
+    throw createError({ statusCode: 400, statusMessage: 'Validation currency mismatch' })
+  }
+
+  // Finalize all DB changes inside a single SECURITY DEFINER RPC.
+  const { error: rpcErr } = await sb.rpc('process_sslcommerz_ipn', {
+    p_tran_id: tran_id,
+    p_val_id: val_id,
     p_user_id: pay.user_id,
-    p_plan_code: pay.plan_code
+    p_plan_code: pay.plan_code,
+    p_amount_bdt: pay.amount_bdt,
+    p_currency: pay.currency || 'BDT',
+    p_raw_ipn: payload,
+    p_raw_validation: validation
   })
-  if (rpcErr) throw createError({ statusCode: 500, statusMessage: rpcErr.message })
 
-  // Mark applied
-  await sb.from('payments').update({ applied: true }).eq('tran_id', tran_id)
+  if (rpcErr) {
+    throw createError({ statusCode: 500, statusMessage: rpcErr.message })
+  }
 
-  return { ok: true }
+  setResponseStatus(event, 200)
+  return 'OK'
 })
