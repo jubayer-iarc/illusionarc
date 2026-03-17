@@ -98,7 +98,7 @@ export default defineNuxtConfig({
     resetTicketSecret: process.env.RESET_TICKET_SECRET,
     public: {
       supabaseUrl: process.env.SUPABASE_URL,
-      supabaseAnonKey: process.env.SUPABASE_KEY,
+      // supabaseAnonKey: process.env.SUPABASE_KEY,
       gaId: process.env.NUXT_PUBLIC_GA_ID
     }
   },
