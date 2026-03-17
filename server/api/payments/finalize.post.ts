@@ -8,7 +8,6 @@ type PaymentRow = {
   currency: string
   tran_id: string
   val_id: string | null
-  status: string
   applied: boolean
 }
 
@@ -37,7 +36,6 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event)
   const tran_id = String(body?.tran_id || '').trim()
-  const val_id_input = String(body?.val_id || '').trim()
 
   if (!tran_id) {
     throw createError({ statusCode: 400, statusMessage: 'Missing tran_id' })
@@ -60,12 +58,18 @@ export default defineEventHandler(async (event) => {
   }
 
   if (pay.applied) {
-    return { ok: true, alreadyApplied: true }
+    return { ok: true, alreadyApplied: true, active: true }
   }
 
-  const val_id = val_id_input || String(pay.val_id || '').trim()
+  const val_id = String(pay.val_id || '').trim()
+
+  // Key change: do not hard-fail if val_id is not there yet
   if (!val_id) {
-    throw createError({ statusCode: 400, statusMessage: 'Missing val_id' })
+    return {
+      ok: false,
+      pending: true,
+      message: 'Waiting for payment confirmation from gateway'
+    }
   }
 
   const storeId = process.env.SSLCZ_STORE_ID
@@ -113,7 +117,11 @@ export default defineEventHandler(async (event) => {
       p_raw_validation: validation
     })
 
-    throw createError({ statusCode: 400, statusMessage: 'Payment not valid' })
+    return {
+      ok: false,
+      pending: false,
+      message: 'Payment validation failed'
+    }
   }
 
   if (!vTranId || vTranId !== pay.tran_id) {
@@ -139,5 +147,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: rpcErr.message })
   }
 
-  return { ok: true, result: rpcData || null }
+  return {
+    ok: true,
+    active: true,
+    result: rpcData || null
+  }
 })

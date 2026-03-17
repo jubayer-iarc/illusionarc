@@ -5,11 +5,11 @@ const route = useRoute()
 const toast = useToast()
 
 const tranId = computed(() => String(route.query.tran_id || '').trim())
-const valId = computed(() => String(route.query.val_id || '').trim())
 
 const loading = ref(false)
 const finalizing = ref(false)
 const finalized = ref(false)
+const pendingMsg = ref<string | null>(null)
 const state = ref<any>(null)
 const errorMsg = ref<string | null>(null)
 
@@ -25,6 +25,13 @@ async function refresh() {
       headers: serverCookieHeaders(),
       cache: 'no-store'
     })
+  } catch (e: any) {
+    errorMsg.value = e?.data?.message || e?.message || 'স্ট্যাটাস রিফ্রেশ করা যায়নি'
+    toast.add({
+      title: 'রিফ্রেশ ব্যর্থ হয়েছে',
+      description: errorMsg.value,
+      color: 'error'
+    })
   } finally {
     loading.value = false
   }
@@ -38,17 +45,23 @@ async function finalizePayment() {
 
   finalizing.value = true
   errorMsg.value = null
+  pendingMsg.value = null
 
   try {
-    await $fetch('/api/payments/finalize', {
+    const res: any = await $fetch('/api/payments/finalize', {
       method: 'POST',
       credentials: 'include',
       headers: serverCookieHeaders(),
       body: {
-        tran_id: tranId.value,
-        val_id: valId.value || null
+        tran_id: tranId.value
       }
     })
+
+    if (res?.pending) {
+      pendingMsg.value =
+        'পেমেন্ট কনফার্মেশনের জন্য অপেক্ষা করা হচ্ছে। কিছুক্ষণ পরে আবার চেষ্টা করুন।'
+      return
+    }
 
     finalized.value = true
     toast.add({
@@ -108,6 +121,13 @@ onMounted(run)
       </div>
 
       <div
+        v-if="pendingMsg"
+        class="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm"
+      >
+        ⏳ {{ pendingMsg }}
+      </div>
+
+      <div
         v-if="errorMsg"
         class="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm"
       >
@@ -148,7 +168,10 @@ onMounted(run)
           <span class="font-medium">{{ state?.active ? 'হ্যাঁ' : 'না' }}</span>
         </div>
 
-        <div v-if="state?.subscription?.ends_at" class="mt-2 flex items-center justify-between">
+        <div
+          v-if="state?.subscription?.ends_at"
+          class="mt-2 flex items-center justify-between"
+        >
           <span class="opacity-70">শেষ হবে</span>
           <span class="font-medium">
             {{ new Date(state.subscription.ends_at).toLocaleString() }}
