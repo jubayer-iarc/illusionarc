@@ -40,6 +40,9 @@ export default defineNuxtConfig({
     registry: {
       googleAnalytics: {
         id: process.env.NUXT_PUBLIC_GA_ID
+      },
+      metaPixel: {
+        id: process.env.NUXT_PUBLIC_META_PIXEL_ID
       }
     }
   },
@@ -94,12 +97,12 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    // supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
     resetTicketSecret: process.env.RESET_TICKET_SECRET,
     public: {
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseAnonKey: process.env.SUPABASE_KEY,
-      gaId: process.env.NUXT_PUBLIC_GA_ID
+      gaId: process.env.NUXT_PUBLIC_GA_ID,
+      metaPixelId: process.env.NUXT_PUBLIC_META_PIXEL_ID
     }
   },
 
@@ -168,11 +171,11 @@ export default defineNuxtConfig({
         'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com'],
 
         'default-src': ["'self'"],
-        'connect-src': ["'self'", 'https:', 'wss:'],
-        'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+        'connect-src': ["'self'", 'https:', 'wss:', 'https://www.facebook.com', 'https://connect.facebook.net'],
+        'img-src': ["'self'", 'data:', 'blob:', 'https:', 'https://www.facebook.com'],
         'font-src': ["'self'", 'data:', 'https:'],
         'style-src': ["'self'", 'https:', "'unsafe-inline'"],
-        'script-src': ["'self'", "'nonce-{{nonce}}'", 'https://va.vercel-scripts.com', 'https://www.googletagmanager.com'],
+        'script-src': ["'self'", "'nonce-{{nonce}}'", 'https://va.vercel-scripts.com', 'https://www.googletagmanager.com', 'https://connect.facebook.net'],
         'script-src-attr': ["'none'"],
         'worker-src': ["'self'", 'blob:'],
         'frame-src': ["'self'", 'https:'],

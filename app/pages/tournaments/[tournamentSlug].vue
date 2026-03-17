@@ -16,6 +16,7 @@ const supabase = useSupabaseClient()
 const { bySlug } = useTournaments()
 const { getLeaderboard } = useTournamentLeaderboard()
 const { me } = useSubscription()
+const { proxy: metaPixel } = useScriptMetaPixel()
 
 type AnyTournament = any
 
@@ -295,13 +296,13 @@ const howToPlaySteps = computed<string[]>(() => {
 
 const termsList = computed(() => {
   return [
-    'গেমটি যখন লাইভ থাকবে, শুধুমাত্র তখনই খেলতে পারবেন।',
-    'অংশ নিতে ও স্কোর জমা দিতে অ্যাকাউন্টে লগ-ইন থাকতে হবে।',
-    'স্কোর জমা দিতে সক্রিয় সাবস্ক্রিপশন বাধ্যতামূলক।',
-    'লাইভ চলাকালীন যার স্কোর সবচেয়ে বেশি হবে, সে লিডারবোর্ডে ওপরে থাকবে।',
-    'শীর্ষ ২০ জন স্কোরার পুরস্কার পাবে।',
-    'লাইভ শুরুর আগে প্র্যাকটিস করা যাবে, কিন্তু লাইভ শুরু হলে টুর্নামেন্ট পেজ থেকে খেলতে হবে।',
-    'গেমের সময়সূচী: ১৫ মার্চ ১২:০১ মিনিট থেকে ২ এপ্রিল রাত ১১:৫৯ মিনিট পর্যন্ত।'
+    'গেমটি লাইভ থাকা অবস্থায় খেললেই স্কোর টুর্নামেন্টে গণনা হবে।',
+    'অংশ নিতে ও স্কোর জমা দিতে লগ-ইন এবং সক্রিয় সাবস্ক্রিপশন বাধ্যতামূলক।',
+    'একজন অংশগ্রহণকারী একটি অ্যাকাউন্ট ব্যবহার করতে পারবেন। একাধিক অ্যাকাউন্ট, অ্যাকাউন্ট শেয়ারিং, exploit, score manipulation বা অন্য কোনো অনিয়ম ধরা পড়লে সংশ্লিষ্ট অংশগ্রহণকারী অযোগ্য / ব্যান হতে পারেন।',
+    'লিডারবোর্ডে প্রদর্শিত স্কোর platform review ও verification-এর অধীন থাকবে। প্রয়োজনে সন্দেহজনক স্কোর বাতিল বা সমন্বয় করা হতে পারে।',
+    'সর্বোচ্চ বৈধ স্কোরধারী অংশগ্রহণকারীরা লিডারবোর্ডে উপরে থাকবেন এবং শীর্ষ ২০ জন পুরস্কারের জন্য বিবেচিত হবেন।',
+    'গেমের সময়সূচী: ১৫ মার্চ ১২:০১ মিনিট থেকে ২ এপ্রিল রাত ১১:৫৯ মিনিট পর্যন্ত।',
+    'পুরস্কার, ফলাফল ও ক্যাম্পেইনের সকল সিদ্ধান্ত verification, platform policy এবং প্রযোজ্য শর্তাবলীর ভিত্তিতে চূড়ান্তভাবে নির্ধারিত হবে।'
   ]
 })
 
@@ -603,6 +604,42 @@ function lastUpdatedText() {
   return `${toBnDigits(mins)} মিনিট আগে`
 }
 
+/* ---------------- Meta Pixel tracking ---------------- */
+function trackMeta(eventName: string, params: Record<string, any> = {}) {
+  if (!import.meta.client) return
+  try {
+    metaPixel?.fbq?.(eventName, {
+      content_type: 'tournament',
+      content_name: String(t.value?.title || slug.value || 'Tournament').trim(),
+      tournament_slug: String(t.value?.slug || slug.value || '').trim(),
+      tournament_status: effectiveStatus.value,
+      game_slug: getGameSlug(t.value),
+      game_name: String((game.value as any)?.name || '').trim(),
+      ...params
+    })
+  } catch {
+    // ignore tracking errors
+  }
+}
+
+const trackedTournamentViewKey = ref('')
+
+watch(
+  () => [slug.value, t.value?.id, t.value?.title, effectiveStatus.value] as const,
+  ([slugValue, tournamentId, tournamentTitle]) => {
+    if (!import.meta.client) return
+    const key = `${slugValue}:${String(tournamentId || '')}:${String(tournamentTitle || '')}`
+    if (!slugValue || !tournamentTitle || trackedTournamentViewKey.value === key) return
+    trackedTournamentViewKey.value = key
+
+    trackMeta('ViewContent', {
+      content_ids: [String(tournamentId || slugValue)],
+      content_category: 'Tournament Detail'
+    })
+  },
+  { immediate: true }
+)
+
 /* ---------------- Boundary refresh ---------------- */
 const lastBoundaryTick = ref<number>(0)
 
@@ -639,6 +676,7 @@ if (effectiveStatus.value === 'ended') {
 
 /* ---------------- Actions ---------------- */
 function playHard(tournamentSlug: string) {
+  trackMeta('TournamentPlayClick')
   if (!import.meta.client) return
   const url = `/tournaments/embed/${encodeURIComponent(tournamentSlug)}?boot=${Date.now()}`
   window.location.assign(url)
@@ -655,6 +693,32 @@ const fullLeaderboardLink = computed(() => {
   const tournamentSlug = String(t.value?.slug || slug.value || '').trim()
   return `/arcade/leaderboard?game=${encodeURIComponent(gameSlug)}&period=daily&tournament=${encodeURIComponent(tournamentSlug)}#tournament-leaderboard`
 })
+
+function trackSubscribeClick() {
+  trackMeta('Lead', {
+    source: 'tournament_subscription_cta'
+  })
+}
+
+function trackPracticeClick() {
+  trackMeta('TournamentPracticeClick')
+}
+
+function trackLeaderboardClick() {
+  trackMeta('TournamentLeaderboardClick')
+}
+
+function trackWhatsappReportClick() {
+  trackMeta('Contact', {
+    contact_channel: 'whatsapp'
+  })
+}
+
+function trackContactPageClick() {
+  trackMeta('Contact', {
+    contact_channel: 'contact_page'
+  })
+}
 </script>
 
 <template>
@@ -683,10 +747,23 @@ const fullLeaderboardLink = computed(() => {
           </NuxtLink>
 
           <div class="flex items-center gap-2">
-            <UButton v-if="user && sub && !sub.active" to="/subscribe" size="sm" class="!rounded-full">
+            <UButton
+              v-if="user && sub && !sub.active"
+              to="/subscribe"
+              size="sm"
+              class="!rounded-full"
+              @click="trackSubscribeClick"
+            >
               খেলতে সাবস্ক্রাইব করুন
             </UButton>
-            <UButton v-else-if="user" to="/subscribe" size="sm" variant="soft" class="!rounded-full">
+            <UButton
+              v-else-if="user"
+              to="/subscribe"
+              size="sm"
+              variant="soft"
+              class="!rounded-full"
+              @click="trackSubscribeClick"
+            >
               সাবস্ক্রিপশন
             </UButton>
           </div>
@@ -832,6 +909,7 @@ const fullLeaderboardLink = computed(() => {
                       size="xl"
                       class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
                       to="/subscribe"
+                      @click="trackSubscribeClick"
                     >
                       খেলতে সাবস্ক্রাইব করুন
                     </UButton>
@@ -854,6 +932,7 @@ const fullLeaderboardLink = computed(() => {
                       variant="solid"
                       color="primary"
                       class="practice-btn !rounded-[18px] min-h-[48px]"
+                      @click="trackPracticeClick"
                     >
                       প্র্যাকটিস করুন
                     </UButton>
@@ -1001,6 +1080,7 @@ const fullLeaderboardLink = computed(() => {
                   variant="soft"
                   block
                   class="!rounded-full"
+                  @click="trackLeaderboardClick"
                 >
                   View Full Leaderboard
                 </UButton>
@@ -1123,6 +1203,7 @@ const fullLeaderboardLink = computed(() => {
                       to="/contact"
                       size="lg"
                       class="!rounded-[18px] min-h-[48px]"
+                      @click="trackContactPageClick"
                     >
                       <UIcon name="i-heroicons-envelope" class="mr-2 h-5 w-5" />
                       Contact Page
@@ -1133,6 +1214,7 @@ const fullLeaderboardLink = computed(() => {
                       target="_blank"
                       rel="noopener noreferrer"
                       class="wa-report-btn inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95"
+                      @click="trackWhatsappReportClick"
                     >
                       <UIcon name="i-simple-icons-whatsapp" class="h-5 w-5" />
                       WhatsApp-এ রিপোর্ট করুন
@@ -1217,6 +1299,7 @@ const fullLeaderboardLink = computed(() => {
                     size="xl"
                     class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
                     to="/subscribe"
+                    @click="trackSubscribeClick"
                   >
                     খেলতে সাবস্ক্রাইব করুন
                   </UButton>
@@ -1239,6 +1322,7 @@ const fullLeaderboardLink = computed(() => {
                     variant="solid"
                     color="primary"
                     class="practice-btn !rounded-[18px] min-h-[48px]"
+                    @click="trackPracticeClick"
                   >
                     প্র্যাকটিস করুন
                   </UButton>
@@ -1305,6 +1389,7 @@ const fullLeaderboardLink = computed(() => {
                   variant="soft"
                   block
                   class="!rounded-full"
+                  @click="trackLeaderboardClick"
                 >
                   View Full Leaderboard
                 </UButton>
