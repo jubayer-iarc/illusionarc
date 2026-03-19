@@ -488,6 +488,7 @@ watch(isPlayable, (v, prev) => {
             </p>
           </div>
         </div>
+        
 
         <div v-else class="h-full w-full bg-black">
           <GamePlayer
