@@ -15,13 +15,11 @@
         </p>
 
         <p class="time">
-          আমরা আজ রাত <strong>১১টা</strong>র মধ্যে ফিরে আসব
+          আমরা আজ রাত<strong>১১টা </strong>র মধ্যে ফিরে আসব
         </p>
 
-        <!-- Animated Loader -->
         <div class="loader"></div>
 
-        <!-- Optional small note -->
         <p class="footer">
           আপনার ধৈর্যের জন্য ধন্যবাদ ❤️
         </p>
@@ -29,18 +27,21 @@
     </div>
 
     <!-- Normal App -->
-    <NuxtLayout v-else>
-      <NuxtPage />
-    </NuxtLayout>
+    <template v-else>
+      <BreakingNewsTicker />
 
-    <LandingTournamentBanner
-      v-if="!isMaintenance"
-      image="/img/banners/salamirush.jpg"
-      to="/tournaments/salami-rush-eid-tournament"
-      alt="Join the Salami Rush Eid Tournament and win amazing prizes!"
-      :enabled="true"
-      :show-only-on-home="false"
-    />
+      <NuxtLayout>
+        <NuxtPage />
+      </NuxtLayout>
+
+      <LandingTournamentBanner
+        image="/img/banners/salamirush.jpg"
+        to="/tournaments/salami-rush-eid-tournament"
+        alt="Join the Salami Rush Eid Tournament and win amazing prizes!"
+        :enabled="true"
+        :show-only-on-home="false"
+      />
+    </template>
   </UApp>
 </template>
 
@@ -48,13 +49,13 @@
 import { Analytics } from '@vercel/analytics/nuxt'
 import RouteLoader from '~/components/RouteLoader.vue'
 import LandingTournamentBanner from '~/components/ads/LandingTournamentBanner.vue'
+import BreakingNewsTicker from '~/components/BreakingNewsTicker.vue'
 
 // Toggle this
 const isMaintenance = false
 </script>
 
 <style scoped>
-/* Background */
 .maintenance {
   height: 100vh;
   display: flex;
@@ -65,7 +66,6 @@ const isMaintenance = false
   padding: 20px;
 }
 
-/* Glass Card */
 .card {
   backdrop-filter: blur(20px);
   background: rgba(255, 255, 255, 0.05);
@@ -79,14 +79,12 @@ const isMaintenance = false
   animation: fadeIn 0.8s ease;
 }
 
-/* Icon */
 .icon {
   font-size: 48px;
   margin-bottom: 10px;
   animation: bounce 1.5s infinite;
 }
 
-/* Text */
 h1 {
   font-size: 26px;
   margin-bottom: 8px;
@@ -102,7 +100,6 @@ h1 {
   margin-bottom: 20px;
 }
 
-/* Loader */
 .loader {
   width: 45px;
   height: 45px;
@@ -113,13 +110,11 @@ h1 {
   animation: spin 1s linear infinite;
 }
 
-/* Footer */
 .footer {
   font-size: 13px;
   opacity: 0.6;
 }
 
-/* Animations */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
