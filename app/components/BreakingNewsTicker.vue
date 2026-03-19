@@ -111,11 +111,11 @@ const notices: NoticeItem[] = [
 }
 
 .theme-yellow {
-  background: #eab308;
+  background: #de3d0c;
 }
 
 .theme-red {
-  background: #ef4444;
+  background: #ff0000;
 }
 
 .theme-green {
