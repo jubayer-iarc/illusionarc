@@ -49,7 +49,7 @@ const notices: NoticeItem[] = [
   {
     type: 'নোটিশ',
     themeClass: 'theme-green',
-    text: 'prize claim-এর জন্য payment invoice ও highest score gameplay screenshot সংরক্ষণ করুন।'
+    text: 'prize claim-এর জন্য payment invoice, highest score gameplay screenshot, screen-record সংরক্ষণ করুন।'
   },
   {
     type: 'আপডেট',
