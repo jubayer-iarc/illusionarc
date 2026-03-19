@@ -2,6 +2,8 @@
 import { readBody, createError } from 'h3'
 import { serverSupabaseClient } from '#supabase/server'
 
+type DeviceType = 'Mobile' | 'PC' | 'Emulator'
+
 export default defineEventHandler(async (event) => {
   const client = await serverSupabaseClient(event)
 
@@ -20,6 +22,14 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const tournamentSlug = String(body?.tournamentSlug || '').trim()
   const score = Number(body?.score)
+
+  const rawDeviceType = String(body?.deviceType || '').trim()
+  const deviceType: DeviceType =
+    rawDeviceType === 'Mobile' ||
+    rawDeviceType === 'PC' ||
+    rawDeviceType === 'Emulator'
+      ? rawDeviceType
+      : 'PC'
 
   if (!tournamentSlug) {
     throw createError({ statusCode: 400, statusMessage: 'Missing tournamentSlug' })
@@ -111,6 +121,7 @@ export default defineEventHandler(async (event) => {
         user_id: user.id,
         player_name: playerName,
         score,
+        device_type: deviceType,
         updated_at: new Date().toISOString()
       },
       { onConflict: 'tournament_id,user_id' }

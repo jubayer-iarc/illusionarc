@@ -22,6 +22,8 @@ const tournamentSlug = computed(() =>
 )
 
 type AnyTournament = any
+type DeviceType = 'Mobile' | 'PC' | 'Emulator'
+
 const t = ref<AnyTournament | null>(null)
 const loading = ref(true)
 const err = ref<string | null>(null)
@@ -33,6 +35,8 @@ const rootEl = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
 const fullscreenHistoryArmed = ref(false)
 const canUseFullscreen = ref(false)
+
+const deviceType = ref<DeviceType>('PC')
 
 /* ---------------- Helpers ---------------- */
 function getGameSlug(x: AnyTournament) {
@@ -95,6 +99,192 @@ function detectFullscreenSupport() {
       : true
 
   return !!requestFn && enabled
+}
+
+/* ---------------- Device Detection ---------------- */
+function getWebGLRendererInfo() {
+  let renderer = ''
+  let vendor = ''
+
+  try {
+    const canvas = document.createElement('canvas')
+    const gl =
+      (canvas.getContext('webgl') ||
+        canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null
+
+    if (!gl) return { renderer, vendor }
+
+    const ext = gl.getExtension('WEBGL_debug_renderer_info')
+    if (!ext) return { renderer, vendor }
+
+    renderer = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '')
+    vendor = String(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) || '')
+  } catch {}
+
+  return { renderer, vendor }
+}
+
+async function detectSensorSignal(): Promise<'real' | 'static' | 'unavailable' | 'not_checked'> {
+  if (typeof window === 'undefined') return 'not_checked'
+  if (typeof DeviceMotionEvent === 'undefined') return 'not_checked'
+
+  return await new Promise((resolve) => {
+    let count = 0
+    let changed = 0
+    const values: number[] = []
+
+    const handler = (e: DeviceMotionEvent) => {
+      count++
+
+      const a = e.accelerationIncludingGravity
+      const x = Number(a?.x ?? 0)
+      const y = Number(a?.y ?? 0)
+      const z = Number(a?.z ?? 0)
+
+      values.push(x, y, z)
+
+      if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01 || Math.abs(z) > 0.01) {
+        changed++
+      }
+
+      if (count >= 8) {
+        window.removeEventListener('devicemotion', handler as EventListener)
+
+        const mean = values.reduce((s, v) => s + v, 0) / (values.length || 1)
+        const variance =
+          values.reduce((s, v) => s + (v - mean) ** 2, 0) / (values.length || 1)
+
+        if (changed > 0 && variance > 0.0001) resolve('real')
+        else if (changed > 0) resolve('static')
+        else resolve('unavailable')
+      }
+    }
+
+    window.addEventListener('devicemotion', handler as EventListener)
+
+    setTimeout(() => {
+      window.removeEventListener('devicemotion', handler as EventListener)
+      if (count === 0) resolve('unavailable')
+      else resolve('static')
+    }, 1800)
+  })
+}
+
+async function detectDeviceType(): Promise<DeviceType> {
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') {
+    return 'PC'
+  }
+
+  const nav: any = navigator
+
+  const ua = String(nav.userAgent || '')
+  const platform = String(nav.platform || '')
+  const cores = Number(nav.hardwareConcurrency || 0) || 0
+  const memory = Number(nav.deviceMemory || 0) || 0
+  const touchPoints = Number(nav.maxTouchPoints || 0) || 0
+  const hasTouch = touchPoints > 0 || 'ontouchstart' in window
+  const hasMousePointer = !!window.matchMedia?.('(pointer: fine)').matches
+  const dpr = Number(window.devicePixelRatio || 1)
+
+  const isMobileUA =
+    /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(ua)
+  const isAndroidUA = /Android/i.test(ua)
+  const isIOSUA = /iPhone|iPad|iPod/i.test(ua)
+
+  let score = 0
+
+  // Old obvious emulator hints
+  if (/Emulator|sdk_gphone|sdk_phone|generic|Andy\b/i.test(ua)) {
+    score += 40
+  }
+
+  const { renderer } = getWebGLRendererInfo()
+
+  // Strong software-render / emulator-render hints
+  if (/SwiftShader|llvmpipe|softpipe|Microsoft Basic Render/i.test(renderer)) {
+    score += 40
+  }
+
+  // Desktop GPU while claiming mobile
+  if (
+    isMobileUA &&
+    /NVIDIA|AMD Radeon|GeForce|Intel.*Iris|Intel.*UHD|Intel.*HD Graphics/i.test(renderer)
+  ) {
+    score += 35
+  }
+
+  // Platform mismatch
+  if (isMobileUA && /Win32|Win64|WOW64|MacIntel|MacPPC/i.test(platform)) {
+    score += 30
+  }
+
+  if (isMobileUA && /Linux x86_64/i.test(platform)) {
+    score += 25
+  }
+
+  // Too many cores for typical phone profile
+  if (isMobileUA && cores > 8) {
+    score += 20
+  }
+  if (isMobileUA && cores > 16) {
+    score += 10
+  }
+
+  // High memory while claiming mobile
+  if (isMobileUA && memory >= 8) {
+    score += 15
+  }
+
+  // Mouse + touch on mobile UA
+  if (isMobileUA && hasTouch && hasMousePointer) {
+    score += 20
+  }
+
+  if (isMobileUA && !hasTouch) {
+    score += 15
+  }
+
+  // Devtools / emulation style gap
+  const outerInnerGap = Math.max(
+    Math.abs(window.outerWidth - window.innerWidth),
+    Math.abs(window.outerHeight - window.innerHeight)
+  )
+  if (outerInnerGap > 160) {
+    score += 20
+  }
+
+  // Screen equals viewport can be suspicious in emulation
+  const screenEqualsViewport =
+    window.screen.width === window.innerWidth &&
+    window.screen.height === window.innerHeight
+
+  if (isMobileUA && screenEqualsViewport) {
+    score += 10
+  }
+
+  // Many emulators stay DPR 1
+  if (isMobileUA && dpr === 1) {
+    score += 10
+  }
+
+  // Motion signal is weak only, not decisive
+  const sensorSignal = await detectSensorSignal()
+  if (isMobileUA && sensorSignal === 'static') {
+    score += 10
+  }
+  if (isMobileUA && sensorSignal === 'unavailable') {
+    score += 5
+  }
+
+  if (score >= 50) {
+    return 'Emulator'
+  }
+
+  if (isAndroidUA || isIOSUA || (isMobileUA && hasTouch)) {
+    return 'Mobile'
+  }
+
+  return 'PC'
 }
 
 /* ---------------- Time Logic ---------------- */
@@ -274,7 +464,11 @@ async function onScore(score: number) {
     await $fetch('/api/tournaments/submit', {
       method: 'POST',
       credentials: 'include',
-      body: { tournamentSlug: tournamentSlug.value, score }
+      body: {
+        tournamentSlug: tournamentSlug.value,
+        score,
+        deviceType: deviceType.value
+      }
     })
   } catch (e: any) {
     toast.add({
@@ -301,6 +495,8 @@ async function onPopState() {
 }
 
 onMounted(async () => {
+  deviceType.value = await detectDeviceType()
+
   tick = setInterval(() => {
     now.value = Date.now()
   }, 1000)
@@ -488,7 +684,6 @@ watch(isPlayable, (v, prev) => {
             </p>
           </div>
         </div>
-        
 
         <div v-else class="h-full w-full bg-black">
           <GamePlayer
