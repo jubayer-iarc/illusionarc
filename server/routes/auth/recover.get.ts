@@ -32,24 +32,11 @@ function signPayload(payload: ResetTicketPayload, secret: string) {
   return `${encoded}.${b64url(sig)}`
 }
 
-function getProjectRefFromUrl(url: string) {
-  try {
-    const host = new URL(url).hostname
-    return host.split('.')[0] || ''
-  } catch {
-    return ''
-  }
-}
-
-function clearSupabaseAuthCookies(event: Parameters<typeof defineEventHandler>[0], supabaseUrl: string) {
-  const ref = getProjectRefFromUrl(supabaseUrl)
-  if (!ref) return
-
+function clearResetCookies(event: Parameters<typeof defineEventHandler>[0]) {
   const names = [
-    `sb-${ref}-auth-token`,
-    `sb-${ref}-auth-token.0`,
-    `sb-${ref}-auth-token.1`,
-    `sb-${ref}-code-verifier`
+    'ia_reset_ticket',
+    'ia_reset_access',
+    'ia_reset_refresh'
   ]
 
   for (const name of names) {
@@ -97,9 +84,8 @@ export default defineEventHandler(async (event) => {
     type: 'recovery'
   })
 
-  if (error || !data.user?.id) {
-    clearSupabaseAuthCookies(event, supabaseUrl)
-    deleteCookie(event, 'ia_reset_ticket', { path: '/' })
+  if (error || !data.user?.id || !data.session?.access_token || !data.session?.refresh_token) {
+    clearResetCookies(event)
 
     return sendRedirect(
       event,
@@ -119,9 +105,25 @@ export default defineEventHandler(async (event) => {
 
   const ticket = signPayload(payload, resetTicketSecret)
 
-  clearSupabaseAuthCookies(event, supabaseUrl)
+  clearResetCookies(event)
 
   setCookie(event, 'ia_reset_ticket', ticket, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 10
+  })
+
+  setCookie(event, 'ia_reset_access', data.session.access_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 10
+  })
+
+  setCookie(event, 'ia_reset_refresh', data.session.refresh_token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

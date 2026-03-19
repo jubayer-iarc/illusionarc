@@ -44,8 +44,8 @@ function verifyTicket(token: string, secret: string): ResetTicketPayload | null 
     crypto.createHmac('sha256', secret).update(encoded).digest()
   )
 
-  const sigBuf = Buffer.from(sig)
-  const expBuf = Buffer.from(expected)
+  const sigBuf = b64urlToBuffer(sig)
+  const expBuf = b64urlToBuffer(expected)
 
   if (sigBuf.length !== expBuf.length) return null
   if (!crypto.timingSafeEqual(sigBuf, expBuf)) return null
@@ -53,6 +53,7 @@ function verifyTicket(token: string, secret: string): ResetTicketPayload | null 
   try {
     const payload = JSON.parse(b64urlToBuffer(encoded).toString('utf8')) as ResetTicketPayload
     const now = Math.floor(Date.now() / 1000)
+
     if (!payload?.sub || !payload?.exp || payload.exp < now) return null
     return payload
   } catch {
@@ -64,24 +65,11 @@ function isStrongEnough(password: string) {
   return String(password || '').length >= 6
 }
 
-function getProjectRefFromUrl(url: string) {
-  try {
-    const host = new URL(url).hostname
-    return host.split('.')[0] || ''
-  } catch {
-    return ''
-  }
-}
-
-function clearSupabaseAuthCookies(event: Parameters<typeof defineEventHandler>[0], supabaseUrl: string) {
-  const ref = getProjectRefFromUrl(supabaseUrl)
-  if (!ref) return
-
+function clearResetCookies(event: Parameters<typeof defineEventHandler>[0]) {
   const names = [
-    `sb-${ref}-auth-token`,
-    `sb-${ref}-auth-token.0`,
-    `sb-${ref}-auth-token.1`,
-    `sb-${ref}-code-verifier`
+    'ia_reset_ticket',
+    'ia_reset_access',
+    'ia_reset_refresh'
   ]
 
   for (const name of names) {
@@ -93,10 +81,10 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
 
   const supabaseUrl = config.public.supabaseUrl as string
-  const serviceRoleKey = config.supabaseServiceRoleKey as string
+  const supabaseAnonKey = config.public.supabaseAnonKey as string
   const resetTicketSecret = config.resetTicketSecret as string
 
-  if (!supabaseUrl || !serviceRoleKey || !resetTicketSecret) {
+  if (!supabaseUrl || !supabaseAnonKey || !resetTicketSecret) {
     throw createError({
       statusCode: 500,
       statusMessage: 'Server auth configuration is incomplete.'
@@ -122,11 +110,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const ticket = getCookie(event, 'ia_reset_ticket')
+  const accessToken = getCookie(event, 'ia_reset_access')
+  const refreshToken = getCookie(event, 'ia_reset_refresh')
+
   const payload = verifyTicket(ticket || '', resetTicketSecret)
 
-  if (!payload?.sub) {
-    deleteCookie(event, 'ia_reset_ticket', { path: '/' })
-    clearSupabaseAuthCookies(event, supabaseUrl)
+  if (!payload?.sub || !accessToken || !refreshToken) {
+    clearResetCookies(event)
 
     throw createError({
       statusCode: 401,
@@ -134,7 +124,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -142,7 +132,30 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  const { error } = await admin.auth.admin.updateUserById(payload.sub, {
+  const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken
+  })
+
+  if (sessionError || !sessionData.user?.id) {
+    clearResetCookies(event)
+
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Recovery session not found. Please open the reset link again.'
+    })
+  }
+
+  if (sessionData.user.id !== payload.sub) {
+    clearResetCookies(event)
+
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Reset session does not match the requested user.'
+    })
+  }
+
+  const { error } = await supabase.auth.updateUser({
     password
   })
 
@@ -153,8 +166,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  deleteCookie(event, 'ia_reset_ticket', { path: '/' })
-  clearSupabaseAuthCookies(event, supabaseUrl)
+  clearResetCookies(event)
 
   return {
     ok: true,
