@@ -27,16 +27,26 @@ const minHeight = computed(() => props.game.embed.minHeight ?? 520)
 const started = ref(false)
 const frameKey = ref(0)
 
+/* ---------------- score bridge guards ---------------- */
+const bestEmittedScore = ref<number>(-1)
+
+function resetScoreBridge() {
+  bestEmittedScore.value = -1
+}
+
 function start() {
+  resetScoreBridge()
   started.value = true
 }
+
 function stop() {
   started.value = false
 }
+
 function reload() {
-  // forces iframe remount
   started.value = true
   frameKey.value++
+  resetScoreBridge()
 }
 
 // Auto-start rules
@@ -51,7 +61,10 @@ const shouldAutoStart = computed(() => {
 watch(
   shouldAutoStart,
   (v) => {
-    if (v) started.value = true
+    if (v) {
+      started.value = true
+      resetScoreBridge()
+    }
   },
   { immediate: true }
 )
@@ -74,15 +87,41 @@ const emit = defineEmits<{
 
 function onMessage(e: MessageEvent) {
   if (e.origin !== window.location.origin) return
+
   const data = e.data
   if (!data || typeof data !== 'object') return
-  if ((data as any).type === 'SCORE' && typeof (data as any).score === 'number') {
-    emit('score', { score: (data as any).score, raw: data })
-  }
+
+  if ((data as any).type !== 'SCORE') return
+
+  const rawScore = Number((data as any).score)
+  if (!Number.isFinite(rawScore)) return
+
+  const score = Math.floor(rawScore)
+  if (score < 0) return
+
+  // Emit only when score improves
+  if (score <= bestEmittedScore.value) return
+
+  bestEmittedScore.value = score
+  emit('score', { score, raw: data })
 }
 
 onMounted(() => window.addEventListener('message', onMessage))
 onBeforeUnmount(() => window.removeEventListener('message', onMessage))
+
+watch(
+  () => props.game?.sourceUrl,
+  () => {
+    resetScoreBridge()
+  }
+)
+
+watch(
+  () => props.cacheKey,
+  () => {
+    resetScoreBridge()
+  }
+)
 
 // iframe src with cache-bust that changes when cacheKey changes
 const src = computed(() => {

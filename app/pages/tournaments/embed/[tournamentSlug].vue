@@ -38,6 +38,19 @@ const canUseFullscreen = ref(false)
 
 const deviceType = ref<DeviceType>('PC')
 
+/* ---------------- Safer Score Submit State ---------------- */
+const bestQueuedScore = ref(0)
+const bestSentScore = ref(0)
+const submitInFlight = ref(false)
+const lastSubmitErrorAt = ref(0)
+
+function resetScoreSubmitState() {
+  bestQueuedScore.value = 0
+  bestSentScore.value = 0
+  submitInFlight.value = false
+  lastSubmitErrorAt.value = 0
+}
+
 /* ---------------- Helpers ---------------- */
 function getGameSlug(x: AnyTournament) {
   return String(x?.game_slug ?? x?.gameSlug ?? '').trim()
@@ -193,19 +206,16 @@ async function detectDeviceType(): Promise<DeviceType> {
 
   let score = 0
 
-  // Old obvious emulator hints
   if (/Emulator|sdk_gphone|sdk_phone|generic|Andy\b/i.test(ua)) {
     score += 40
   }
 
   const { renderer } = getWebGLRendererInfo()
 
-  // Strong software-render / emulator-render hints
   if (/SwiftShader|llvmpipe|softpipe|Microsoft Basic Render/i.test(renderer)) {
     score += 40
   }
 
-  // Desktop GPU while claiming mobile
   if (
     isMobileUA &&
     /NVIDIA|AMD Radeon|GeForce|Intel.*Iris|Intel.*UHD|Intel.*HD Graphics/i.test(renderer)
@@ -213,7 +223,6 @@ async function detectDeviceType(): Promise<DeviceType> {
     score += 35
   }
 
-  // Platform mismatch
   if (isMobileUA && /Win32|Win64|WOW64|MacIntel|MacPPC/i.test(platform)) {
     score += 30
   }
@@ -222,7 +231,6 @@ async function detectDeviceType(): Promise<DeviceType> {
     score += 25
   }
 
-  // Too many cores for typical phone profile
   if (isMobileUA && cores > 8) {
     score += 20
   }
@@ -230,12 +238,10 @@ async function detectDeviceType(): Promise<DeviceType> {
     score += 10
   }
 
-  // High memory while claiming mobile
   if (isMobileUA && memory >= 8) {
     score += 15
   }
 
-  // Mouse + touch on mobile UA
   if (isMobileUA && hasTouch && hasMousePointer) {
     score += 20
   }
@@ -244,7 +250,6 @@ async function detectDeviceType(): Promise<DeviceType> {
     score += 15
   }
 
-  // Devtools / emulation style gap
   const outerInnerGap = Math.max(
     Math.abs(window.outerWidth - window.innerWidth),
     Math.abs(window.outerHeight - window.innerHeight)
@@ -253,7 +258,6 @@ async function detectDeviceType(): Promise<DeviceType> {
     score += 20
   }
 
-  // Screen equals viewport can be suspicious in emulation
   const screenEqualsViewport =
     window.screen.width === window.innerWidth &&
     window.screen.height === window.innerHeight
@@ -262,12 +266,10 @@ async function detectDeviceType(): Promise<DeviceType> {
     score += 10
   }
 
-  // Many emulators stay DPR 1
   if (isMobileUA && dpr === 1) {
     score += 10
   }
 
-  // Motion signal is weak only, not decisive
   const sensorSignal = await detectSensorSignal()
   if (isMobileUA && sensorSignal === 'static') {
     score += 10
@@ -371,7 +373,7 @@ async function enterFullscreen() {
 
     syncFullscreenState()
     armMobileBackExit()
-  } catch (e: any) {
+  } catch {
     toast.add({
       title: 'Fullscreen unavailable',
       description: 'Fullscreen is not supported on this browser/device.',
@@ -421,6 +423,7 @@ async function init() {
   loading.value = true
   err.value = null
   t.value = null
+  resetScoreSubmitState()
 
   try {
     const found = await loadTournamentSafe()
@@ -457,26 +460,69 @@ async function closePage() {
 }
 
 /* ---------------- Score Submit ---------------- */
-async function onScore(score: number) {
+async function flushBestScore() {
+  if (submitInFlight.value) return
   if (!isPlayable.value) return
+  if (bestQueuedScore.value <= bestSentScore.value) return
+
+  submitInFlight.value = true
 
   try {
-    await $fetch('/api/tournaments/submit', {
+    const scoreToSend = bestQueuedScore.value
+
+    const res = await $fetch<{
+      ok?: boolean
+      updated?: boolean
+      keptBest?: boolean
+      finalScore?: number
+    }>('/api/tournaments/submit', {
       method: 'POST',
       credentials: 'include',
       body: {
         tournamentSlug: tournamentSlug.value,
-        score,
+        score: scoreToSend,
         deviceType: deviceType.value
       }
     })
+
+    const finalScore = Number(res?.finalScore ?? scoreToSend)
+
+    bestSentScore.value = Math.max(
+      bestSentScore.value,
+      Number.isFinite(finalScore) ? finalScore : scoreToSend
+    )
+
+    if (bestQueuedScore.value > bestSentScore.value && isPlayable.value) {
+      submitInFlight.value = false
+      await flushBestScore()
+      return
+    }
   } catch (e: any) {
-    toast.add({
-      title: 'Score submit failed',
-      description: e?.data?.message || e?.message || 'Try again',
-      color: 'error'
-    })
+    const nowMs = Date.now()
+
+    if (nowMs - lastSubmitErrorAt.value > 2500) {
+      toast.add({
+        title: 'Score submit failed',
+        description: e?.data?.message || e?.message || 'Try again',
+        color: 'error'
+      })
+      lastSubmitErrorAt.value = nowMs
+    }
+  } finally {
+    submitInFlight.value = false
   }
+}
+
+async function onScore(score: number) {
+  if (!isPlayable.value) return
+  if (!Number.isFinite(score)) return
+
+  const normalizedScore = Math.floor(Number(score))
+  if (normalizedScore < 0) return
+  if (normalizedScore <= bestQueuedScore.value) return
+
+  bestQueuedScore.value = normalizedScore
+  await flushBestScore()
 }
 
 /* ---------------- Lifecycle ---------------- */
@@ -527,6 +573,7 @@ onBeforeUnmount(() => {
 watch(
   () => tournamentSlug.value,
   async () => {
+    resetScoreSubmitState()
     refreshPlayerMount()
     await init()
   }
@@ -534,7 +581,12 @@ watch(
 
 watch(isPlayable, (v, prev) => {
   if (!prev && v) {
+    resetScoreSubmitState()
     refreshPlayerMount()
+  }
+
+  if (prev && !v) {
+    submitInFlight.value = false
   }
 })
 </script>
@@ -644,7 +696,7 @@ watch(isPlayable, (v, prev) => {
           <div class="px-6 text-center">
             <div class="text-lg font-semibold">Loading…</div>
             <div class="mt-2 text-sm opacity-70">
-              Preparing tournament session
+              Preparing tournament
             </div>
           </div>
         </div>

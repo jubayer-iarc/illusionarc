@@ -4,6 +4,13 @@ import { serverSupabaseClient } from '#supabase/server'
 
 type DeviceType = 'Mobile' | 'PC' | 'Emulator'
 
+type SubmitTournamentScoreRow = {
+  ok: boolean
+  updated: boolean
+  kept_best: boolean
+  final_score: number
+}
+
 export default defineEventHandler(async (event) => {
   const client = await serverSupabaseClient(event)
 
@@ -32,10 +39,17 @@ export default defineEventHandler(async (event) => {
       : 'PC'
 
   if (!tournamentSlug) {
-    throw createError({ statusCode: 400, statusMessage: 'Missing tournamentSlug' })
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Missing tournamentSlug'
+    })
   }
-  if (!Number.isFinite(score) || score < 0) {
-    throw createError({ statusCode: 400, statusMessage: 'Invalid score' })
+
+  if (!Number.isFinite(score) || score < 0 || !Number.isInteger(score)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Invalid score'
+    })
   }
 
   /* ---------------- Subscription Gate ---------------- */
@@ -45,8 +59,12 @@ export default defineEventHandler(async (event) => {
   )
 
   if (subErr) {
-    throw createError({ statusCode: 500, statusMessage: subErr.message })
+    throw createError({
+      statusCode: 500,
+      statusMessage: subErr.message
+    })
   }
+
   if (!hasSub) {
     throw createError({
       statusCode: 402,
@@ -62,17 +80,30 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (tErr) {
-    throw createError({ statusCode: 500, statusMessage: tErr.message })
+    throw createError({
+      statusCode: 500,
+      statusMessage: tErr.message
+    })
   }
+
   if (!t) {
-    throw createError({ statusCode: 404, statusMessage: 'Tournament not found' })
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Tournament not found'
+    })
   }
 
   const now = Date.now()
   const startsAt = new Date(t.starts_at).getTime()
   const endsAt = new Date(t.ends_at).getTime()
 
-  if (t.status !== 'live' || now < startsAt || now > endsAt) {
+  if (
+    t.status !== 'live' ||
+    !Number.isFinite(startsAt) ||
+    !Number.isFinite(endsAt) ||
+    now < startsAt ||
+    now >= endsAt
+  ) {
     throw createError({
       statusCode: 403,
       statusMessage: 'Tournament is not live'
@@ -87,53 +118,48 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (pErr) {
-    throw createError({ statusCode: 500, statusMessage: pErr.message })
+    throw createError({
+      statusCode: 500,
+      statusMessage: pErr.message
+    })
   }
 
-  const playerName = String(profile?.display_name || 'Player')
+  const playerName = String(profile?.display_name || 'Player').trim() || 'Player'
 
-  /* ---------------- Best-Score Logic ---------------- */
-  const { data: existing, error: eErr } = await client
-    .from('tournament_scores')
-    .select('id, score')
-    .eq('tournament_id', t.id)
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (eErr) {
-    throw createError({ statusCode: 500, statusMessage: eErr.message })
-  }
-
-  // Keep best score only
-  if (existing && Number(existing.score) >= score) {
-    return {
-      ok: true,
-      updated: false,
-      keptBest: true
+  /* ---------------- Atomic Best-Score Save ---------------- */
+  const { data: rpcData, error: rpcErr } = await client.rpc(
+    'submit_tournament_score',
+    {
+      p_tournament_id: t.id,
+      p_user_id: user.id,
+      p_player_name: playerName,
+      p_score: score,
+      p_device_type: deviceType
     }
+  )
+
+  if (rpcErr) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: rpcErr.message
+    })
   }
 
-  const { error: upErr } = await client
-    .from('tournament_scores')
-    .upsert(
-      {
-        tournament_id: t.id,
-        user_id: user.id,
-        player_name: playerName,
-        score,
-        device_type: deviceType,
-        updated_at: new Date().toISOString()
-      },
-      { onConflict: 'tournament_id,user_id' }
-    )
+  const row = Array.isArray(rpcData)
+    ? (rpcData[0] as SubmitTournamentScoreRow | undefined)
+    : (rpcData as SubmitTournamentScoreRow | null)
 
-  if (upErr) {
-    throw createError({ statusCode: 500, statusMessage: upErr.message })
+  if (!row) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Score save failed'
+    })
   }
 
   return {
-    ok: true,
-    updated: true,
-    keptBest: false
+    ok: row.ok === true,
+    updated: row.updated === true,
+    keptBest: row.kept_best === true,
+    finalScore: Number(row.final_score || 0)
   }
 })
