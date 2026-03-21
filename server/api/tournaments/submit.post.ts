@@ -27,8 +27,11 @@ export default defineEventHandler(async (event) => {
 
   /* ---------------- Body ---------------- */
   const body = await readBody(event)
+
   const tournamentSlug = String(body?.tournamentSlug || '').trim()
   const score = Number(body?.score)
+  const sessionId = String(body?.sessionId || '').trim()
+  const sessionNonce = String(body?.sessionNonce || '').trim()
 
   const rawDeviceType = String(body?.deviceType || '').trim()
   const deviceType: DeviceType =
@@ -42,6 +45,20 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: 'Missing tournamentSlug'
+    })
+  }
+
+  if (!sessionId) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Missing sessionId'
+    })
+  }
+
+  if (!sessionNonce) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Missing sessionNonce'
     })
   }
 
@@ -93,7 +110,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const now = Date.now()
+  const nowMs = Date.now()
   const startsAt = new Date(t.starts_at).getTime()
   const endsAt = new Date(t.ends_at).getTime()
 
@@ -101,12 +118,135 @@ export default defineEventHandler(async (event) => {
     t.status !== 'live' ||
     !Number.isFinite(startsAt) ||
     !Number.isFinite(endsAt) ||
-    now < startsAt ||
-    now >= endsAt
+    nowMs < startsAt ||
+    nowMs >= endsAt
   ) {
     throw createError({
       statusCode: 403,
       statusMessage: 'Tournament is not live'
+    })
+  }
+
+  /* ---------------- Session Validation ---------------- */
+  const { data: session, error: sErr } = await client
+    .from('tournament_run_sessions')
+    .select(
+      'id, tournament_id, user_id, status, started_at, created_at, expires_at, used_at, session_nonce, device_type'
+    )
+    .eq('id', sessionId)
+    .eq('user_id', user.id)
+    .eq('tournament_id', t.id)
+    .maybeSingle()
+
+  if (sErr) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: sErr.message
+    })
+  }
+
+  if (!session) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Invalid session'
+    })
+  }
+
+  if (String(session.session_nonce || '') !== sessionNonce) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Invalid session nonce'
+    })
+  }
+
+  if (session.status !== 'active') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Session is not active'
+    })
+  }
+
+  const sessionStartedAt = new Date(session.started_at).getTime()
+  const sessionExpiresAt = session.expires_at
+    ? new Date(session.expires_at).getTime()
+    : 0
+
+  if (!Number.isFinite(sessionStartedAt)) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Invalid session start time'
+    })
+  }
+
+  if (
+    sessionExpiresAt &&
+    Number.isFinite(sessionExpiresAt) &&
+    nowMs >= sessionExpiresAt
+  ) {
+    await client
+      .from('tournament_run_sessions')
+      .update({
+        status: 'expired',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', session.id)
+
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Session expired'
+    })
+  }
+
+  if (session.used_at) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Session already used'
+    })
+  }
+
+  if (session.device_type && session.device_type !== deviceType) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Device type mismatch'
+    })
+  }
+
+  /* ---------------- Reject older/replaced sessions ---------------- */
+  const compareCreatedAt =
+    String(session.created_at || session.started_at || '').trim()
+
+  const { data: newerSession, error: newerErr } = await client
+    .from('tournament_run_sessions')
+    .select('id, created_at, status')
+    .eq('tournament_id', t.id)
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .neq('id', session.id)
+    .gt('created_at', compareCreatedAt)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (newerErr) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: newerErr.message
+    })
+  }
+
+  if (newerSession) {
+    await client
+      .from('tournament_run_sessions')
+      .update({
+        status: 'rejected',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', session.id)
+      .eq('status', 'active')
+
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'This run was replaced by a newer session'
     })
   }
 
@@ -124,7 +264,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const playerName = String(profile?.display_name || 'Player').trim() || 'Player'
+  const playerName =
+    String(profile?.display_name || 'Player').trim() || 'Player'
 
   /* ---------------- Atomic Best-Score Save ---------------- */
   const { data: rpcData, error: rpcErr } = await client.rpc(
@@ -134,7 +275,8 @@ export default defineEventHandler(async (event) => {
       p_user_id: user.id,
       p_player_name: playerName,
       p_score: score,
-      p_device_type: deviceType
+      p_device_type: deviceType,
+      p_session_id: session.id
     }
   )
 
@@ -153,6 +295,27 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 500,
       statusMessage: 'Score save failed'
+    })
+  }
+
+  /* ---------------- Close session after submit ---------------- */
+  const nowIso = new Date().toISOString()
+
+  const { error: closeErr } = await client
+    .from('tournament_run_sessions')
+    .update({
+      status: 'finished',
+      used_at: nowIso,
+      updated_at: nowIso
+    })
+    .eq('id', session.id)
+    .eq('status', 'active')
+    .is('used_at', null)
+
+  if (closeErr) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: closeErr.message
     })
   }
 

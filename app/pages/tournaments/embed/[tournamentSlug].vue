@@ -1,4 +1,3 @@
-<!-- app/pages/tournaments/embed/[tournamentSlug].vue -->
 <script setup lang="ts">
 import { GAMES } from '~/data/games'
 import { TOURNAMENTS as FALLBACK } from '~/data/tournaments'
@@ -14,7 +13,6 @@ definePageMeta({
 
 const route = useRoute()
 const toast = useToast()
-
 const { bySlug } = useTournaments()
 
 const tournamentSlug = computed(() =>
@@ -23,6 +21,61 @@ const tournamentSlug = computed(() =>
 
 type AnyTournament = any
 type DeviceType = 'Mobile' | 'PC' | 'Emulator'
+
+type StartSessionResponse = {
+  ok: boolean
+  sessionId: string
+  sessionNonce: string
+  startedAt: string
+  expiresAt: string
+  status: string
+  wsTicket: string
+  wsTicketExp: number
+}
+
+type WsServerMessage =
+  | {
+      type: 'WELCOME'
+      sessionId?: string
+      message?: string
+    }
+  | {
+      type: 'HELLO_ACK'
+      ok?: boolean
+      sessionId?: string
+      tournamentSlug?: string
+      serverTime?: number
+      ticketExp?: number
+    }
+  | {
+      type: 'PONG'
+      ts?: number
+    }
+  | {
+      type: 'KEEPALIVE_ACK'
+      ts?: number
+    }
+  | {
+      type: 'RUN_EVENT_ACK'
+      eventType?: string
+      value?: number
+      ts?: number
+    }
+  | {
+      type: 'FINISH_ACK'
+      ts?: number
+    }
+  | {
+      type: 'ERROR'
+      code?: string
+      message?: string
+    }
+
+type RunEventPayload = {
+  eventType: string
+  value: number
+  raw?: any
+}
 
 const t = ref<AnyTournament | null>(null)
 const loading = ref(true)
@@ -35,14 +88,210 @@ const rootEl = ref<HTMLElement | null>(null)
 const isFullscreen = ref(false)
 const fullscreenHistoryArmed = ref(false)
 const canUseFullscreen = ref(false)
-
 const deviceType = ref<DeviceType>('PC')
 
-/* ---------------- Safer Score Submit State ---------------- */
+/* ---------------- Session State ---------------- */
+const sessionLoading = ref(false)
+const sessionId = ref('')
+const sessionNonce = ref('')
+const sessionStartedAt = ref('')
+const sessionExpiresAt = ref('')
+const wsTicket = ref('')
+const wsTicketExp = ref(0)
+
+function resetSessionState() {
+  sessionLoading.value = false
+  sessionId.value = ''
+  sessionNonce.value = ''
+  sessionStartedAt.value = ''
+  sessionExpiresAt.value = ''
+  wsTicket.value = ''
+  wsTicketExp.value = 0
+}
+
+/* ---------------- WebSocket State ---------------- */
+const ws = ref<WebSocket | null>(null)
+const wsConnected = ref(false)
+const wsAuthed = ref(false)
+const wsLastPongAt = ref(0)
+const wsLastRunEventAt = ref(0)
+const wsLastRunEventAckAt = ref(0)
+const wsClosingIntentional = ref(false)
+
+let wsPingTimer: ReturnType<typeof setInterval> | null = null
+let wsKeepAliveTimer: ReturnType<typeof setInterval> | null = null
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+function resetWsFlags() {
+  wsConnected.value = false
+  wsAuthed.value = false
+  wsLastPongAt.value = 0
+  wsLastRunEventAt.value = 0
+  wsLastRunEventAckAt.value = 0
+}
+
+function clearWsTimers() {
+  if (wsPingTimer) {
+    clearInterval(wsPingTimer)
+    wsPingTimer = null
+  }
+  if (wsKeepAliveTimer) {
+    clearInterval(wsKeepAliveTimer)
+    wsKeepAliveTimer = null
+  }
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = null
+  }
+}
+
+function cleanupWebSocket() {
+  clearWsTimers()
+  resetWsFlags()
+  wsClosingIntentional.value = true
+
+  try {
+    ws.value?.close()
+  } catch {}
+
+  ws.value = null
+
+  setTimeout(() => {
+    wsClosingIntentional.value = false
+  }, 0)
+}
+
+function getWsUrl() {
+  if (typeof window === 'undefined' || !sessionId.value) return ''
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}/ws/tournament/${sessionId.value}`
+}
+
+function scheduleWsReconnect() {
+  if (!isPlayable.value || !sessionReady.value) return
+  if (wsReconnectTimer) return
+
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null
+    connectTournamentSocket()
+  }, 2000)
+}
+
+function sendWsJson(payload: Record<string, any>) {
+  if (!ws.value) return false
+  if (ws.value.readyState !== WebSocket.OPEN) return false
+  if (!wsAuthed.value) return false
+
+  try {
+    ws.value.send(JSON.stringify(payload))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function connectTournamentSocket() {
+  if (typeof window === 'undefined') return
+  if (!sessionReady.value || !tournamentSlug.value || !wsTicket.value) return
+
+  clearWsTimers()
+  resetWsFlags()
+  wsClosingIntentional.value = false
+
+  try {
+    ws.value?.close()
+  } catch {}
+
+  const url = getWsUrl()
+  if (!url) return
+
+  const socket = new WebSocket(url)
+  ws.value = socket
+
+  socket.onopen = () => {
+    wsConnected.value = true
+
+    socket.send(JSON.stringify({
+      type: 'HELLO',
+      sessionId: sessionId.value,
+      sessionNonce: sessionNonce.value,
+      tournamentSlug: tournamentSlug.value,
+      deviceType: deviceType.value,
+      wsTicket: wsTicket.value,
+      wsTicketExp: wsTicketExp.value
+    }))
+  }
+
+  socket.onmessage = (event) => {
+    try {
+      const data = JSON.parse(String(event.data || '{}')) as WsServerMessage
+
+      if (data.type === 'HELLO_ACK') {
+        wsAuthed.value = true
+        wsLastPongAt.value = Date.now()
+        if (typeof data.ticketExp === 'number') {
+          wsTicketExp.value = data.ticketExp
+        }
+        return
+      }
+
+      if (data.type === 'PONG') {
+        wsLastPongAt.value = Date.now()
+        return
+      }
+
+      if (data.type === 'KEEPALIVE_ACK') {
+        wsLastPongAt.value = Date.now()
+        return
+      }
+
+      if (data.type === 'RUN_EVENT_ACK') {
+        wsLastRunEventAckAt.value = Date.now()
+        return
+      }
+
+      if (data.type === 'ERROR') {
+        console.warn('[Tournament WS]', data.code, data.message)
+      }
+    } catch (error) {
+      console.warn('[Tournament WS] Failed to parse message', error)
+    }
+  }
+
+  socket.onclose = () => {
+    wsConnected.value = false
+    wsAuthed.value = false
+
+    if (!wsClosingIntentional.value && isPlayable.value && sessionReady.value) {
+      scheduleWsReconnect()
+    }
+  }
+
+  socket.onerror = () => {
+    wsConnected.value = false
+  }
+
+  wsPingTimer = setInterval(() => {
+    if (!ws.value || ws.value.readyState !== WebSocket.OPEN || !wsAuthed.value) return
+    ws.value.send(JSON.stringify({ type: 'PING', ts: Date.now() }))
+  }, 15000)
+
+  wsKeepAliveTimer = setInterval(() => {
+    if (!ws.value || ws.value.readyState !== WebSocket.OPEN || !wsAuthed.value) return
+    ws.value.send(JSON.stringify({ type: 'KEEPALIVE', ts: Date.now() }))
+  }, 60000)
+}
+
+function sendWsFinish() {
+  sendWsJson({ type: 'FINISH' })
+}
+
+/* ---------------- Score Submit State ---------------- */
 const bestQueuedScore = ref(0)
 const bestSentScore = ref(0)
 const submitInFlight = ref(false)
 const lastSubmitErrorAt = ref(0)
+const restarting = ref(false)
 
 function resetScoreSubmitState() {
   bestQueuedScore.value = 0
@@ -51,16 +300,35 @@ function resetScoreSubmitState() {
   lastSubmitErrorAt.value = 0
 }
 
+/* ---------------- RUN_EVENT throttling ---------------- */
+const runEventThrottleMs = 250
+const runEventLastSentByType = new Map<string, number>()
+
+function shouldSendRunEvent(eventType: string) {
+  const nowMs = Date.now()
+  const last = runEventLastSentByType.get(eventType) || 0
+  if (nowMs - last < runEventThrottleMs) return false
+  runEventLastSentByType.set(eventType, nowMs)
+  return true
+}
+
+function clearRunEventThrottle() {
+  runEventLastSentByType.clear()
+}
+
 /* ---------------- Helpers ---------------- */
 function getGameSlug(x: AnyTournament) {
   return String(x?.game_slug ?? x?.gameSlug ?? '').trim()
 }
+
 function getStartsAt(x: AnyTournament) {
   return String(x?.starts_at ?? x?.startsAt ?? '').trim()
 }
+
 function getEndsAt(x: AnyTournament) {
   return String(x?.ends_at ?? x?.endsAt ?? '').trim()
 }
+
 function getStatus(x: AnyTournament) {
   return String(x?.status || 'scheduled') as
     | 'scheduled'
@@ -68,10 +336,12 @@ function getStatus(x: AnyTournament) {
     | 'ended'
     | 'canceled'
 }
+
 function safeTimeMs(s: string) {
   const ms = new Date(s).getTime()
   return Number.isFinite(ms) ? ms : 0
 }
+
 function msToClock(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return '00D:00H:00M'
 
@@ -112,6 +382,21 @@ function detectFullscreenSupport() {
       : true
 
   return !!requestFn && enabled
+}
+
+function withQuery(url: string, params: Record<string, string | number | boolean | null | undefined>) {
+  const [base, hash = ''] = url.split('#')
+  const [path, search = ''] = base.split('?')
+
+  const qs = new URLSearchParams(search)
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null) continue
+    qs.set(key, String(value))
+  }
+
+  const queryString = qs.toString()
+  return `${path}${queryString ? `?${queryString}` : ''}${hash ? `#${hash}` : ''}`
 }
 
 /* ---------------- Device Detection ---------------- */
@@ -189,7 +474,6 @@ async function detectDeviceType(): Promise<DeviceType> {
   }
 
   const nav: any = navigator
-
   const ua = String(nav.userAgent || '')
   const platform = String(nav.platform || '')
   const cores = Number(nav.hardwareConcurrency || 0) || 0
@@ -231,78 +515,40 @@ async function detectDeviceType(): Promise<DeviceType> {
     score += 25
   }
 
-  if (isMobileUA && cores > 8) {
-    score += 20
-  }
-  if (isMobileUA && cores > 16) {
-    score += 10
-  }
-
-  if (isMobileUA && memory >= 8) {
-    score += 15
-  }
-
-  if (isMobileUA && hasTouch && hasMousePointer) {
-    score += 20
-  }
-
-  if (isMobileUA && !hasTouch) {
-    score += 15
-  }
+  if (isMobileUA && cores > 8) score += 20
+  if (isMobileUA && cores > 16) score += 10
+  if (isMobileUA && memory >= 8) score += 15
+  if (isMobileUA && hasTouch && hasMousePointer) score += 20
+  if (isMobileUA && !hasTouch) score += 15
 
   const outerInnerGap = Math.max(
     Math.abs(window.outerWidth - window.innerWidth),
     Math.abs(window.outerHeight - window.innerHeight)
   )
-  if (outerInnerGap > 160) {
-    score += 20
-  }
+  if (outerInnerGap > 160) score += 20
 
   const screenEqualsViewport =
     window.screen.width === window.innerWidth &&
     window.screen.height === window.innerHeight
 
-  if (isMobileUA && screenEqualsViewport) {
-    score += 10
-  }
-
-  if (isMobileUA && dpr === 1) {
-    score += 10
-  }
+  if (isMobileUA && screenEqualsViewport) score += 10
+  if (isMobileUA && dpr === 1) score += 10
 
   const sensorSignal = await detectSensorSignal()
-  if (isMobileUA && sensorSignal === 'static') {
-    score += 10
-  }
-  if (isMobileUA && sensorSignal === 'unavailable') {
-    score += 5
-  }
+  if (isMobileUA && sensorSignal === 'static') score += 10
+  if (isMobileUA && sensorSignal === 'unavailable') score += 5
 
-  if (score >= 50) {
-    return 'Emulator'
-  }
-
-  if (isAndroidUA || isIOSUA || (isMobileUA && hasTouch)) {
-    return 'Mobile'
-  }
-
+  if (score >= 50) return 'Emulator'
+  if (isAndroidUA || isIOSUA || (isMobileUA && hasTouch)) return 'Mobile'
   return 'PC'
 }
 
 /* ---------------- Time Logic ---------------- */
-const startMs = computed(() =>
-  t.value ? safeTimeMs(getStartsAt(t.value)) : 0
-)
-const endMs = computed(() =>
-  t.value ? safeTimeMs(getEndsAt(t.value)) : 0
-)
+const startMs = computed(() => (t.value ? safeTimeMs(getStartsAt(t.value)) : 0))
+const endMs = computed(() => (t.value ? safeTimeMs(getEndsAt(t.value)) : 0))
 
-const startsInMs = computed(() =>
-  Math.max(0, startMs.value - now.value)
-)
-const endsInMs = computed(() =>
-  Math.max(0, endMs.value - now.value)
-)
+const startsInMs = computed(() => Math.max(0, startMs.value - now.value))
+const endsInMs = computed(() => Math.max(0, endMs.value - now.value))
 
 const inTimeWindow = computed(() => {
   if (!startMs.value || !endMs.value) return false
@@ -319,7 +565,32 @@ const isPlayable = computed(() => {
 
 const game = computed(() => {
   if (!t.value) return null
-  return GAMES.find(g => g.slug === getGameSlug(t.value)) || null
+  return GAMES.find((g) => g.slug === getGameSlug(t.value)) || null
+})
+
+const sessionReady = computed(() =>
+  !!sessionId.value &&
+  !!sessionNonce.value &&
+  !!sessionStartedAt.value &&
+  !!sessionExpiresAt.value &&
+  !!wsTicket.value &&
+  wsTicketExp.value > 0
+)
+
+const resolvedGame = computed(() => {
+  if (!game.value || !sessionReady.value) return null
+
+  return {
+    ...game.value,
+    sourceUrl: withQuery(game.value.sourceUrl, {
+      tournamentSlug: tournamentSlug.value,
+      sessionId: sessionId.value,
+      sessionNonce: sessionNonce.value,
+      deviceType: deviceType.value,
+      startedAt: sessionStartedAt.value,
+      expiresAt: sessionExpiresAt.value
+    })
+  }
 })
 
 useHead(() => ({
@@ -328,8 +599,7 @@ useHead(() => ({
     { name: 'robots', content: 'noindex' },
     {
       name: 'viewport',
-      content:
-        'width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no'
+      content: 'width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no'
     },
     { name: 'mobile-web-app-capable', content: 'yes' },
     { name: 'apple-mobile-web-app-capable', content: 'yes' }
@@ -364,7 +634,6 @@ async function enterFullscreen() {
   try {
     const el: any = rootEl.value || document.documentElement
     const requestFn = getFullscreenRequestEl(el)
-
     if (!requestFn) return
 
     if (!document.fullscreenElement) {
@@ -386,7 +655,6 @@ async function exitFullscreen() {
   try {
     const doc: any = document
     const exitFn = getFullscreenExitDoc(doc)
-
     if (doc.fullscreenElement && exitFn) {
       await exitFn.call(doc)
     }
@@ -402,7 +670,7 @@ async function toggleFullscreen() {
   else await enterFullscreen()
 }
 
-/* ---------------- Load Tournament ---------------- */
+/* ---------------- Tournament Load ---------------- */
 let initToken = 0
 
 async function loadTournamentSafe() {
@@ -411,11 +679,41 @@ async function loadTournamentSafe() {
     if (api) return api
   } catch {}
 
-  return (
-    (FALLBACK as any).find(
-      (x: any) => x.slug === tournamentSlug.value
-    ) || null
-  )
+  return (FALLBACK as any).find((x: any) => x.slug === tournamentSlug.value) || null
+}
+
+async function createRunSession() {
+  if (!tournamentSlug.value) {
+    throw new Error('Missing tournament slug')
+  }
+
+  sessionLoading.value = true
+
+  try {
+    const res = await $fetch<StartSessionResponse>('/api/tournaments/start-session', {
+      method: 'POST',
+      credentials: 'include',
+      body: {
+        tournamentSlug: tournamentSlug.value,
+        deviceType: deviceType.value
+      }
+    })
+
+    if (!res?.ok || !res.sessionId || !res.sessionNonce || !res.wsTicket) {
+      throw new Error('Failed to start tournament session')
+    }
+
+    sessionId.value = String(res.sessionId)
+    sessionNonce.value = String(res.sessionNonce)
+    sessionStartedAt.value = String(res.startedAt || '')
+    sessionExpiresAt.value = String(res.expiresAt || '')
+    wsTicket.value = String(res.wsTicket || '')
+    wsTicketExp.value = Number(res.wsTicketExp || 0)
+
+    connectTournamentSocket()
+  } finally {
+    sessionLoading.value = false
+  }
 }
 
 async function init() {
@@ -423,7 +721,11 @@ async function init() {
   loading.value = true
   err.value = null
   t.value = null
+
   resetScoreSubmitState()
+  clearRunEventThrottle()
+  cleanupWebSocket()
+  resetSessionState()
 
   try {
     const found = await loadTournamentSafe()
@@ -441,6 +743,16 @@ async function init() {
       return
     }
 
+    if (!isPlayable.value) return
+
+    await createRunSession()
+    if (myToken !== initToken) return
+
+    if (!sessionReady.value) {
+      err.value = 'Failed to create play session'
+      return
+    }
+
     refreshPlayerMount()
   } catch (e: any) {
     if (myToken !== initToken) return
@@ -450,12 +762,71 @@ async function init() {
   }
 }
 
+/* ---------------- Restart / Run Events ---------------- */
+async function restartRun() {
+  if (restarting.value) return
+  restarting.value = true
+
+  try {
+    sendWsFinish()
+    clearRunEventThrottle()
+    cleanupWebSocket()
+    resetScoreSubmitState()
+    resetSessionState()
+
+    await createRunSession()
+
+    if (!sessionReady.value) {
+      throw new Error('Failed to create a new run session')
+    }
+
+    refreshPlayerMount()
+  } catch (e: any) {
+    toast.add({
+      title: 'Restart failed',
+      description: e?.data?.message || e?.message || 'Could not restart the run',
+      color: 'error'
+    })
+  } finally {
+    restarting.value = false
+  }
+}
+
+async function onRestartRequest() {
+  if (!isPlayable.value) return
+  await restartRun()
+}
+
+function onRunEvent(payload: RunEventPayload) {
+  if (!sessionReady.value || !wsAuthed.value) return
+
+  const eventType = String(payload.eventType || '').trim().slice(0, 64)
+  const value = Number.isFinite(payload.value) ? Math.floor(payload.value) : 0
+
+  if (!eventType) return
+  if (!shouldSendRunEvent(eventType)) return
+
+  const sent = sendWsJson({
+    type: 'RUN_EVENT',
+    eventType,
+    value,
+    ts: Date.now()
+  })
+
+  if (sent) {
+    wsLastRunEventAt.value = Date.now()
+  }
+}
+
 /* ---------------- Navigation ---------------- */
 async function closePage() {
+  sendWsFinish()
+
   if (isFullscreen.value) {
     await exitFullscreen()
   }
 
+  cleanupWebSocket()
   await navigateTo(`/tournaments/${tournamentSlug.value}`)
 }
 
@@ -463,6 +834,7 @@ async function closePage() {
 async function flushBestScore() {
   if (submitInFlight.value) return
   if (!isPlayable.value) return
+  if (!sessionReady.value) return
   if (bestQueuedScore.value <= bestSentScore.value) return
 
   submitInFlight.value = true
@@ -481,7 +853,9 @@ async function flushBestScore() {
       body: {
         tournamentSlug: tournamentSlug.value,
         score: scoreToSend,
-        deviceType: deviceType.value
+        deviceType: deviceType.value,
+        sessionId: sessionId.value,
+        sessionNonce: sessionNonce.value
       }
     })
 
@@ -514,7 +888,7 @@ async function flushBestScore() {
 }
 
 async function onScore(score: number) {
-  if (!isPlayable.value) return
+  if (!isPlayable.value || !sessionReady.value) return
   if (!Number.isFinite(score)) return
 
   const normalizedScore = Math.floor(Number(score))
@@ -550,10 +924,7 @@ onMounted(async () => {
   canUseFullscreen.value = detectFullscreenSupport()
 
   document.addEventListener('fullscreenchange', onFullscreenChange)
-  document.addEventListener(
-    'webkitfullscreenchange',
-    onFullscreenChange as EventListener
-  )
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
   window.addEventListener('popstate', onPopState)
 
   refreshPlayerMount()
@@ -561,12 +932,13 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  sendWsFinish()
+  clearRunEventThrottle()
+  cleanupWebSocket()
+
   if (tick) clearInterval(tick)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
-  document.removeEventListener(
-    'webkitfullscreenchange',
-    onFullscreenChange as EventListener
-  )
+  document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
   window.removeEventListener('popstate', onPopState)
 })
 
@@ -574,19 +946,29 @@ watch(
   () => tournamentSlug.value,
   async () => {
     resetScoreSubmitState()
+    clearRunEventThrottle()
+    cleanupWebSocket()
+    resetSessionState()
     refreshPlayerMount()
     await init()
   }
 )
 
-watch(isPlayable, (v, prev) => {
+watch(isPlayable, async (v, prev) => {
   if (!prev && v) {
     resetScoreSubmitState()
+    clearRunEventThrottle()
+    cleanupWebSocket()
+    resetSessionState()
+    await createRunSession()
     refreshPlayerMount()
   }
 
   if (prev && !v) {
     submitInFlight.value = false
+    sendWsFinish()
+    clearRunEventThrottle()
+    cleanupWebSocket()
   }
 })
 </script>
@@ -620,6 +1002,11 @@ watch(isPlayable, (v, prev) => {
               Starts in
               <span class="font-mono">{{ msToClock(startsInMs) }}</span>
             </template>
+
+            <span class="mx-2 opacity-40">•</span>
+            <span :class="wsAuthed ? 'text-emerald-400' : 'text-yellow-400'">
+              {{ wsAuthed ? 'Live session connected' : 'Connecting session...' }}
+            </span>
           </div>
         </div>
 
@@ -695,9 +1082,7 @@ watch(isPlayable, (v, prev) => {
         >
           <div class="px-6 text-center">
             <div class="text-lg font-semibold">Loading…</div>
-            <div class="mt-2 text-sm opacity-70">
-              Preparing tournament
-            </div>
+            <div class="mt-2 text-sm opacity-70">Preparing tournament</div>
           </div>
         </div>
 
@@ -737,13 +1122,29 @@ watch(isPlayable, (v, prev) => {
           </div>
         </div>
 
+        <div
+          v-else-if="sessionLoading || !sessionReady || !resolvedGame || restarting"
+          class="grid h-full w-full place-items-center bg-black"
+        >
+          <div class="px-6 text-center">
+            <div class="text-lg font-semibold">
+              {{ restarting ? 'Restarting run…' : 'Starting session…' }}
+            </div>
+            <div class="mt-2 text-sm opacity-70">
+              {{ restarting ? 'Creating a fresh tournament run' : 'Creating secure play session' }}
+            </div>
+          </div>
+        </div>
+
         <div v-else class="h-full w-full bg-black">
           <GamePlayer
-            :key="`${tournamentSlug}-${playerMountKey}`"
-            :game="game!"
+            :key="`${tournamentSlug}-${playerMountKey}-${sessionId}`"
+            :game="resolvedGame"
             :defer="false"
             :fullscreen="true"
             @score="e => onScore(e.score)"
+            @restart-request="onRestartRequest"
+            @run-event="onRunEvent"
           />
         </div>
       </ClientOnly>

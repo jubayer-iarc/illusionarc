@@ -80,30 +80,85 @@ function requestFullscreen() {
   else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen()
 }
 
-// SCORE bridge
+/* ---------------- expected session from iframe url ---------------- */
+const expectedSessionId = computed(() => {
+  try {
+    const value = new URL(src.value, window.location.origin).searchParams.get('sessionId')
+    return String(value || '').trim()
+  } catch {
+    return ''
+  }
+})
+
+const expectedSessionNonce = computed(() => {
+  try {
+    const value = new URL(src.value, window.location.origin).searchParams.get('sessionNonce')
+    return String(value || '').trim()
+  } catch {
+    return ''
+  }
+})
+
+function hasValidSessionPayload(data: any) {
+  const incomingSessionId = String(data?.sessionId || '').trim()
+  const incomingSessionNonce = String(data?.sessionNonce || '').trim()
+
+  if (!expectedSessionId.value || !expectedSessionNonce.value) return false
+  if (!incomingSessionId || !incomingSessionNonce) return false
+  if (incomingSessionId !== expectedSessionId.value) return false
+  if (incomingSessionNonce !== expectedSessionNonce.value) return false
+
+  return true
+}
+
+/* ---------------- bridge emits ---------------- */
 const emit = defineEmits<{
   (e: 'score', payload: { score: number; raw?: any }): void
+  (e: 'restart-request', payload: { raw?: any }): void
+  (e: 'run-event', payload: { eventType: string; value: number; raw?: any }): void
 }>()
 
 function onMessage(e: MessageEvent) {
+  if (typeof window === 'undefined') return
   if (e.origin !== window.location.origin) return
 
   const data = e.data
   if (!data || typeof data !== 'object') return
 
-  if ((data as any).type !== 'SCORE') return
+  const type = String((data as any).type || '').trim()
+  if (!type) return
 
-  const rawScore = Number((data as any).score)
-  if (!Number.isFinite(rawScore)) return
+  if (!hasValidSessionPayload(data)) return
 
-  const score = Math.floor(rawScore)
-  if (score < 0) return
+  if (type === 'SCORE') {
+    const rawScore = Number((data as any).score)
+    if (!Number.isFinite(rawScore)) return
 
-  // Emit only when score improves
-  if (score <= bestEmittedScore.value) return
+    const score = Math.floor(rawScore)
+    if (score < 0) return
 
-  bestEmittedScore.value = score
-  emit('score', { score, raw: data })
+    // Emit only when score improves
+    if (score <= bestEmittedScore.value) return
+
+    bestEmittedScore.value = score
+    emit('score', { score, raw: data })
+    return
+  }
+
+  if (type === 'RESTART_REQUEST') {
+    emit('restart-request', { raw: data })
+    return
+  }
+
+  if (type === 'RUN_EVENT') {
+    const eventType = String((data as any).eventType || '').trim()
+    if (!eventType) return
+
+    const rawValue = Number((data as any).value ?? 0)
+    const value = Number.isFinite(rawValue) ? Math.floor(rawValue) : 0
+
+    emit('run-event', { eventType, value, raw: data })
+  }
 }
 
 onMounted(() => window.addEventListener('message', onMessage))

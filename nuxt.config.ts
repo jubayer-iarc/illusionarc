@@ -98,6 +98,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     resetTicketSecret: process.env.RESET_TICKET_SECRET,
+    wsTicketSecret: process.env.WS_TICKET_SECRET,
     public: {
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseAnonKey: process.env.SUPABASE_KEY,
@@ -334,6 +335,12 @@ export default defineNuxtConfig({
           warn(warning)
         }
       }
+    }
+  },
+  
+  nitro: {
+    experimental: {
+      websocket: true
     }
   },
 
