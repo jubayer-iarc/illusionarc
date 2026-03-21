@@ -65,12 +65,26 @@ type PeerState = {
   authTimer: ReturnType<typeof setTimeout> | null
 }
 
+const peerStateMap = new WeakMap<any, PeerState>()
+
 function b64url(input: string | Buffer) {
   return Buffer.from(input)
     .toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/g, '')
+}
+
+function fromB64url(input: string) {
+  const normalized = input.replace(/-/g, '+').replace(/_/g, '/')
+  const pad = normalized.length % 4
+  const padded =
+    pad === 2 ? normalized + '==' :
+    pad === 3 ? normalized + '=' :
+    pad === 1 ? normalized + '===' :
+    normalized
+
+  return Buffer.from(padded, 'base64')
 }
 
 function verifyWsTicket(ticket: string, secret: string): WsTicketPayload | null {
@@ -82,13 +96,14 @@ function verifyWsTicket(ticket: string, secret: string): WsTicketPayload | null 
       crypto.createHmac('sha256', secret).update(encoded).digest()
     )
 
-    const a = Buffer.from(providedSig)
-    const b = Buffer.from(expectedSig)
+    const a = Buffer.from(providedSig, 'utf8')
+    const b = Buffer.from(expectedSig, 'utf8')
+
     if (a.length !== b.length) return null
     if (!crypto.timingSafeEqual(a, b)) return null
 
     const payload = JSON.parse(
-      Buffer.from(encoded, 'base64').toString('utf8')
+      fromB64url(encoded).toString('utf8')
     ) as WsTicketPayload
 
     if (!payload || typeof payload !== 'object') return null
@@ -137,10 +152,6 @@ function parseMessage(message: any): ClientMessage | null {
   }
 }
 
-function getPathSessionId(peer: any) {
-  return String(peer?.url?.split('/').pop() || '').trim()
-}
-
 function normalizeEventType(input: unknown) {
   return String(input || '').trim().slice(0, 64)
 }
@@ -150,10 +161,7 @@ function normalizeValue(input: unknown) {
   return Number.isFinite(n) ? Math.floor(n) : 0
 }
 
-const peerStateMap = new WeakMap<any, PeerState>()
-
 function validateHelloAgainstTicket(
-  pathSessionId: string,
   hello: HelloMessage,
   secret: string
 ) {
@@ -172,10 +180,6 @@ function validateHelloAgainstTicket(
 
   if (!sessionId || !sessionNonce || !tournamentSlug || !wsTicket) {
     return { ok: false as const, reason: 'Missing hello fields' }
-  }
-
-  if (sessionId !== pathSessionId) {
-    return { ok: false as const, reason: 'Session path mismatch' }
   }
 
   const payload = verifyWsTicket(wsTicket, secret)
@@ -219,11 +223,9 @@ function validateHelloAgainstTicket(
 
 export default defineWebSocketHandler({
   open(peer) {
-    const sessionId = getPathSessionId(peer)
-
     const state: PeerState = {
       authenticated: false,
-      sessionId,
+      sessionId: '',
       sessionNonce: '',
       tournamentSlug: '',
       tournamentId: '',
@@ -249,7 +251,6 @@ export default defineWebSocketHandler({
 
     sendJson(peer, {
       type: 'WELCOME',
-      sessionId,
       message: 'Send HELLO to authenticate'
     })
   },
@@ -304,11 +305,7 @@ export default defineWebSocketHandler({
         return
       }
 
-      const result = validateHelloAgainstTicket(
-        state.sessionId,
-        data,
-        wsTicketSecret
-      )
+      const result = validateHelloAgainstTicket(data, wsTicketSecret)
 
       if (!result.ok) {
         sendJson(peer, {

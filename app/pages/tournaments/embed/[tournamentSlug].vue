@@ -490,31 +490,14 @@ async function detectDeviceType(): Promise<DeviceType> {
 
   let score = 0
 
-  if (/Emulator|sdk_gphone|sdk_phone|generic|Andy\b/i.test(ua)) {
-    score += 40
-  }
+  if (/Emulator|sdk_gphone|sdk_phone|generic|Andy\b/i.test(ua)) score += 40
 
   const { renderer } = getWebGLRendererInfo()
 
-  if (/SwiftShader|llvmpipe|softpipe|Microsoft Basic Render/i.test(renderer)) {
-    score += 40
-  }
-
-  if (
-    isMobileUA &&
-    /NVIDIA|AMD Radeon|GeForce|Intel.*Iris|Intel.*UHD|Intel.*HD Graphics/i.test(renderer)
-  ) {
-    score += 35
-  }
-
-  if (isMobileUA && /Win32|Win64|WOW64|MacIntel|MacPPC/i.test(platform)) {
-    score += 30
-  }
-
-  if (isMobileUA && /Linux x86_64/i.test(platform)) {
-    score += 25
-  }
-
+  if (/SwiftShader|llvmpipe|softpipe|Microsoft Basic Render/i.test(renderer)) score += 40
+  if (isMobileUA && /NVIDIA|AMD Radeon|GeForce|Intel.*Iris|Intel.*UHD|Intel.*HD Graphics/i.test(renderer)) score += 35
+  if (isMobileUA && /Win32|Win64|WOW64|MacIntel|MacPPC/i.test(platform)) score += 30
+  if (isMobileUA && /Linux x86_64/i.test(platform)) score += 25
   if (isMobileUA && cores > 8) score += 20
   if (isMobileUA && cores > 16) score += 10
   if (isMobileUA && memory >= 8) score += 15
@@ -558,8 +541,7 @@ const inTimeWindow = computed(() => {
 const isPlayable = computed(() => {
   if (!t.value) return false
   const st = getStatus(t.value)
-  if (st === 'canceled') return false
-  if (st === 'ended') return false
+  if (st === 'canceled' || st === 'ended') return false
   return inTimeWindow.value
 })
 
@@ -670,7 +652,7 @@ async function toggleFullscreen() {
   else await enterFullscreen()
 }
 
-/* ---------------- Tournament Load ---------------- */
+/* ---------------- Session Flow ---------------- */
 let initToken = 0
 
 async function loadTournamentSafe() {
@@ -709,8 +691,6 @@ async function createRunSession() {
     sessionExpiresAt.value = String(res.expiresAt || '')
     wsTicket.value = String(res.wsTicket || '')
     wsTicketExp.value = Number(res.wsTicketExp || 0)
-
-    connectTournamentSocket()
   } finally {
     sessionLoading.value = false
   }
@@ -753,6 +733,7 @@ async function init() {
       return
     }
 
+    connectTournamentSocket()
     refreshPlayerMount()
   } catch (e: any) {
     if (myToken !== initToken) return
@@ -762,7 +743,6 @@ async function init() {
   }
 }
 
-/* ---------------- Restart / Run Events ---------------- */
 async function restartRun() {
   if (restarting.value) return
   restarting.value = true
@@ -780,6 +760,7 @@ async function restartRun() {
       throw new Error('Failed to create a new run session')
     }
 
+    connectTournamentSocket()
     refreshPlayerMount()
   } catch (e: any) {
     toast.add({
@@ -955,15 +936,6 @@ watch(
 )
 
 watch(isPlayable, async (v, prev) => {
-  if (!prev && v) {
-    resetScoreSubmitState()
-    clearRunEventThrottle()
-    cleanupWebSocket()
-    resetSessionState()
-    await createRunSession()
-    refreshPlayerMount()
-  }
-
   if (prev && !v) {
     submitInFlight.value = false
     sendWsFinish()
@@ -1003,10 +975,10 @@ watch(isPlayable, async (v, prev) => {
               <span class="font-mono">{{ msToClock(startsInMs) }}</span>
             </template>
 
-            <span class="mx-2 opacity-40">•</span>
+            <!-- <span class="mx-2 opacity-40">•</span>
             <span :class="wsAuthed ? 'text-emerald-400' : 'text-yellow-400'">
               {{ wsAuthed ? 'Live session connected' : 'Connecting session...' }}
-            </span>
+            </span> -->
           </div>
         </div>
 

@@ -250,6 +250,22 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  /* ---------------- Touch active session ---------------- */
+  const { error: touchErr } = await client
+    .from('tournament_run_sessions')
+    .update({
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', session.id)
+    .eq('status', 'active')
+
+  if (touchErr) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: touchErr.message
+    })
+  }
+
   /* ---------------- Player Name ---------------- */
   const { data: profile, error: pErr } = await client
     .from('profiles')
@@ -295,27 +311,6 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 500,
       statusMessage: 'Score save failed'
-    })
-  }
-
-  /* ---------------- Close session after submit ---------------- */
-  const nowIso = new Date().toISOString()
-
-  const { error: closeErr } = await client
-    .from('tournament_run_sessions')
-    .update({
-      status: 'finished',
-      used_at: nowIso,
-      updated_at: nowIso
-    })
-    .eq('id', session.id)
-    .eq('status', 'active')
-    .is('used_at', null)
-
-  if (closeErr) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: closeErr.message
     })
   }
 

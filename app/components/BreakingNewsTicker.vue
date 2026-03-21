@@ -47,6 +47,7 @@ type NoticeItem = {
 }
 
 const notices: NoticeItem[] = [
+  /*
   {
     type: 'গুরুত্বপূর্ণ নোটিশ',
     themeClass: 'theme-amber',
@@ -66,6 +67,12 @@ const notices: NoticeItem[] = [
     type: 'আপডেট',
     themeClass: 'theme-cyan',
     text: 'সহায়তার জন্য FAQ দেখুন অথবা official WhatsApp support ব্যবহার করুন।'
+  }
+  */
+  {
+    type: 'গুরুত্বপূর্ণ ঘোষণা',
+    themeClass: 'theme-red',
+    text: 'টুর্নামেন্ট চলাকালীন কিছু bug, exploit, score manipulation, device manipulation এবং emulator-based unfair activity আমাদের নজরে এসেছে। এর ফলে কিছু player অনিচ্ছাকৃতভাবে unfair advantage পাচ্ছিলেন, যা একটি স্বচ্ছ প্রতিযোগিতার জন্য উপযুক্ত নয়। এই বিষয়টি গুরুত্বসহকারে বিবেচনা করে, Management-এর সিদ্ধান্ত অনুযায়ী আমরা গেমের প্রয়োজনীয় bug fix এবং সম্পূর্ণ leaderboard-কে review করে fair ভাবে সমন্বয় করেছি। বর্তমান leaderboard-এ players-দের overall ranking hierarchy যতটা সম্ভব বজায় রাখা হয়েছে, তবে যাদের activity-তে অস্বাভাবিকতা বা unfair advantage পাওয়া গেছে, তাদের ক্ষেত্রে ranking সমন্বয় করা হয়েছে। আমাদের Tournament-এর লক্ষ্য হলো একটি স্বচ্ছ, ন্যায্য ও বিশ্বাসযোগ্য competition নিশ্চিত করা। যারা bug ও issue report করে আমাদের সহায়তা করেছেন, তাদের আন্তরিক ধন্যবাদ। সামনের ১০ দিন ভালোভাবে খেলুন, fair way-তে compete করুন, এবং পুরস্কারের জন্য আত্মবিশ্বাসের সঙ্গে প্রতিযোগিতা করুন।'
   }
 ]
 </script>
@@ -473,5 +480,9 @@ const notices: NoticeItem[] = [
   .ticker-live__dot::before {
     animation: none;
   }
+}
+.theme-red {
+  background: #dc2626;
+  color: #ffffff;
 }
 </style>
