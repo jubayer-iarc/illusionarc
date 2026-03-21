@@ -11,17 +11,18 @@
         <h1>রক্ষণাবেক্ষণ চলছে</h1>
 
         <p class="subtitle">
-          আমরা সিস্টেম আপডেট করছি
+          সবার জন্য আরও ফেয়ার ও নির্ভরযোগ্য গেমপ্লে নিশ্চিত করতে আমরা সাময়িকভাবে সিস্টেম আপডেট করছি।
         </p>
 
         <p class="time">
-          আমরা আজ রাত<strong>১১টা </strong>র মধ্যে ফিরে আসব
+          কোনো ধরনের <strong>bug</strong>, <strong>exploit</strong> বা <strong>unfair advantage</strong> দূর করতে আমাদের কাজ চলছে।
         </p>
 
         <div class="loader"></div>
 
         <p class="footer">
-          আপনার ধৈর্যের জন্য ধন্যবাদ ❤️
+          খুব শিগগিরই নতুন আপডেটসহ আবার ফিরে আসছি।<br />
+          সবাই যেন সমানভাবে খেলতে পারে — সেটাই আমাদের লক্ষ্য। ❤️
         </p>
       </div>
     </div>
@@ -91,13 +92,16 @@ h1 {
 }
 
 .subtitle {
-  opacity: 0.7;
-  margin-bottom: 10px;
+  opacity: 0.85;
+  margin-bottom: 12px;
+  line-height: 1.6;
 }
 
 .time {
-  font-size: 16px;
+  font-size: 15px;
   margin-bottom: 20px;
+  opacity: 0.9;
+  line-height: 1.6;
 }
 
 .loader {
@@ -112,7 +116,8 @@ h1 {
 
 .footer {
   font-size: 13px;
-  opacity: 0.6;
+  opacity: 0.75;
+  line-height: 1.6;
 }
 
 @keyframes spin {
