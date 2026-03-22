@@ -121,6 +121,16 @@
       pointer-events: none;
     }
 
+    .loader-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 18px 20px;
+      text-align: center;
+    }
+
     .spinner {
       width: 46px;
       height: 46px;
@@ -129,6 +139,16 @@
       border-top-color: #22d3ee;
       animation: spin 0.75s linear infinite;
       box-sizing: border-box;
+    }
+
+    .loading-text {
+      color: rgba(255,255,255,0.95);
+      font-size: 15px;
+      line-height: 1.5;
+      font-weight: 600;
+      letter-spacing: 0.1px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+      max-width: 260px;
     }
 
     @keyframes spin {
@@ -166,7 +186,10 @@
         <canvas id="unity-canvas" tabindex="-1"></canvas>
 
         <div id="loading-overlay">
-          <div class="spinner"></div>
+          <div class="loader-box">
+            <div class="spinner"></div>
+            <div class="loading-text">ধৈর্য ধরে অপেক্ষা করুন, গেমটি লোড হচ্ছে</div>
+          </div>
         </div>
 
         <div id="unity-warning"></div>
@@ -228,7 +251,7 @@
 
     var config = {
       arguments: [],
-      dataUrl: buildUrl + "/352ec56a745abc688aa01b016443fbd3.data.unityweb",
+      dataUrl: buildUrl + "/cb0a9449da8e085df62fb78c8e855f2a.data.unityweb",
       frameworkUrl: buildUrl + "/c024d28f8d0ae4d502a1588176522cd2.framework.js.unityweb",
       codeUrl: buildUrl + "/4c36022fb2fa5ec15d4c4b499b488421.wasm.unityweb",
       streamingAssetsUrl: "StreamingAssets",
@@ -245,7 +268,7 @@
         "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes";
       document.getElementsByTagName("head")[0].appendChild(meta);
 
-      // Uncomment for better performance on mobile:
+      // Uncomment for better mobile performance:
       // config.devicePixelRatio = 1;
     }
 
