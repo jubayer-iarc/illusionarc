@@ -81,6 +81,23 @@
       }
     }
 
+    /* Real fullscreen: remove portrait-frame limits */
+    body.is-fullscreen #unity-shell {
+      padding: 0;
+      width: 100vw;
+      height: 100dvh;
+    }
+
+    body.is-fullscreen #unity-frame {
+      width: 100vw;
+      height: 100dvh;
+      max-width: none;
+      max-height: none;
+      aspect-ratio: auto;
+      border-radius: 0;
+      box-shadow: none;
+    }
+
     #unity-container {
       position: absolute;
       inset: 0;
@@ -246,6 +263,19 @@
       updateBannerVisibility();
     }
 
+    function updateFullscreenClass() {
+      var isFullscreen =
+        !!document.fullscreenElement ||
+        !!document.webkitFullscreenElement ||
+        !!document.msFullscreenElement;
+
+      document.body.classList.toggle("is-fullscreen", isFullscreen);
+    }
+
+    document.addEventListener("fullscreenchange", updateFullscreenClass);
+    document.addEventListener("webkitfullscreenchange", updateFullscreenClass);
+    document.addEventListener("msfullscreenchange", updateFullscreenClass);
+
     var buildUrl = "Build";
     var loaderUrl = buildUrl + "/90312b85fd40658d0ac6a12b53cfbdcd.loader.js";
 
@@ -265,10 +295,10 @@
       var meta = document.createElement("meta");
       meta.name = "viewport";
       meta.content =
-        "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes";
+        "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover";
       document.getElementsByTagName("head")[0].appendChild(meta);
 
-      // Uncomment for better mobile performance:
+      // Optional for better mobile performance:
       // config.devicePixelRatio = 1;
     }
 
@@ -282,6 +312,7 @@
       createUnityInstance(canvas, config)
         .then(function () {
           hideLoader();
+          updateFullscreenClass();
         })
         .catch(function (message) {
           alert(message);
