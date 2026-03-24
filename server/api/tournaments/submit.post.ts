@@ -1,5 +1,5 @@
 // server/api/tournaments/submit.post.ts
-import { readBody, createError } from 'h3'
+import { readBody, createError, getHeader } from 'h3'
 import { serverSupabaseClient } from '#supabase/server'
 
 type DeviceType = 'Mobile' | 'PC' | 'Emulator'
@@ -11,8 +11,68 @@ type SubmitTournamentScoreRow = {
   final_score: number
 }
 
+type SubmissionReason =
+  | 'accepted'
+  | 'best_updated'
+  | 'kept_existing_best'
+  | 'tournament_not_live'
+  | 'invalid_session'
+  | 'invalid_session_nonce'
+  | 'session_not_active'
+  | 'invalid_session_start_time'
+  | 'session_expired'
+  | 'session_already_used'
+  | 'device_type_mismatch'
+  | 'replaced_by_newer_session'
+  | 'rpc_submit_failed'
+  | 'score_save_failed'
+
 export default defineEventHandler(async (event) => {
   const client = await serverSupabaseClient(event)
+
+  const nowIso = () => new Date().toISOString()
+
+  const forwardedFor = getHeader(event, 'x-forwarded-for') || ''
+  const userAgent = getHeader(event, 'user-agent') || ''
+  const ip = forwardedFor.split(',')[0]?.trim() || null
+
+  async function logSubmission(payload: {
+    tournamentId: string
+    userId: string
+    sessionId?: string | null
+    sessionNonce?: string | null
+    deviceType: DeviceType
+    submittedScore: number
+    accepted: boolean
+    acceptedScore?: number | null
+    keptBest?: boolean
+    updatedBest?: boolean
+    reason: SubmissionReason
+    meta?: Record<string, any>
+  }) {
+    const { error } = await client
+      .from('tournament_score_submissions')
+      .insert({
+        tournament_id: payload.tournamentId,
+        user_id: payload.userId,
+        session_id: payload.sessionId ?? null,
+        session_nonce: payload.sessionNonce ?? null,
+        device_type: payload.deviceType,
+        submitted_score: payload.submittedScore,
+        accepted: payload.accepted,
+        accepted_score: payload.acceptedScore ?? null,
+        kept_best: payload.keptBest ?? false,
+        updated_best: payload.updatedBest ?? false,
+        reason: payload.reason,
+        ip,
+        user_agent: userAgent,
+        meta: payload.meta ?? {}
+      })
+
+    if (error) {
+      console.error('[tournament submit] submission log insert failed:', error.message)
+    }
+  }
 
   /* ---------------- Auth ---------------- */
   const { data: auth, error: authErr } = await client.auth.getUser()
@@ -121,6 +181,21 @@ export default defineEventHandler(async (event) => {
     nowMs < startsAt ||
     nowMs >= endsAt
   ) {
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'tournament_not_live',
+      meta: {
+        tournament_slug: tournamentSlug,
+        tournament_status: t.status
+      }
+    })
+
     throw createError({
       statusCode: 403,
       statusMessage: 'Tournament is not live'
@@ -146,6 +221,20 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!session) {
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'invalid_session',
+      meta: {
+        tournament_slug: tournamentSlug
+      }
+    })
+
     throw createError({
       statusCode: 403,
       statusMessage: 'Invalid session'
@@ -153,6 +242,20 @@ export default defineEventHandler(async (event) => {
   }
 
   if (String(session.session_nonce || '') !== sessionNonce) {
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId: session.id,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'invalid_session_nonce',
+      meta: {
+        tournament_slug: tournamentSlug
+      }
+    })
+
     throw createError({
       statusCode: 403,
       statusMessage: 'Invalid session nonce'
@@ -160,6 +263,21 @@ export default defineEventHandler(async (event) => {
   }
 
   if (session.status !== 'active') {
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId: session.id,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'session_not_active',
+      meta: {
+        tournament_slug: tournamentSlug,
+        session_status: session.status
+      }
+    })
+
     throw createError({
       statusCode: 403,
       statusMessage: 'Session is not active'
@@ -172,6 +290,20 @@ export default defineEventHandler(async (event) => {
     : 0
 
   if (!Number.isFinite(sessionStartedAt)) {
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId: session.id,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'invalid_session_start_time',
+      meta: {
+        tournament_slug: tournamentSlug
+      }
+    })
+
     throw createError({
       statusCode: 403,
       statusMessage: 'Invalid session start time'
@@ -187,9 +319,24 @@ export default defineEventHandler(async (event) => {
       .from('tournament_run_sessions')
       .update({
         status: 'expired',
-        updated_at: new Date().toISOString()
+        updated_at: nowIso()
       })
       .eq('id', session.id)
+
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId: session.id,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'session_expired',
+      meta: {
+        tournament_slug: tournamentSlug,
+        expires_at: session.expires_at
+      }
+    })
 
     throw createError({
       statusCode: 403,
@@ -198,6 +345,21 @@ export default defineEventHandler(async (event) => {
   }
 
   if (session.used_at) {
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId: session.id,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'session_already_used',
+      meta: {
+        tournament_slug: tournamentSlug,
+        used_at: session.used_at
+      }
+    })
+
     throw createError({
       statusCode: 403,
       statusMessage: 'Session already used'
@@ -205,6 +367,21 @@ export default defineEventHandler(async (event) => {
   }
 
   if (session.device_type && session.device_type !== deviceType) {
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId: session.id,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'device_type_mismatch',
+      meta: {
+        tournament_slug: tournamentSlug,
+        expected_device_type: session.device_type
+      }
+    })
+
     throw createError({
       statusCode: 403,
       statusMessage: 'Device type mismatch'
@@ -239,10 +416,25 @@ export default defineEventHandler(async (event) => {
       .from('tournament_run_sessions')
       .update({
         status: 'rejected',
-        updated_at: new Date().toISOString()
+        updated_at: nowIso()
       })
       .eq('id', session.id)
       .eq('status', 'active')
+
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId: session.id,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'replaced_by_newer_session',
+      meta: {
+        tournament_slug: tournamentSlug,
+        newer_session_id: newerSession.id
+      }
+    })
 
     throw createError({
       statusCode: 409,
@@ -254,7 +446,7 @@ export default defineEventHandler(async (event) => {
   const { error: touchErr } = await client
     .from('tournament_run_sessions')
     .update({
-      updated_at: new Date().toISOString()
+      updated_at: nowIso()
     })
     .eq('id', session.id)
     .eq('status', 'active')
@@ -297,6 +489,21 @@ export default defineEventHandler(async (event) => {
   )
 
   if (rpcErr) {
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId: session.id,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'rpc_submit_failed',
+      meta: {
+        tournament_slug: tournamentSlug,
+        rpc_error: rpcErr.message
+      }
+    })
+
     throw createError({
       statusCode: 500,
       statusMessage: rpcErr.message
@@ -308,11 +515,49 @@ export default defineEventHandler(async (event) => {
     : (rpcData as SubmitTournamentScoreRow | null)
 
   if (!row) {
+    await logSubmission({
+      tournamentId: t.id,
+      userId: user.id,
+      sessionId: session.id,
+      sessionNonce,
+      deviceType,
+      submittedScore: score,
+      accepted: false,
+      reason: 'score_save_failed',
+      meta: {
+        tournament_slug: tournamentSlug
+      }
+    })
+
     throw createError({
       statusCode: 500,
       statusMessage: 'Score save failed'
     })
   }
+
+  /* ---------------- Log Every Submission ---------------- */
+  await logSubmission({
+    tournamentId: t.id,
+    userId: user.id,
+    sessionId: session.id,
+    sessionNonce,
+    deviceType,
+    submittedScore: score,
+    accepted: row.ok === true,
+    acceptedScore: Number(row.final_score || 0),
+    keptBest: row.kept_best === true,
+    updatedBest: row.updated === true,
+    reason:
+      row.updated === true
+        ? 'best_updated'
+        : row.kept_best === true
+          ? 'kept_existing_best'
+          : 'accepted',
+    meta: {
+      tournament_slug: tournamentSlug,
+      player_name: playerName
+    }
+  })
 
   return {
     ok: row.ok === true,
