@@ -18,9 +18,9 @@ type ProfileReferralRow = {
   referral_bonus_used_bdt: number | null
 }
 
-type UpdatedReferralRow = {
-  id: number
-  status: 'pending' | 'earned' | 'used'
+type CompleteReferralRpcRow = {
+  updated: boolean
+  new_status: string | null
 }
 
 function up(v: unknown) {
@@ -205,27 +205,22 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Mark pending referral as completed only after successful subscription purchase.
-  // We also verify that a row was actually updated.
-  const targetStatus: 'used' | 'earned' = paymentReferralUsed > 0 ? 'used' : 'earned'
+  const { data: completeReferral, error: completeReferralErr } = await sb
+    .rpc('complete_referral_after_subscription', {
+      p_referred_user_id: user.id,
+      p_payment_referral_used_bdt: paymentReferralUsed
+    })
+    .single<CompleteReferralRpcRow>()
 
-  const { data: updatedReferral, error: refUpdateErr } = await sb
-    .from('user_referrals')
-    .update({ status: targetStatus })
-    .eq('referred_user_id', user.id)
-    .eq('status', 'pending')
-    .select('id, status')
-    .maybeSingle<UpdatedReferralRow>()
-
-  if (refUpdateErr) {
-    throw createError({ statusCode: 500, statusMessage: refUpdateErr.message })
+  if (completeReferralErr) {
+    throw createError({ statusCode: 500, statusMessage: completeReferralErr.message })
   }
 
   return {
     ok: true,
     active: true,
     result: rpcData || null,
-    referralStatusUpdated: Boolean(updatedReferral?.id),
-    referralStatus: updatedReferral?.status || null
+    referralStatusUpdated: Boolean(completeReferral?.updated),
+    referralStatus: completeReferral?.new_status || null
   }
 })
