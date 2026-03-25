@@ -14,6 +14,11 @@ type PlanRow = {
   discount_note: string | null
 }
 
+type ProfileReferralRow = {
+  referral_bonus_bdt: number | null
+  referral_bonus_used_bdt: number | null
+}
+
 function normalizePlanCode(input: string) {
   const map: Record<string, string> = {
     day: '1d',
@@ -36,6 +41,12 @@ function effectivePrice(plan: PlanRow) {
     dp < plan.price_bdt
 
   return hasDiscount ? dp : plan.price_bdt
+}
+
+function safeMoney(v: unknown) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.round(n))
 }
 
 export default defineEventHandler(async (event) => {
@@ -66,7 +77,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Invalid plan' })
   }
 
-  const amount_bdt = effectivePrice(plan)
+  const baseAmountBdt = safeMoney(effectivePrice(plan))
+
+  const { data: profile, error: profileErr } = await sb
+    .from('profiles')
+    .select('referral_bonus_bdt, referral_bonus_used_bdt')
+    .eq('user_id', user.id)
+    .maybeSingle<ProfileReferralRow>()
+
+  if (profileErr) {
+    throw createError({ statusCode: 500, statusMessage: profileErr.message })
+  }
+
+  const referralBonusBdt = safeMoney(profile?.referral_bonus_bdt)
+  const referralBonusUsedBdtTotal = safeMoney(profile?.referral_bonus_used_bdt)
+  const referralBonusAvailableBdt = Math.max(0, referralBonusBdt - referralBonusUsedBdtTotal)
+
+  // Apply only up to the payable amount
+  const referral_bonus_used_bdt = Math.min(referralBonusAvailableBdt, baseAmountBdt)
+  const amount_bdt = Math.max(0, baseAmountBdt - referral_bonus_used_bdt)
 
   const tran_id = `IA-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
 
@@ -74,6 +103,7 @@ export default defineEventHandler(async (event) => {
     user_id: user.id,
     plan_code: plan.code,
     amount_bdt,
+    referral_bonus_used_bdt,
     currency: 'BDT',
     provider: 'sslcommerz',
     tran_id,
@@ -205,6 +235,9 @@ export default defineEventHandler(async (event) => {
     ok: true,
     tran_id,
     gatewayUrl,
-    amount_bdt
+    amount_bdt,
+    base_amount_bdt: baseAmountBdt,
+    referral_bonus_used_bdt,
+    referral_bonus_available_bdt: referralBonusAvailableBdt
   }
 })

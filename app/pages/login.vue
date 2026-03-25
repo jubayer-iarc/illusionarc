@@ -1,4 +1,3 @@
-<!-- app/pages/login.vue -->
 <script setup lang="ts">
 useHead({
   title: 'Login — illusion Arc',
@@ -23,23 +22,27 @@ const loading = ref(false)
 const mode = ref<'signin' | 'signup'>('signin')
 const showPass = ref(false)
 const authRedirecting = ref(false)
+const referralCode = ref('')
 
-/** Default avatar list (paths in /public) */
-const DEFAULT_AVATARS = ['/img/avatars/a1.png', '/img/avatars/a2.png', '/img/avatars/a3.png', '/img/avatars/a4.png', '/img/avatars/a5.png']
+const DEFAULT_AVATARS = [
+  '/img/avatars/a1.png',
+  '/img/avatars/a2.png',
+  '/img/avatars/a3.png',
+  '/img/avatars/a4.png',
+  '/img/avatars/a5.png'
+]
 
 function pickRandomAvatar() {
   if (!DEFAULT_AVATARS.length) return ''
   return DEFAULT_AVATARS[Math.floor(Math.random() * DEFAULT_AVATARS.length)]
 }
 
-/* ---------------- Country code + phone (signup only) ---------------- */
 type CountryOpt = {
   label: string
   dial: string
   iso: string
 }
 
-/** Flag emoji from ISO (BD -> 🇧🇩) */
 function isoToFlagEmoji(iso: string) {
   const code = String(iso || '').trim().toUpperCase()
   if (!/^[A-Z]{2}$/.test(code)) return '🏳️'
@@ -107,7 +110,20 @@ function validatePhoneLocal(local: string) {
   return null
 }
 
-/* ---------------- Existing logic ---------------- */
+function normalizeReferralCode(v: string) {
+  return String(v || '').trim().toUpperCase().replace(/\s+/g, '')
+}
+
+async function claimReferralCode(code: string) {
+  const clean = normalizeReferralCode(code)
+  if (!clean) return { ok: true, skipped: true }
+
+  return await $fetch('/api/referrals/claim', {
+    method: 'POST',
+    body: { referralCode: clean }
+  })
+}
+
 const nextUrl = computed(() => {
   const n = route.query.next
   return typeof n === 'string' && n.startsWith('/') ? n : '/arcade'
@@ -168,10 +184,6 @@ async function redirectAfterLogin() {
   return navigateTo(nextUrl.value, { replace: true })
 }
 
-/**
- * Guarded auto-redirect only for already-authenticated visits.
- * Prevents racing while submit() is still doing profile sync.
- */
 watch(
   () => user.value?.id,
   async (id) => {
@@ -257,9 +269,6 @@ async function ensureAvatarAfterLogin() {
   await supabase.auth.refreshSession()
 }
 
-/**
- * Uses explicit userId so signup does not depend on reactive user.value timing.
- */
 async function upsertProfileByUserId(
   userId: string,
   dn: string,
@@ -344,6 +353,7 @@ async function submit() {
     const dn = await pickUniqueDisplayName('')
     const avatar = pickRandomAvatar()
     const phoneE164 = toE164(selectedCountry.value.dial, phoneLocal.value).trim()
+    const normalizedReferral = normalizeReferralCode(referralCode.value)
 
     const taken = await isPhoneTaken(phoneE164)
     if (taken) {
@@ -364,11 +374,6 @@ async function submit() {
     })
     if (error) throw error
 
-    /**
-     * Important:
-     * Use data.user.id directly so the profile row is written immediately,
-     * without waiting for reactive user.value timing.
-     */
     if (data?.user?.id) {
       await upsertProfileByUserId(data.user.id, dn, avatar, phoneE164)
     }
@@ -377,15 +382,34 @@ async function submit() {
       await supabase.auth.refreshSession()
     }
 
+    if (data?.session && normalizedReferral) {
+      try {
+        const referralRes: any = await claimReferralCode(normalizedReferral)
+        const msg =
+          String(referralRes?.message || '').trim() ||
+          'Referral saved successfully. Bonus will be added after your first successful subscription purchase.'
+
+        toast.add({
+          title: 'Referral saved',
+          description: msg,
+          color: 'success'
+        })
+      } catch (e: any) {
+        const msg = String(e?.data?.statusMessage || e?.data?.message || e?.message || '').trim()
+        toast.add({
+          title: 'Account created',
+          description: msg || 'Your account was created, but the referral code could not be applied.',
+          color: 'warning'
+        })
+      }
+    }
+
     toast.add({
       title: 'Account created',
       description: data?.session ? 'Welcome! Your account is ready.' : 'If email confirmation is enabled, check your inbox.',
       color: 'success'
     })
 
-    /**
-     * Signup should always land on /arcade
-     */
     if (data?.session) {
       await navigateTo('/arcade', { replace: true })
     }
@@ -574,6 +598,19 @@ function goToForgotPassword() {
                   </UFormField>
                 </div>
 
+                <UFormField v-if="mode === 'signup'" label="Referral code (optional)">
+                  <UInput
+                    v-model="referralCode"
+                    class="w-full"
+                    placeholder="Enter referral code"
+                    autocomplete="off"
+                    icon="i-heroicons-gift"
+                  />
+                  <div class="mt-1 text-xs opacity-60 leading-relaxed">
+                    Use a friend’s code now. Your ৳10 referral bonus will be added after your first successful subscription purchase.
+                  </div>
+                </UFormField>
+
                 <UFormField label="Password" required>
                   <UInput
                     v-model="password"
@@ -675,7 +712,6 @@ function goToForgotPassword() {
 .divider { position: relative; padding: 0.6rem 0; display: flex; justify-content: center; }
 .divider::before { content: ''; position: absolute; inset: 50% 0 auto; height: 1px; background: rgba(255, 255, 255, 0.1); }
 .divider span { position: relative; padding: 0 0.75rem; background: rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 9999px; }
-
 .forgotLink {
   font-size: 0.75rem;
   opacity: 0.82;

@@ -1,4 +1,4 @@
-<!-- app/pages/subscribe.vue -->
+<!-- app/pages/subscribe/index.vue -->
 <script setup lang="ts">
 useHead({ title: 'Subscribe' })
 
@@ -8,6 +8,7 @@ const toast = useToast()
 
 const loading = ref(true)
 const plansLoading = ref(true)
+const referralLoading = ref(true)
 const activating = ref<string | null>(null)
 
 const state = ref<any>(null)
@@ -27,11 +28,26 @@ type PlanRow = {
   created_at: string
 }
 
+type ReferralSummary = {
+  referralCode: string | null
+  referralCount: number
+  referralBonusBdt: number
+  referralBonusUsedBdt: number
+  referralBonusAvailableBdt: number
+}
+
+const referral = reactive<ReferralSummary>({
+  referralCode: null,
+  referralCount: 0,
+  referralBonusBdt: 0,
+  referralBonusUsedBdt: 0,
+  referralBonusAvailableBdt: 0
+})
+
 function serverCookieHeaders() {
   return import.meta.server ? useRequestHeaders(['cookie']) : undefined
 }
 
-/* ---------------- Subscription status ---------------- */
 async function refreshStatus() {
   errorMsg.value = null
   try {
@@ -45,7 +61,40 @@ async function refreshStatus() {
   }
 }
 
-/* ---------------- Plans from DB ---------------- */
+async function loadReferralSummary() {
+  referralLoading.value = true
+  try {
+    if (!user.value) {
+      referral.referralCode = null
+      referral.referralCount = 0
+      referral.referralBonusBdt = 0
+      referral.referralBonusUsedBdt = 0
+      referral.referralBonusAvailableBdt = 0
+      return
+    }
+
+    const data: any = await $fetch('/api/referrals/me', {
+      credentials: 'include',
+      headers: serverCookieHeaders(),
+      cache: 'no-store'
+    })
+
+    referral.referralCode = String(data?.referralCode || '').trim() || null
+    referral.referralCount = Number(data?.referralCount || 0)
+    referral.referralBonusBdt = Number(data?.referralBonusBdt || 0)
+    referral.referralBonusUsedBdt = Number(data?.referralBonusUsedBdt || 0)
+    referral.referralBonusAvailableBdt = Number(data?.referralBonusAvailableBdt || 0)
+  } catch {
+    referral.referralCode = null
+    referral.referralCount = 0
+    referral.referralBonusBdt = 0
+    referral.referralBonusUsedBdt = 0
+    referral.referralBonusAvailableBdt = 0
+  } finally {
+    referralLoading.value = false
+  }
+}
+
 const plans = ref<PlanRow[]>([])
 
 function effectivePrice(p: PlanRow) {
@@ -53,13 +102,35 @@ function effectivePrice(p: PlanRow) {
   const ok = p.discount_active && dp !== null && dp >= 0 && dp < p.price_bdt
   return ok ? dp : p.price_bdt
 }
+
 function hasValidDiscount(p: PlanRow) {
-  return p.discount_active && p.discount_price_bdt !== null && p.discount_price_bdt >= 0 && p.discount_price_bdt < p.price_bdt
+  return (
+    p.discount_active &&
+    p.discount_price_bdt !== null &&
+    p.discount_price_bdt >= 0 &&
+    p.discount_price_bdt < p.price_bdt
+  )
+}
+
+function bonusUsedForPreview(p: PlanRow) {
+  return Math.min(referral.referralBonusAvailableBdt || 0, effectivePrice(p))
+}
+
+function finalPayablePreview(p: PlanRow) {
+  return Math.max(0, effectivePrice(p) - bonusUsedForPreview(p))
+}
+
+function showWalletPreview(_p: PlanRow) {
+  return !!user.value && referral.referralBonusAvailableBdt > 0
 }
 
 function planBullets(_p: PlanRow) {
-  // ✅ Requested: add “Access Pro Games”
-  return ['Tournament access', 'Access Pro Games', 'Secure payment (SSLCOMMERZ)', 'Stacks with remaining time']
+  return [
+    'Tournament access',
+    'Access Pro Games',
+    'Secure payment (SSLCOMMERZ)',
+    'Stacks with remaining time'
+  ]
 }
 
 function planDesc(p: PlanRow) {
@@ -71,7 +142,6 @@ function planDesc(p: PlanRow) {
 }
 
 function featured(p: PlanRow) {
-  // ✅ Middle card / 7d highlighted
   return p.code === '7d' || p.duration_days === 7
 }
 
@@ -80,27 +150,32 @@ async function loadPlans() {
   try {
     const { data, error } = await supabase
       .from('subscription_plans')
-      .select('id, code, title, duration_days, price_bdt, is_active, discount_active, discount_price_bdt, discount_note, created_at')
+      .select(
+        'id, code, title, duration_days, price_bdt, is_active, discount_active, discount_price_bdt, discount_note, created_at'
+      )
       .eq('is_active', true)
       .order('duration_days', { ascending: true })
 
     if (error) throw error
     plans.value = (data || []) as PlanRow[]
   } catch (e: any) {
-    toast.add({ title: 'Failed to load plans', description: e?.message || 'Try again.', color: 'error' })
+    toast.add({
+      title: 'Failed to load plans',
+      description: e?.message || 'Try again.',
+      color: 'error'
+    })
     plans.value = []
   } finally {
     plansLoading.value = false
   }
 }
 
-/* ---------------- Page load ---------------- */
 async function refreshAll() {
   loading.value = true
   okMsg.value = null
   errorMsg.value = null
   try {
-    await Promise.all([refreshStatus(), loadPlans()])
+    await Promise.all([refreshStatus(), loadPlans(), loadReferralSummary()])
   } finally {
     loading.value = false
   }
@@ -108,9 +183,18 @@ async function refreshAll() {
 
 await refreshAll()
 
-/* ---------------- Time helpers ---------------- */
+watch(
+  () => user.value?.id,
+  async () => {
+    await refreshAll()
+  }
+)
+
 function fmt(dt: string) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(dt))
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(dt))
 }
 
 function msLeft(endsAt?: string | null) {
@@ -121,6 +205,7 @@ function msLeft(endsAt?: string | null) {
 
 function formatRemaining(ms: number) {
   if (ms <= 0) return 'Expired'
+
   const totalMinutes = Math.floor(ms / 60000)
   const days = Math.floor(totalMinutes / (60 * 24))
   const hours = Math.floor((totalMinutes - days * 60 * 24) / 60)
@@ -136,17 +221,18 @@ const endsAt = computed<string | null>(() => state.value?.subscription?.ends_at 
 const remaining = computed(() => formatRemaining(msLeft(endsAt.value)))
 const lastPlanTitle = computed(() => state.value?.subscription?.subscription_plans?.title || null)
 
-/* ---------------- CTA helpers ---------------- */
 function ctaLabel() {
   if (!user.value) return 'Log in to subscribe'
-  return active.value ? 'Extend' : 'Subscribe'
-}
-function ctaHint(days: number) {
-  if (!user.value) return 'Sign in required'
-  return active.value ? `Adds +${days} day${days > 1 ? 's' : ''} after payment` : `Starts after payment • ${days} day${days > 1 ? 's' : ''}`
+  return active.value ? 'Extend access' : 'Subscribe now'
 }
 
-/* ---------------- Payment start ---------------- */
+function ctaHint(days: number) {
+  if (!user.value) return 'Sign in required'
+  return active.value
+    ? `Adds +${days} day${days > 1 ? 's' : ''} after payment`
+    : `Starts after payment • ${days} day${days > 1 ? 's' : ''}`
+}
+
 async function activate(planCode: string) {
   okMsg.value = null
   errorMsg.value = null
@@ -179,13 +265,12 @@ async function activate(planCode: string) {
 }
 
 function money(v: number) {
-  return new Intl.NumberFormat().format(v || 0)
+  return new Intl.NumberFormat('en-BD').format(v || 0)
 }
 </script>
 
 <template>
   <UContainer class="py-10">
-    <!-- Header -->
     <div class="flex flex-col gap-2">
       <h1 class="text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
         Tournament Passes
@@ -195,11 +280,8 @@ function money(v: number) {
       </p>
     </div>
 
-    <!-- Current access (TOP) -->
     <div
-      class="mt-6 rounded-3xl border border-gray-200/70 dark:border-white/10
-             bg-white/70 dark:bg-white/5 backdrop-blur
-             p-6 shadow-sm shadow-black/5 dark:shadow-none"
+      class="mt-6 rounded-3xl border border-gray-200/70 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-6 shadow-sm shadow-black/5 dark:shadow-none"
     >
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div class="min-w-0">
@@ -217,7 +299,9 @@ function money(v: number) {
 
             <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">
               Access until
-              <span class="font-medium text-gray-900 dark:text-gray-100">{{ endsAt ? fmt(endsAt) : '—' }}</span>
+              <span class="font-medium text-gray-900 dark:text-gray-100">
+                {{ endsAt ? fmt(endsAt) : '—' }}
+              </span>
               <span class="mx-2 text-gray-400 dark:text-gray-600">•</span>
               Remaining
               <span class="font-medium text-gray-900 dark:text-gray-100">{{ remaining }}</span>
@@ -225,7 +309,9 @@ function money(v: number) {
 
             <div class="mt-1 text-xs text-gray-600 dark:text-gray-400">
               Last purchase:
-              <span class="font-medium text-gray-900 dark:text-gray-100">{{ lastPlanTitle || '—' }}</span>
+              <span class="font-medium text-gray-900 dark:text-gray-100">
+                {{ lastPlanTitle || '—' }}
+              </span>
               <span class="mx-2 text-gray-400 dark:text-gray-600">•</span>
               Time stacks on purchase.
             </div>
@@ -250,73 +336,54 @@ function money(v: number) {
       </div>
     </div>
 
-    <!-- Alerts -->
     <div
       v-if="okMsg"
-      class="mt-6 rounded-2xl border border-emerald-500/25 bg-emerald-500/10
-             p-4 text-sm text-emerald-900 dark:text-emerald-100"
+      class="mt-6 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-900 dark:text-emerald-100"
     >
       ✅ {{ okMsg }}
     </div>
 
     <div
       v-if="errorMsg"
-      class="mt-4 rounded-2xl border border-rose-500/25 bg-rose-500/10
-             p-4 text-sm text-rose-900 dark:text-rose-100"
+      class="mt-4 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-4 text-sm text-rose-900 dark:text-rose-100"
     >
       ⚠️ {{ errorMsg }}
     </div>
 
-    <!-- Loading -->
     <div
       v-if="loading"
-      class="mt-8 rounded-2xl border border-gray-200/70 dark:border-white/10
-             bg-white/70 dark:bg-white/5 backdrop-blur p-6
-             text-sm text-gray-700 dark:text-gray-300"
+      class="mt-8 rounded-2xl border border-gray-200/70 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-6 text-sm text-gray-700 dark:text-gray-300"
     >
       Loading…
     </div>
 
-    <!-- Plans loading -->
     <div
       v-else-if="plansLoading"
-      class="mt-8 rounded-2xl border border-gray-200/70 dark:border-white/10
-             bg-white/70 dark:bg-white/5 backdrop-blur p-6
-             text-sm text-gray-700 dark:text-gray-300"
+      class="mt-8 rounded-2xl border border-gray-200/70 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-6 text-sm text-gray-700 dark:text-gray-300"
     >
       Loading plans…
     </div>
 
-    <!-- Pricing -->
     <div v-else class="mt-8 grid gap-5 lg:grid-cols-3 lg:items-stretch">
       <div
         v-for="p in plans"
         :key="p.code"
-        class="relative rounded-3xl border p-7 flex flex-col
-               border-gray-200/70 dark:border-white/10
-               bg-white/70 dark:bg-white/5 backdrop-blur
-               shadow-sm shadow-black/5 dark:shadow-none
-               transition-transform duration-200 will-change-transform"
+        class="relative rounded-3xl border p-7 flex flex-col border-gray-200/70 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur shadow-sm shadow-black/5 dark:shadow-none transition-transform duration-200 will-change-transform"
         :class="[
           featured(p)
             ? 'z-10 lg:scale-[1.06] lg:-translate-y-1 ring-1 ring-primary-500/30 dark:ring-primary-400/25'
             : 'lg:scale-100'
         ]"
       >
-        <!-- ✅ Badge moved INSIDE so it will never cut -->
         <div v-if="featured(p)" class="mb-4">
           <span
-            class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs
-                   border-gray-200 dark:border-white/15
-                   bg-white/90 dark:bg-black/35
-                   text-gray-800 dark:text-gray-100 shadow-sm shadow-black/5 dark:shadow-none"
+            class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs border-gray-200 dark:border-white/15 bg-white/90 dark:bg-black/35 text-gray-800 dark:text-gray-100 shadow-sm shadow-black/5 dark:shadow-none"
           >
             <span class="inline-flex h-1.5 w-1.5 rounded-full bg-primary-500" />
             Most Popular
           </span>
         </div>
 
-        <!-- Top row: title + duration pill -->
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">
             <div class="text-lg font-semibold text-gray-900 dark:text-gray-100">
@@ -327,47 +394,85 @@ function money(v: number) {
             </div>
           </div>
 
-          <!-- Duration pill -->
           <div
-            class="shrink-0 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs
-                   border-gray-200 dark:border-white/15
-                   bg-gray-50 dark:bg-white/10
-                   text-gray-700 dark:text-gray-200"
+            class="shrink-0 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs border-gray-200 dark:border-white/15 bg-gray-50 dark:bg-white/10 text-gray-700 dark:text-gray-200"
           >
             <span class="inline-flex h-1.5 w-1.5 rounded-full bg-gray-400 dark:bg-gray-200/70" />
             <span class="font-medium">{{ p.duration_days }} day{{ p.duration_days > 1 ? 's' : '' }}</span>
           </div>
         </div>
 
-        <!-- Price -->
         <div class="mt-6">
-          <div class="flex items-baseline gap-3">
-            <div class="text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-              BDT {{ money(effectivePrice(p)) }}
+          <div class="text-xs uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+            You pay
+          </div>
+
+          <div class="mt-2 rounded-2xl border border-primary-500/20 bg-primary-500/10 p-4">
+            <div class="flex items-end justify-between gap-3">
+              <div>
+                <div class="text-4xl font-extrabold tracking-tight text-primary-700 dark:text-primary-300">
+                  ৳{{ money(finalPayablePreview(p)) }}
+                </div>
+                <div class="mt-1 text-sm text-primary-800/80 dark:text-primary-200/80">
+                  Final payable amount at checkout
+                </div>
+              </div>
+
+              <div v-if="showWalletPreview(p)" class="text-right text-xs text-primary-800/75 dark:text-primary-200/75">
+                Auto-applied
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 flex flex-wrap items-end gap-x-3 gap-y-1">
+            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Base price: ৳{{ money(effectivePrice(p)) }}
             </div>
 
-            <div v-if="hasValidDiscount(p)" class="text-sm text-gray-500 dark:text-gray-400 line-through">
-              BDT {{ money(p.price_bdt) }}
+            <div
+              v-if="hasValidDiscount(p)"
+              class="text-sm text-gray-500 dark:text-gray-400 line-through"
+            >
+              ৳{{ money(p.price_bdt) }}
             </div>
           </div>
 
           <div
             v-if="hasValidDiscount(p) && p.discount_note"
-            class="mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs
-                   border-emerald-500/25 bg-emerald-500/10
-                   text-emerald-900 dark:text-emerald-100"
+            class="mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs border-emerald-500/25 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100"
           >
             <span class="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
             {{ p.discount_note }}
           </div>
 
-          <!-- ✅ Removed “Code: 7d” line (production / not needed) -->
           <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             Secure checkout with SSLCOMMERZ
           </div>
+
+          <div
+            v-if="showWalletPreview(p)"
+            class="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3"
+          >
+            <div class="flex items-center justify-between gap-3 text-sm">
+              <span class="text-emerald-900/85 dark:text-emerald-100/85">Referral Bonus Applied</span>
+              <span class="font-semibold text-emerald-900 dark:text-emerald-100">
+                - ৳{{ money(bonusUsedForPreview(p)) }}
+              </span>
+            </div>
+
+            <div class="mt-2 h-px bg-emerald-500/15" />
+
+            <div class="mt-2 flex items-center justify-between gap-3">
+              <span class="text-xs text-emerald-900/70 dark:text-emerald-100/70">
+                Final amount to pay now
+              </span>
+              <span class="text-lg font-bold text-emerald-900 dark:text-emerald-100">
+                ৳{{ money(finalPayablePreview(p)) }}
+              </span>
+            </div>
+          </div>
         </div>
 
-        <!-- Bullets -->
         <div class="mt-6 space-y-2 text-sm">
           <div
             v-for="b in planBullets(p)"
@@ -381,7 +486,6 @@ function money(v: number) {
 
         <div class="flex-1" />
 
-        <!-- CTA -->
         <UButton
           class="mt-7 w-full !rounded-full"
           size="lg"
@@ -399,7 +503,10 @@ function money(v: number) {
       </div>
     </div>
 
-    <div v-if="!loading && !plansLoading && plans.length === 0" class="mt-6 text-sm text-gray-600 dark:text-gray-400">
+    <div
+      v-if="!loading && !plansLoading && plans.length === 0"
+      class="mt-6 text-sm text-gray-600 dark:text-gray-400"
+    >
       No active plans found. Please contact admin.
     </div>
   </UContainer>

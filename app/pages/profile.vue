@@ -7,10 +7,18 @@ useHead({
 })
 
 definePageMeta({
-  middleware: ['require-auth'] // ✅ your real middleware file
+  middleware: ['require-auth']
 })
 
 type RoleResponse = { role: 'admin' | 'user' | null; found?: boolean }
+
+type ReferralSummary = {
+  referralCode: string | null
+  referralCount: number
+  referralBonusBdt: number
+  referralBonusUsedBdt: number
+  referralBonusAvailableBdt: number
+}
 
 const supabase = useSupabaseClient()
 const toast = useToast()
@@ -21,25 +29,24 @@ const user = useSupabaseUser()
 const loading = ref(false)
 const loadingProfile = ref(true)
 const avatarUploading = ref(false)
+const loadingReferral = ref(true)
+const copyingReferral = ref(false)
 
-/* ---------------- Role (admin bypass phone gate) ---------------- */
+const referral = reactive<ReferralSummary>({
+  referralCode: null,
+  referralCount: 0,
+  referralBonusBdt: 0,
+  referralBonusUsedBdt: 0,
+  referralBonusAvailableBdt: 0
+})
+
 const role = ref<'admin' | 'user' | null>(null)
 const isAdmin = computed(() => role.value === 'admin')
 
-async function loadRole() {
-  try {
-    const res = await $fetch<RoleResponse>('/api/auth/role')
-    role.value = res?.role ?? null
-  } catch {
-    role.value = null
-  }
-}
-
-/* ---------------- State ---------------- */
 const state = reactive({
   display_name: '',
   avatar_url: '',
-  phone: '' // E.164 in DB
+  phone: ''
 })
 
 const avatarInput = ref<HTMLInputElement | null>(null)
@@ -52,11 +59,10 @@ const pending = reactive({
   url: '' as string
 })
 
-/* ---------------- Flags (Unicode like login.vue) ---------------- */
 type CountryOpt = {
-  label: string // e.g. "BD +880"
-  dial: string // e.g. "+880"
-  iso: string // e.g. "BD"
+  label: string
+  dial: string
+  iso: string
 }
 
 function isoToFlagEmoji(iso: string) {
@@ -104,7 +110,6 @@ const COUNTRY_CODES: CountryOpt[] = [
   { label: 'ZA +27', dial: '+27', iso: 'ZA' }
 ]
 
-// ✅ keep v-model as FULL object (prevents broken select)
 const selectedCountry = ref<CountryOpt>(COUNTRY_CODES.find((c) => c.iso === 'BD') || COUNTRY_CODES[0])
 const phoneLocal = ref('')
 
@@ -138,13 +143,15 @@ function parseE164IntoUi(e164: string) {
 
 const phonePreview = computed(() => toE164(selectedCountry.value.dial, phoneLocal.value))
 
-/* ---------------- Required phone gate (ONLY for non-admin) ---------------- */
 const mustHavePhone = computed(() => {
   if (isAdmin.value) return false
   return !String(savedPhone.value || '').trim()
 })
 
 const mustCompleteBecauseRedirected = computed(() => String(route.query.needPhone || '') === '1')
+
+const successfulReferralCount = computed(() => Math.max(0, Number(referral.referralCount || 0)))
+const totalReferralBonusDisplay = computed(() => successfulReferralCount.value * 10)
 
 onBeforeRouteLeave(() => {
   if (mustHavePhone.value) {
@@ -158,7 +165,15 @@ onBeforeRouteLeave(() => {
   return true
 })
 
-/* ---------------- Display name helpers ---------------- */
+async function loadRole() {
+  try {
+    const res = await $fetch<RoleResponse>('/api/auth/role')
+    role.value = res?.role ?? null
+  } catch {
+    role.value = null
+  }
+}
+
 function normalizeDisplayName(v: string) {
   const s = String(v || '').trim().replace(/\s+/g, ' ')
   const cleaned = s.replace(/[^\p{L}\p{N} _-]/gu, '')
@@ -170,7 +185,6 @@ function validate() {
   if (!dn.trim()) return 'Please enter your display name.'
   if (dn.length < 3) return 'Display name should be at least 3 characters.'
 
-  // ✅ phone validation ONLY for non-admin
   if (!isAdmin.value) {
     const p = phonePreview.value
     if (!p) return 'Phone number is required.'
@@ -181,7 +195,6 @@ function validate() {
   return null
 }
 
-/* ---------------- Avatar helpers ---------------- */
 function openAvatarPicker() {
   if (avatarUploading.value) return
   avatarInput.value?.click()
@@ -208,15 +221,72 @@ async function deleteAvatarIfOwned(urlOrPath: string, userId: string, isPath = f
   if (error) console.warn('Avatar delete failed:', error.message)
 }
 
-/* ---------------- Load profile ---------------- */
+function money(v: number) {
+  return new Intl.NumberFormat('en-BD').format(Number(v || 0))
+}
+
+async function loadReferralSummary() {
+  loadingReferral.value = true
+  try {
+    const data: any = await $fetch('/api/referrals/me')
+    referral.referralCode = String(data?.referralCode || '').trim() || null
+    referral.referralCount = Number(data?.referralCount || 0)
+    referral.referralBonusBdt = Number(data?.referralBonusBdt || 0)
+    referral.referralBonusUsedBdt = Number(data?.referralBonusUsedBdt || 0)
+    referral.referralBonusAvailableBdt = Number(data?.referralBonusAvailableBdt || 0)
+  } catch {
+    referral.referralCode = null
+    referral.referralCount = 0
+    referral.referralBonusBdt = 0
+    referral.referralBonusUsedBdt = 0
+    referral.referralBonusAvailableBdt = 0
+  } finally {
+    loadingReferral.value = false
+  }
+}
+
+async function copyReferralCode() {
+  const code = String(referral.referralCode || '').trim()
+  if (!code) {
+    toast.add({
+      title: 'No referral code',
+      description: 'Referral code is not available yet.',
+      color: 'warning'
+    })
+    return
+  }
+
+  try {
+    copyingReferral.value = true
+    await navigator.clipboard.writeText(code)
+    toast.add({
+      title: 'Copied',
+      description: 'Referral code copied to clipboard.',
+      color: 'success'
+    })
+  } catch {
+    toast.add({
+      title: 'Copy failed',
+      description: 'Please copy the code manually.',
+      color: 'error'
+    })
+  } finally {
+    copyingReferral.value = false
+  }
+}
+
 async function loadProfile() {
   if (!import.meta.client) return
   loadingProfile.value = true
 
   try {
-    await loadRole()
+    await Promise.all([loadRole(), loadReferralSummary()])
 
-    const { data: { user: u }, error: authErr } = await supabase.auth.getUser()
+    const {
+      data: { user: u },
+      error: authErr
+    } = await supabase.auth.getUser()
+
     if (authErr || !u?.id) return
 
     const fallbackName =
@@ -249,7 +319,6 @@ async function loadProfile() {
 
 onMounted(loadProfile)
 
-/* ✅ If user logs out from anywhere, leave this page immediately */
 watch(
   () => user.value?.id,
   (id) => {
@@ -257,7 +326,6 @@ watch(
   }
 )
 
-/* ---------------- Avatar upload ---------------- */
 async function onPickAvatar(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
@@ -274,7 +342,11 @@ async function onPickAvatar(e: Event) {
       return
     }
 
-    const { data: { user: u }, error: userErr } = await supabase.auth.getUser()
+    const {
+      data: { user: u },
+      error: userErr
+    } = await supabase.auth.getUser()
+
     if (userErr || !u?.id) throw new Error('Login required')
 
     if (pending.path) {
@@ -301,7 +373,11 @@ async function onPickAvatar(e: Event) {
     pending.url = url
     state.avatar_url = url
   } catch (err: any) {
-    toast.add({ title: 'Upload failed', description: err?.message || 'Try again.', color: 'error' })
+    toast.add({
+      title: 'Upload failed',
+      description: err?.message || 'Try again.',
+      color: 'error'
+    })
   } finally {
     resetAvatarInput()
     setTimeout(() => {
@@ -310,7 +386,6 @@ async function onPickAvatar(e: Event) {
   }
 }
 
-/* ---------------- Save ---------------- */
 async function save() {
   const err = validate()
   if (err) {
@@ -320,14 +395,16 @@ async function save() {
 
   loading.value = true
   try {
-    const { data: { user: u }, error: userErr } = await supabase.auth.getUser()
+    const {
+      data: { user: u },
+      error: userErr
+    } = await supabase.auth.getUser()
+
     if (userErr || !u?.id) throw new Error('Login required')
 
     const displayName = normalizeDisplayName(state.display_name)
     const nextAvatarUrl = state.avatar_url.trim() || null
-
-    // ✅ phone only required for non-admin. For admin, save null if empty.
-    const phoneE164 = isAdmin.value ? (phonePreview.value.trim() || null) : phonePreview.value.trim()
+    const phoneE164 = isAdmin.value ? phonePreview.value.trim() || null : phonePreview.value.trim()
 
     const prevSavedAvatar = savedAvatarUrl.value
 
@@ -386,7 +463,10 @@ async function save() {
 async function clearAvatar() {
   if (avatarUploading.value) return
   try {
-    const { data: { user: u } } = await supabase.auth.getUser()
+    const {
+      data: { user: u }
+    } = await supabase.auth.getUser()
+
     if (u?.id && pending.path) {
       avatarUploading.value = true
       await deleteAvatarIfOwned(pending.path, u.id, true)
@@ -412,7 +492,10 @@ async function cancel() {
   }
 
   try {
-    const { data: { user: u } } = await supabase.auth.getUser()
+    const {
+      data: { user: u }
+    } = await supabase.auth.getUser()
+
     if (u?.id && pending.path) {
       await deleteAvatarIfOwned(pending.path, u.id, true)
       pending.path = ''
@@ -423,7 +506,6 @@ async function cancel() {
   }
 }
 
-/* ---------------- UI helpers ---------------- */
 function initials(name: string) {
   const s = String(name || '').trim()
   if (!s) return 'IA'
@@ -435,14 +517,13 @@ function initials(name: string) {
 <template>
   <UContainer class="py-10 md:py-14">
     <div class="mx-auto max-w-5xl">
-      <!-- Header -->
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 class="text-3xl md:text-5xl font-semibold tracking-tight text-black dark:text-white">
             Profile
           </h1>
           <p class="mt-2 text-sm md:text-base text-black/70 dark:text-white/70">
-            Manage your display name, phone number and avatar.
+            Manage your display name, phone number, avatar and referral details.
           </p>
         </div>
 
@@ -469,7 +550,6 @@ function initials(name: string) {
         </div>
       </div>
 
-      <!-- Phone required banner (ONLY non-admin) -->
       <div
         v-if="mustHavePhone"
         class="mt-6 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4"
@@ -488,7 +568,6 @@ function initials(name: string) {
       </div>
 
       <div class="mt-8 grid gap-6 lg:grid-cols-[360px_1fr] items-start">
-        <!-- Left: Avatar -->
         <UCard class="border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur">
           <template #header>
             <div class="flex items-center justify-between">
@@ -554,65 +633,121 @@ function initials(name: string) {
           </div>
         </UCard>
 
-        <!-- Right: Form -->
-        <UCard class="border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur">
-          <template #header>
-            <div class="font-semibold text-black dark:text-white">Profile details</div>
-          </template>
+        <div class="grid gap-6">
+          <UCard class="border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur">
+            <template #header>
+              <div class="flex items-center justify-between gap-3">
+                <div class="font-semibold text-black dark:text-white">Referral</div>
+                <div v-if="loadingReferral" class="text-xs text-black/60 dark:text-white/60">Loading…</div>
+              </div>
+            </template>
 
-          <div class="grid gap-5">
-            <UFormGroup label="Display name" required>
-              <UInput
-                v-model="state.display_name"
-                placeholder="Your display name"
-                icon="i-heroicons-user"
-                :disabled="loadingProfile || avatarUploading || loading"
-              />
-            </UFormGroup>
+            <div class="grid gap-5">
+              <div class="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+                <div>
+                  <div class="text-xs text-black/60 dark:text-white/60">Your referral code</div>
+                  <div class="mt-2 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.03] px-4 py-3">
+                    <div class="text-xl font-semibold tracking-[0.18em] text-black dark:text-white">
+                      {{ referral.referralCode || '—' }}
+                    </div>
+                  </div>
+                </div>
 
-            <!-- Phone (required for user, optional for admin) -->
-            <div class="grid gap-3 sm:grid-cols-[190px_1fr]">
-              <UFormGroup :label="isAdmin ? 'Country code (optional)' : 'Country code'" :required="!isAdmin">
-                <USelectMenu
-                  v-model="selectedCountry"
-                  :items="COUNTRY_CODES"
-                  class="w-full"
-                  :ui="{ width: 'w-full' }"
-                  :search-input="{ placeholder: 'Search…', icon: 'i-heroicons-magnifying-glass' }"
-                  :disabled="loadingProfile || loading || avatarUploading"
+                <UButton
+                  variant="soft"
+                  color="primary"
+                  icon="i-heroicons-clipboard-document"
+                  :disabled="loadingReferral || !referral.referralCode"
+                  :loading="copyingReferral"
+                  @click="copyReferralCode"
                 >
-                  <template #label>
-                    <span class="inline-flex items-center gap-2 tabular-nums whitespace-nowrap">
-                      <span class="text-base leading-none">{{ isoToFlagEmoji(selectedCountry.iso) }}</span>
-                      <span class="whitespace-nowrap">{{ selectedCountry.label }}</span>
-                    </span>
-                  </template>
+                  Copy code
+                </UButton>
+              </div>
 
-                  <template #option="{ option }">
-                    <span class="inline-flex items-center gap-2 tabular-nums whitespace-nowrap">
-                      <span class="text-base leading-none">{{ isoToFlagEmoji(option.iso) }}</span>
-                      <span class="whitespace-nowrap">{{ option.label }}</span>
-                    </span>
-                  </template>
-                </USelectMenu>
-              </UFormGroup>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.03] p-4">
+                  <div class="text-xs text-black/60 dark:text-white/60">Users subscribed with your code</div>
+                  <div class="mt-2 text-2xl font-semibold text-black dark:text-white">
+                    {{ successfulReferralCount }}
+                  </div>
+                </div>
 
-              <UFormGroup :label="isAdmin ? 'Phone number (optional)' : 'Phone number'" :required="!isAdmin">
+                <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                  <div class="text-xs text-emerald-900/80 dark:text-emerald-100/80">Total referral bonus</div>
+                  <div class="mt-2 text-2xl font-semibold text-emerald-900 dark:text-emerald-100">
+                    ৳{{ money(totalReferralBonusDisplay) }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="text-xs text-black/60 dark:text-white/60 leading-relaxed">
+                Share this code with new users. Your referral count and total referral bonus increase only after a user signs up with your code and successfully buys a subscription.
+              </div>
+            </div>
+          </UCard>
+
+          <UCard class="border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur">
+            <template #header>
+              <div class="font-semibold text-black dark:text-white">Profile details</div>
+            </template>
+
+            <div class="grid gap-5">
+              <UFormGroup label="Display name" required>
                 <UInput
-                  v-model="phoneLocal"
-                  placeholder="Phone number"
-                  autocomplete="tel"
-                  icon="i-heroicons-phone"
-                  :disabled="loadingProfile || loading || avatarUploading"
+                  v-model="state.display_name"
+                  placeholder="Your display name"
+                  icon="i-heroicons-user"
+                  :disabled="loadingProfile || avatarUploading || loading"
                 />
               </UFormGroup>
-            </div>
 
-            <div v-if="!isAdmin && (mustCompleteBecauseRedirected || mustHavePhone)" class="text-xs text-amber-700 dark:text-amber-300">
-              Phone is mandatory to continue.
+              <div class="grid gap-3 sm:grid-cols-[190px_1fr]">
+                <UFormGroup :label="isAdmin ? 'Country code (optional)' : 'Country code'" :required="!isAdmin">
+                  <USelectMenu
+                    v-model="selectedCountry"
+                    :items="COUNTRY_CODES"
+                    class="w-full"
+                    :ui="{ width: 'w-full' }"
+                    :search-input="{ placeholder: 'Search…', icon: 'i-heroicons-magnifying-glass' }"
+                    :disabled="loadingProfile || loading || avatarUploading"
+                  >
+                    <template #label>
+                      <span class="inline-flex items-center gap-2 tabular-nums whitespace-nowrap">
+                        <span class="text-base leading-none">{{ isoToFlagEmoji(selectedCountry.iso) }}</span>
+                        <span class="whitespace-nowrap">{{ selectedCountry.label }}</span>
+                      </span>
+                    </template>
+
+                    <template #option="{ option }">
+                      <span class="inline-flex items-center gap-2 tabular-nums whitespace-nowrap">
+                        <span class="text-base leading-none">{{ isoToFlagEmoji(option.iso) }}</span>
+                        <span class="whitespace-nowrap">{{ option.label }}</span>
+                      </span>
+                    </template>
+                  </USelectMenu>
+                </UFormGroup>
+
+                <UFormGroup :label="isAdmin ? 'Phone number (optional)' : 'Phone number'" :required="!isAdmin">
+                  <UInput
+                    v-model="phoneLocal"
+                    placeholder="Phone number"
+                    autocomplete="tel"
+                    icon="i-heroicons-phone"
+                    :disabled="loadingProfile || loading || avatarUploading"
+                  />
+                </UFormGroup>
+              </div>
+
+              <div
+                v-if="!isAdmin && (mustCompleteBecauseRedirected || mustHavePhone)"
+                class="text-xs text-amber-700 dark:text-amber-300"
+              >
+                Phone is mandatory to continue.
+              </div>
             </div>
-          </div>
-        </UCard>
+          </UCard>
+        </div>
       </div>
     </div>
   </UContainer>

@@ -1,3 +1,4 @@
+// server/api/payments/finalize.post.ts
 import { createError, readBody } from 'h3'
 import { serverSupabaseClient } from '#supabase/server'
 
@@ -9,6 +10,12 @@ type PaymentRow = {
   tran_id: string
   val_id: string | null
   applied: boolean
+  referral_bonus_used_bdt?: number | null
+}
+
+type ProfileReferralRow = {
+  referral_bonus_bdt: number | null
+  referral_bonus_used_bdt: number | null
 }
 
 function up(v: unknown) {
@@ -23,6 +30,12 @@ function toNum(v: unknown) {
 function amountsMatch(a: number | null | undefined, b: number | null | undefined) {
   if (a == null || b == null) return false
   return Math.abs(Number(a) - Number(b)) < 0.000001
+}
+
+function safeMoney(v: unknown) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.round(n))
 }
 
 export default defineEventHandler(async (event) => {
@@ -58,12 +71,15 @@ export default defineEventHandler(async (event) => {
   }
 
   if (pay.applied) {
-    return { ok: true, alreadyApplied: true, active: true }
+    return {
+      ok: true,
+      alreadyApplied: true,
+      active: true
+    }
   }
 
   const val_id = String(pay.val_id || '').trim()
 
-  // Key change: do not hard-fail if val_id is not there yet
   if (!val_id) {
     return {
       ok: false,
@@ -145,6 +161,56 @@ export default defineEventHandler(async (event) => {
 
   if (rpcErr) {
     throw createError({ statusCode: 500, statusMessage: rpcErr.message })
+  }
+
+  const paymentReferralUsed = safeMoney(pay.referral_bonus_used_bdt)
+
+  if (paymentReferralUsed > 0) {
+    const { data: profile, error: profileErr } = await sb
+      .from('profiles')
+      .select('referral_bonus_bdt, referral_bonus_used_bdt')
+      .eq('user_id', user.id)
+      .maybeSingle<ProfileReferralRow>()
+
+    if (profileErr) {
+      throw createError({ statusCode: 500, statusMessage: profileErr.message })
+    }
+
+    if (profile) {
+      const totalBonus = safeMoney(profile.referral_bonus_bdt)
+      const alreadyUsed = safeMoney(profile.referral_bonus_used_bdt)
+      const available = Math.max(0, totalBonus - alreadyUsed)
+      const consumeNow = Math.min(paymentReferralUsed, available)
+
+      if (consumeNow > 0) {
+        const nextUsed = alreadyUsed + consumeNow
+
+        const { error: updErr } = await sb
+          .from('profiles')
+          .update({
+            referral_bonus_used_bdt: nextUsed,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id)
+
+        if (updErr) {
+          throw createError({ statusCode: 500, statusMessage: updErr.message })
+        }
+      }
+    }
+  }
+
+  // Mark pending referral as completed only after successful subscription purchase
+  const targetStatus = paymentReferralUsed > 0 ? 'used' : 'earned'
+
+  const { error: refUpdateErr } = await sb
+    .from('user_referrals')
+    .update({ status: targetStatus })
+    .eq('referred_user_id', user.id)
+    .eq('status', 'pending')
+
+  if (refUpdateErr) {
+    throw createError({ statusCode: 500, statusMessage: refUpdateErr.message })
   }
 
   return {
