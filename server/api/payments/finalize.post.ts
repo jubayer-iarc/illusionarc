@@ -18,6 +18,11 @@ type ProfileReferralRow = {
   referral_bonus_used_bdt: number | null
 }
 
+type UpdatedReferralRow = {
+  id: number
+  status: 'pending' | 'earned' | 'used'
+}
+
 function up(v: unknown) {
   return String(v || '').trim().toUpperCase()
 }
@@ -200,14 +205,17 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Mark pending referral as completed only after successful subscription purchase
-  const targetStatus = paymentReferralUsed > 0 ? 'used' : 'earned'
+  // Mark pending referral as completed only after successful subscription purchase.
+  // We also verify that a row was actually updated.
+  const targetStatus: 'used' | 'earned' = paymentReferralUsed > 0 ? 'used' : 'earned'
 
-  const { error: refUpdateErr } = await sb
+  const { data: updatedReferral, error: refUpdateErr } = await sb
     .from('user_referrals')
     .update({ status: targetStatus })
     .eq('referred_user_id', user.id)
     .eq('status', 'pending')
+    .select('id, status')
+    .maybeSingle<UpdatedReferralRow>()
 
   if (refUpdateErr) {
     throw createError({ statusCode: 500, statusMessage: refUpdateErr.message })
@@ -216,6 +224,8 @@ export default defineEventHandler(async (event) => {
   return {
     ok: true,
     active: true,
-    result: rpcData || null
+    result: rpcData || null,
+    referralStatusUpdated: Boolean(updatedReferral?.id),
+    referralStatus: updatedReferral?.status || null
   }
 })
