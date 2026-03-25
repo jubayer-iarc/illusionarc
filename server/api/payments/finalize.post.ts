@@ -13,11 +13,6 @@ type PaymentRow = {
   referral_bonus_used_bdt?: number | null
 }
 
-type ProfileReferralRow = {
-  referral_bonus_bdt: number | null
-  referral_bonus_used_bdt: number | null
-}
-
 type CompleteReferralRpcRow = {
   updated: boolean
   new_status: string | null
@@ -41,6 +36,24 @@ function safeMoney(v: unknown) {
   const n = Number(v)
   if (!Number.isFinite(n)) return 0
   return Math.max(0, Math.round(n))
+}
+
+async function reconcileReferral(sb: any, userId: string, paymentReferralUsed: number) {
+  const { data, error } = await sb
+    .rpc('complete_referral_after_subscription', {
+      p_referred_user_id: userId,
+      p_payment_referral_used_bdt: paymentReferralUsed
+    })
+    .single<CompleteReferralRpcRow>()
+
+  if (error) {
+    throw createError({ statusCode: 500, statusMessage: error.message })
+  }
+
+  return {
+    referralStatusUpdated: Boolean(data?.updated),
+    referralStatus: data?.new_status || null
+  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -75,11 +88,18 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'This payment does not belong to you' })
   }
 
+  const paymentReferralUsed = safeMoney(pay.referral_bonus_used_bdt)
+
+  // Important:
+  // even if payment was already applied earlier, still reconcile pending referral row now.
   if (pay.applied) {
+    const referral = await reconcileReferral(sb, user.id, paymentReferralUsed)
+
     return {
       ok: true,
       alreadyApplied: true,
-      active: true
+      active: true,
+      ...referral
     }
   }
 
@@ -168,59 +188,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: rpcErr.message })
   }
 
-  const paymentReferralUsed = safeMoney(pay.referral_bonus_used_bdt)
-
-  if (paymentReferralUsed > 0) {
-    const { data: profile, error: profileErr } = await sb
-      .from('profiles')
-      .select('referral_bonus_bdt, referral_bonus_used_bdt')
-      .eq('user_id', user.id)
-      .maybeSingle<ProfileReferralRow>()
-
-    if (profileErr) {
-      throw createError({ statusCode: 500, statusMessage: profileErr.message })
-    }
-
-    if (profile) {
-      const totalBonus = safeMoney(profile.referral_bonus_bdt)
-      const alreadyUsed = safeMoney(profile.referral_bonus_used_bdt)
-      const available = Math.max(0, totalBonus - alreadyUsed)
-      const consumeNow = Math.min(paymentReferralUsed, available)
-
-      if (consumeNow > 0) {
-        const nextUsed = alreadyUsed + consumeNow
-
-        const { error: updErr } = await sb
-          .from('profiles')
-          .update({
-            referral_bonus_used_bdt: nextUsed,
-            updated_at: new Date().toISOString()
-          })
-          .eq('user_id', user.id)
-
-        if (updErr) {
-          throw createError({ statusCode: 500, statusMessage: updErr.message })
-        }
-      }
-    }
-  }
-
-  const { data: completeReferral, error: completeReferralErr } = await sb
-    .rpc('complete_referral_after_subscription', {
-      p_referred_user_id: user.id,
-      p_payment_referral_used_bdt: paymentReferralUsed
-    })
-    .single<CompleteReferralRpcRow>()
-
-  if (completeReferralErr) {
-    throw createError({ statusCode: 500, statusMessage: completeReferralErr.message })
-  }
+  const referral = await reconcileReferral(sb, user.id, paymentReferralUsed)
 
   return {
     ok: true,
     active: true,
     result: rpcData || null,
-    referralStatusUpdated: Boolean(completeReferral?.updated),
-    referralStatus: completeReferral?.new_status || null
+    ...referral
   }
 })
