@@ -53,7 +53,7 @@ import LandingTournamentBanner from '~/components/ads/LandingTournamentBanner.vu
 import BreakingNewsTicker from '~/components/BreakingNewsTicker.vue'
 
 // Toggle this
-const isMaintenance = false
+const isMaintenance = true
 </script>
 
 <style scoped>
