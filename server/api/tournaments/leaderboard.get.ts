@@ -80,10 +80,10 @@ export default defineEventHandler(async (event) => {
 
     const { data: scoreRows, error: rowsError } = await (supabase as any)
       .from('tournament_scores')
-      .select('user_id, player_name, score, created_at')
+      .select('user_id, player_name, score, created_at, updated_at')
       .eq('tournament_id', tournament.id)
       .order('score', { ascending: false })
-      .order('created_at', { ascending: true })
+      .order('updated_at', { ascending: true })
       .limit(limit)
 
     if (rowsError) {
@@ -103,7 +103,10 @@ export default defineEventHandler(async (event) => {
       )
     )
 
-    let profileMap: Record<string, { display_name: string; avatar_url: string; masked_phone: string }> = {}
+    let profileMap: Record<
+      string,
+      { display_name: string; avatar_url: string; masked_phone: string }
+    > = {}
 
     if (userIds.length > 0) {
       const { data: profiles, error: profilesError } = await (supabase as any)
@@ -146,7 +149,11 @@ export default defineEventHandler(async (event) => {
           player_name: String(r?.player_name || '').trim() || 'Player',
           score: Number(r?.score || 0),
           created_at: r?.created_at || null,
-          display_name: profile?.display_name || String(r?.player_name || '').trim() || 'Player',
+          updated_at: r?.updated_at || null,
+          display_name:
+            profile?.display_name ||
+            String(r?.player_name || '').trim() ||
+            'Player',
           avatar_url: profile?.avatar_url || '',
           masked_phone: profile?.masked_phone || ''
         }

@@ -110,7 +110,7 @@ const resetLabel = computed(() => (
   period.value === 'daily' ? 'Resets at 00:00 UTC' : 'Resets Saturday 00:00 UTC'
 ))
 
-function fmtDate(ts?: string) {
+function fmtDate(ts?: string | null) {
   if (!ts) return ''
   const iso = ts.includes('T') ? ts : ts.replace(' ', 'T')
   const d = new Date(iso)
@@ -118,7 +118,7 @@ function fmtDate(ts?: string) {
   return d.toLocaleString()
 }
 
-function fmt(dt?: string) {
+function fmt(dt?: string | null) {
   if (!dt) return ''
   const d = new Date(dt)
   if (Number.isNaN(d.getTime())) return ''
@@ -244,7 +244,8 @@ type TournamentRow = {
   user_id?: string | null
   player_name: string
   score: number
-  created_at: string
+  created_at: string | null
+  updated_at?: string | null
   display_name?: string
   avatar_url?: string
   masked_phone?: string
@@ -312,6 +313,10 @@ function displayNameForTournament(r: TournamentRow) {
 
 function maskedPhoneForTournament(r: TournamentRow) {
   return String(r.masked_phone || '').trim()
+}
+
+function tournamentTimestampFor(r: TournamentRow) {
+  return r.updated_at || r.created_at || null
 }
 
 async function loadTournaments() {
@@ -660,7 +665,7 @@ watch(
         >
           <div
             v-for="(r, i) in tournamentTop3"
-            :key="`${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
+            :key="`${r.user_id ?? ''}_${r.player_name}_${r.score}_${tournamentTimestampFor(r)}_${i}`"
             class="rounded-3xl border border-black/10 bg-white/70 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5"
           >
             <div class="flex items-center justify-between">
@@ -702,7 +707,7 @@ watch(
                   {{ maskedPhoneForTournament(r) }}
                 </div>
                 <div class="text-xs text-black/60 dark:text-white/60">
-                  Achieved: {{ fmtDate(r.created_at) }}
+                  Updated: {{ fmtDate(tournamentTimestampFor(r)) }}
                 </div>
               </div>
             </div>
@@ -744,7 +749,7 @@ watch(
             <div v-if="!tournamentBoardLoading && pagedTournamentRows.length" class="space-y-3 p-4">
               <div
                 v-for="(r, i) in pagedTournamentRows"
-                :key="`m-${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
+                :key="`m-${r.user_id ?? ''}_${r.player_name}_${r.score}_${tournamentTimestampFor(r)}_${i}`"
                 class="rounded-2xl border border-black/10 bg-black/5 p-4 dark:border-white/10 dark:bg-white/5"
               >
                 <div class="flex items-start justify-between gap-3">
@@ -775,7 +780,7 @@ watch(
                   </div>
                 </div>
                 <div class="mt-3 text-xs text-black/60 dark:text-white/60">
-                  {{ fmtDate(r.created_at) }}
+                  Updated: {{ fmtDate(tournamentTimestampFor(r)) }}
                 </div>
               </div>
             </div>
@@ -793,14 +798,14 @@ watch(
                   <th class="py-3 pr-3">Player</th>
                   <th class="py-3 pr-3">Phone</th>
                   <th class="py-3 pr-3">Score</th>
-                  <th class="py-3 pr-3">Achieved</th>
+                  <th class="py-3 pr-3">Updated</th>
                 </tr>
               </thead>
 
               <tbody>
                 <tr
                   v-for="(r, i) in pagedTournamentRows"
-                  :key="`${r.user_id ?? ''}_${r.player_name}_${r.score}_${r.created_at}_${i}`"
+                  :key="`${r.user_id ?? ''}_${r.player_name}_${r.score}_${tournamentTimestampFor(r)}_${i}`"
                   class="border-b border-black/10 transition hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
                 >
                   <td class="py-3 pr-3 text-black/60 dark:text-white/60">
@@ -839,7 +844,7 @@ watch(
                   </td>
 
                   <td class="py-3 pr-3 font-semibold tabular-nums text-black dark:text-white">{{ r.score }}</td>
-                  <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ fmtDate(r.created_at) }}</td>
+                  <td class="py-3 pr-3 text-black/60 dark:text-white/60">{{ fmtDate(tournamentTimestampFor(r)) }}</td>
                 </tr>
 
                 <tr v-if="!tournamentBoardLoading && pagedTournamentRows.length === 0">

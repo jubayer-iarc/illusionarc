@@ -1,8 +1,13 @@
+// app/composables/useTournamentLeaderboard.ts
 export type TournamentLeaderboardRow = {
   user_id?: string | null
   player_name: string
   score: number
-  created_at: string
+  created_at: string | null
+  updated_at?: string | null
+  display_name?: string
+  avatar_url?: string
+  masked_phone?: string
 }
 
 export function useTournamentLeaderboard() {
