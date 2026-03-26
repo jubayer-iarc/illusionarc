@@ -5,7 +5,24 @@ useHead({
 })
 
 definePageMeta({
-  middleware: ['guest-only']
+  middleware: [
+    async () => {
+      const user = useSupabaseUser()
+      const supabase = useSupabaseClient()
+
+      if (user.value) {
+        return navigateTo('/', { replace: true })
+      }
+
+      const {
+        data: { session }
+      } = await supabase.auth.getSession()
+
+      if (session) {
+        return navigateTo('/', { replace: true })
+      }
+    }
+  ]
 })
 
 type RoleResponse = { role: 'admin' | 'user' | null; found?: boolean }
@@ -88,7 +105,9 @@ const COUNTRY_CODES: CountryOpt[] = [
   { label: 'ZA +27', dial: '+27', iso: 'ZA' }
 ]
 
-const selectedCountry = ref<CountryOpt>(COUNTRY_CODES.find((c) => c.iso === 'BD') || COUNTRY_CODES[0])
+const selectedCountry = ref<CountryOpt>(
+  COUNTRY_CODES.find((c) => c.iso === 'BD') || COUNTRY_CODES[0]
+)
 const phoneLocal = ref('')
 
 function onlyDigits(v: string) {
@@ -185,23 +204,6 @@ async function redirectAfterLogin() {
 }
 
 watch(
-  () => user.value?.id,
-  async (id) => {
-    if (!id) return
-    if (loading.value) return
-    if (authRedirecting.value) return
-
-    authRedirecting.value = true
-    try {
-      await redirectAfterLogin()
-    } finally {
-      authRedirecting.value = false
-    }
-  },
-  { immediate: true }
-)
-
-watch(
   () => route.query.mode,
   (q) => {
     if (String(q || '').trim().toLowerCase() === 'signup') {
@@ -236,7 +238,6 @@ async function isPhoneTaken(phoneE164: string): Promise<boolean> {
 }
 
 async function isDisplayNameTaken(name: string): Promise<boolean> {
-  if (!import.meta.client) return false
   const n = normalizeDisplayName(name)
   if (!n) return false
 
@@ -711,29 +712,160 @@ function goToForgotPassword() {
 </template>
 
 <style scoped>
-.authPage { position: relative; min-height: calc(100dvh - 64px); overflow: hidden; color: var(--app-fg); }
-.bg { position: absolute; inset: 0; background: var(--app-bg); }
-.wash { position: absolute; inset: 0; background: radial-gradient(900px 600px at 15% 20%, var(--wash-b), transparent 60%), radial-gradient(900px 600px at 85% 30%, var(--wash-a), transparent 60%), radial-gradient(900px 700px at 55% 90%, rgba(34, 197, 94, 0.10), transparent 60%), linear-gradient(to bottom, rgba(255, 255, 255, 0.05), transparent 35%, rgba(255, 255, 255, 0.03)); opacity: 0.9; }
-.noise { position: absolute; inset: 0; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E"); opacity: 0.1; mix-blend-mode: overlay; }
-.orb { position: absolute; border-radius: 9999px; filter: blur(24px); opacity: 0.55; transform: translateZ(0); animation: float 9s ease-in-out infinite; }
-.orbA { width: 280px; height: 280px; left: -90px; top: 80px; background: radial-gradient(circle at 30% 30%, rgba(34, 211, 238, 0.35), rgba(34, 211, 238, 0.06) 60%, transparent 70%); }
-.orbB { width: 320px; height: 320px; right: -120px; top: 120px; background: radial-gradient(circle at 30% 30%, rgba(124, 58, 237, 0.35), rgba(124, 58, 237, 0.06) 60%, transparent 70%); animation-delay: -2s; }
-.orbC { width: 360px; height: 360px; left: 40%; bottom: -180px; background: radial-gradient(circle at 30% 30%, rgba(34, 197, 94, 0.25), rgba(34, 197, 94, 0.05) 60%, transparent 70%); animation-delay: -4s; }
-@keyframes float { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-14px) scale(1.02); } }
-.grad { background: linear-gradient(90deg, rgba(34, 211, 238, 1), rgba(124, 58, 237, 1), rgba(34, 197, 94, 1)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.badge { display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04); padding: 0.25rem 0.75rem; font-size: 0.75rem; }
-.feature { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.85rem; border-radius: 1.25rem; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04); transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease; }
-.feature:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.06); }
-.card { border-radius: 1.5rem; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.06); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.22); overflow: hidden; backdrop-filter: blur(10px); }
-.cardHead { padding: 1.1rem 1.1rem 0.9rem; border-bottom: 1px solid rgba(255, 255, 255, 0.1); background: rgba(0, 0, 0, 0.1); }
-.cardBody { padding: 1.1rem; }
-.toggle { display: flex; gap: 0.35rem; padding: 0.25rem; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04); }
-.pill { padding: 0.45rem 0.75rem; font-size: 0.85rem; border-radius: 9999px; color: inherit; opacity: 0.75; transition: background 0.16s ease, opacity 0.16s ease, transform 0.16s ease; }
-.pill:hover { transform: translateY(-1px); opacity: 1; }
-.pill.on { background: rgba(255, 255, 255, 0.12); opacity: 1; }
-.divider { position: relative; padding: 0.6rem 0; display: flex; justify-content: center; }
-.divider::before { content: ''; position: absolute; inset: 50% 0 auto; height: 1px; background: rgba(255, 255, 255, 0.1); }
-.divider span { position: relative; padding: 0 0.75rem; background: rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 9999px; }
+.authPage {
+  position: relative;
+  min-height: calc(100dvh - 64px);
+  overflow: hidden;
+  color: var(--app-fg);
+}
+.bg {
+  position: absolute;
+  inset: 0;
+  background: var(--app-bg);
+}
+.wash {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(900px 600px at 15% 20%, var(--wash-b), transparent 60%),
+    radial-gradient(900px 600px at 85% 30%, var(--wash-a), transparent 60%),
+    radial-gradient(900px 700px at 55% 90%, rgba(34, 197, 94, 0.1), transparent 60%),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05), transparent 35%, rgba(255, 255, 255, 0.03));
+  opacity: 0.9;
+}
+.noise {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E");
+  opacity: 0.1;
+  mix-blend-mode: overlay;
+}
+.orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(24px);
+  opacity: 0.55;
+  transform: translateZ(0);
+  animation: float 9s ease-in-out infinite;
+}
+.orbA {
+  width: 280px;
+  height: 280px;
+  left: -90px;
+  top: 80px;
+  background: radial-gradient(circle at 30% 30%, rgba(34, 211, 238, 0.35), rgba(34, 211, 238, 0.06) 60%, transparent 70%);
+}
+.orbB {
+  width: 320px;
+  height: 320px;
+  right: -120px;
+  top: 120px;
+  background: radial-gradient(circle at 30% 30%, rgba(124, 58, 237, 0.35), rgba(124, 58, 237, 0.06) 60%, transparent 70%);
+  animation-delay: -2s;
+}
+.orbC {
+  width: 360px;
+  height: 360px;
+  left: 40%;
+  bottom: -180px;
+  background: radial-gradient(circle at 30% 30%, rgba(34, 197, 94, 0.25), rgba(34, 197, 94, 0.05) 60%, transparent 70%);
+  animation-delay: -4s;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-14px) scale(1.02); }
+}
+.grad {
+  background: linear-gradient(90deg, rgba(34, 211, 238, 1), rgba(124, 58, 237, 1), rgba(34, 197, 94, 1));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+}
+.feature {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.85rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+.feature:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+.card {
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+.cardHead {
+  padding: 1.1rem 1.1rem 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.1);
+}
+.cardBody {
+  padding: 1.1rem;
+}
+.toggle {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+.pill {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 9999px;
+  color: inherit;
+  opacity: 0.75;
+  transition: background 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
+}
+.pill:hover {
+  transform: translateY(-1px);
+  opacity: 1;
+}
+.pill.on {
+  background: rgba(255, 255, 255, 0.12);
+  opacity: 1;
+}
+.divider {
+  position: relative;
+  padding: 0.6rem 0;
+  display: flex;
+  justify-content: center;
+}
+.divider::before {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.divider span {
+  position: relative;
+  padding: 0 0.75rem;
+  background: rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+}
 .forgotLink {
   font-size: 0.75rem;
   opacity: 0.82;
