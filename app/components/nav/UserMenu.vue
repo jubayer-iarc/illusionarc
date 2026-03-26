@@ -66,7 +66,7 @@ async function logout() {
 const items = computed(() => [
   [
     {
-      label: 'Edit Profile',
+      label: 'Profile Settings',
       icon: 'i-heroicons-user-circle',
       onSelect: goProfile
     }
