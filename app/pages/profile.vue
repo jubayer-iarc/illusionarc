@@ -171,7 +171,7 @@ const shareMessage = computed(() => {
   return [
     'ঈদের ছুটিতে একটু Gaming করে iPhone জিততে পারলে কেমন হয়? 😄🎮',
     '',
-    'Salami Rush Eid Tournament-এ join করার সময় আমার referral code ব্যবহার করলে আপনি subscription-এ ৳10 bonus পাবেন 👇',
+    'Salami Rush Eid Tournament-এ join করার সময় আমার referral code ব্যবহার করলে আপনি subscription-এ 10% bonus পাবেন 👇',
     '',
     `Referral Code: ${code}`,
     link ? `Sign up link: ${link}` : '',
