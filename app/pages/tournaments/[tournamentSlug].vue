@@ -74,7 +74,37 @@ type ProfileLite = {
   phone?: string | null
 }
 
+type SocialLink = {
+  label: string
+  href: string
+  icon: string
+}
+
 const t = ref<AnyTournament | null>(null)
+
+/* ---------------- Social links ---------------- */
+const socialLinks: SocialLink[] = [
+  {
+    label: 'Facebook',
+    href: 'https://www.facebook.com/share/17K9xtee2q/',
+    icon: 'i-simple-icons-facebook'
+  },
+  {
+    label: 'YouTube',
+    href: 'https://youtube.com/@illusion-arc?si=podQGcpqI3r3D1ir',
+    icon: 'i-simple-icons-youtube'
+  },
+  {
+    label: 'LinkedIn',
+    href: 'https://www.linkedin.com/company/illusion-arc/',
+    icon: 'i-simple-icons-linkedin'
+  },
+  {
+    label: 'TikTok',
+    href: 'https://www.tiktok.com/@illusion.arc?_r=1&_t=ZS-950K0vw8ob3',
+    icon: 'i-simple-icons-tiktok'
+  }
+]
 
 /* ---------------- Load tournament ---------------- */
 async function loadTournament() {
@@ -719,6 +749,13 @@ function trackContactPageClick() {
     contact_channel: 'contact_page'
   })
 }
+
+function trackSocialClick(platform: string) {
+  trackMeta('Contact', {
+    contact_channel: 'social',
+    social_platform: platform
+  })
+}
 </script>
 
 <template>
@@ -1224,6 +1261,41 @@ function trackContactPageClick() {
               </div>
             </section>
 
+            <section class="space-y-4">
+              <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
+                আমাদের সোশ্যাল মিডিয়ায় যুক্ত থাকুন
+              </h2>
+
+              <div class="rounded-[24px] border border-black/10 bg-white p-4 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-6 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div class="text-lg font-semibold text-slate-900 dark:text-white">
+                      Illusion Arc-কে Follow করুন
+                    </div>
+                    <div class="mt-2 text-sm leading-7 text-black/70 sm:text-base dark:text-white/75">
+                      নতুন টুর্নামেন্ট, আপডেট, ঘোষণা এবং কনটেন্ট সবার আগে পেতে আমাদের সোশ্যাল মিডিয়ায় যুক্ত থাকুন।
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-3">
+                    <a
+                      v-for="item in socialLinks"
+                      :key="item.label"
+                      :href="item.href"
+                      :aria-label="item.label"
+                      :title="item.label"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="social-icon-btn inline-flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-black/5 text-slate-900 transition hover:-translate-y-0.5 hover:border-black/20 hover:bg-black/[0.07] dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:border-white/20 dark:hover:bg-white/10"
+                      @click="trackSocialClick(item.label)"
+                    >
+                      <UIcon :name="item.icon" class="h-5 w-5" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             <div class="rounded-[24px] border border-black/10 bg-white p-4 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-6 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
               <h3 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">শর্তাবলী</h3>
 
@@ -1547,6 +1619,12 @@ function trackContactPageClick() {
   box-shadow:
     inset 0 0 0 1px rgba(16, 185, 129, 0.08),
     0 0 18px rgba(16, 185, 129, 0.08);
+}
+
+.social-icon-btn {
+  box-shadow:
+    0 8px 22px rgba(15, 23, 42, 0.06),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 @media (max-width: 1279px) {

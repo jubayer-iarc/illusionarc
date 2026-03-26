@@ -6,6 +6,11 @@ import LiveTournamentBanner from '~/components/tournaments/LiveTournamentBanner.
 /* ---------------- Admin-managed site settings ---------------- */
 type NavItem = { label: string; to: string; enabled?: boolean }
 type LinkItem = { label: string; to: string }
+type SocialItem = {
+  label: string
+  href: string
+  icon: string
+}
 
 const { settings } = useSiteSettings()
 
@@ -31,6 +36,30 @@ const footerLegal = computed<LinkItem[]>(() => {
 })
 
 const contactLabel = computed(() => 'Contact')
+
+/* ---------------- Social links ---------------- */
+const socialLinks = computed<SocialItem[]>(() => [
+  {
+    label: 'Facebook',
+    href: 'https://www.facebook.com/share/17K9xtee2q/',
+    icon: 'i-simple-icons-facebook'
+  },
+  {
+    label: 'YouTube',
+    href: 'https://youtube.com/@illusion-arc?si=podQGcpqI3r3D1ir',
+    icon: 'i-simple-icons-youtube'
+  },
+  {
+    label: 'LinkedIn',
+    href: 'https://www.linkedin.com/company/illusion-arc/',
+    icon: 'i-simple-icons-linkedin'
+  },
+  {
+    label: 'TikTok',
+    href: 'https://www.tiktok.com/@illusion.arc?_r=1&_t=ZS-950K0vw8ob3',
+    icon: 'i-simple-icons-tiktok'
+  }
+])
 
 /* ---------------- Color mode logic ---------------- */
 const colorMode = useColorMode()
@@ -133,13 +162,37 @@ const year = new Date().getFullYear()
     </main>
 
     <footer class="border-t border-black/10 dark:border-white/5 bg-white/50 dark:bg-black/10">
-      <UContainer class="py-10 grid gap-6 md:grid-cols-3">
+      <UContainer class="py-10 grid gap-8 md:grid-cols-4">
         <div>
           <div class="font-semibold text-black dark:text-white">
             {{ settings.brand_name || 'illusion Arc' }}
           </div>
           <div class="text-sm text-black/60 dark:text-white/60 mt-2">
             {{ settings.footer_tagline || 'Games • AR/VR • VFX/CGI • Animation' }}
+          </div>
+
+          <div class="mt-4">
+            <div class="text-black/60 dark:text-white/60 mb-3 text-sm">Follow us</div>
+            <div class="flex items-center gap-3">
+              <a
+                v-for="item in socialLinks"
+                :key="item.label"
+                :href="item.href"
+                :aria-label="item.label"
+                :title="item.label"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex h-10 w-10 items-center justify-center rounded-full
+                       border border-black/10 dark:border-white/10
+                       bg-white/70 dark:bg-white/5
+                       text-black/75 dark:text-white/75
+                       hover:text-black dark:hover:text-white
+                       hover:bg-white dark:hover:bg-white/10
+                       transition"
+              >
+                <UIcon :name="item.icon" class="h-5 w-5" />
+              </a>
+            </div>
           </div>
         </div>
 
@@ -184,6 +237,23 @@ const year = new Date().getFullYear()
             >
               Privacy Policy
             </NuxtLink>
+          </div>
+        </div>
+
+        <div class="text-sm">
+          <div class="text-black/60 dark:text-white/60 mb-2">Social</div>
+          <div class="flex flex-col gap-2">
+            <a
+              v-for="item in socialLinks"
+              :key="`${item.label}-text`"
+              :href="item.href"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-2 text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white"
+            >
+              <UIcon :name="item.icon" class="h-4 w-4" />
+              <span>{{ item.label }}</span>
+            </a>
           </div>
         </div>
       </UContainer>

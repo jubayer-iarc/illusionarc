@@ -201,6 +201,28 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => route.query.mode,
+  (q) => {
+    if (String(q || '').trim().toLowerCase() === 'signup') {
+      mode.value = 'signup'
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => route.query.ref,
+  (q) => {
+    const code = normalizeReferralCode(String(q || ''))
+    if (code) {
+      mode.value = 'signup'
+      referralCode.value = code
+    }
+  },
+  { immediate: true }
+)
+
 async function isPhoneTaken(phoneE164: string): Promise<boolean> {
   const p = String(phoneE164 || '').trim()
   if (!p) return false
@@ -387,10 +409,10 @@ async function submit() {
         const referralRes: any = await claimReferralCode(normalizedReferral)
         const msg =
           String(referralRes?.message || '').trim() ||
-          'Referral saved successfully. Bonus will be added after your first successful subscription purchase.'
+          'Referral applied successfully. ৳10 bonus will be used on your subscription payment.'
 
         toast.add({
-          title: 'Referral saved',
+          title: 'Referral applied',
           description: msg,
           color: 'success'
         })
@@ -558,7 +580,7 @@ function goToForgotPassword() {
                   />
                 </UFormField>
 
-                <div v-if="mode === 'signup'" class="grid gap-3 sm:grid-cols-[160px_1fr]">
+                <div v-if="mode === 'signup'" class="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)] items-end">
                   <UFormField label="Code" required>
                     <USelectMenu
                       v-model="selectedCountry"
@@ -570,7 +592,7 @@ function goToForgotPassword() {
                       <template #label>
                         <span class="inline-flex items-center gap-2 tabular-nums whitespace-nowrap">
                           <span class="text-base leading-none">{{ isoToFlagEmoji(selectedCountry.iso) }}</span>
-                          <span class="whitespace-nowrap">{{ selectedCountry.label }}</span>
+                          <span class="whitespace-nowrap">{{ selectedCountry.dial }}</span>
                         </span>
                       </template>
 
@@ -607,7 +629,7 @@ function goToForgotPassword() {
                     icon="i-heroicons-gift"
                   />
                   <div class="mt-1 text-xs opacity-60 leading-relaxed">
-                    Use a friend’s code now. Your ৳10 referral bonus will be added after your first successful subscription purchase.
+                    Use a friend’s code now and get ৳10 referral bonus on your subscription payment.
                   </div>
                 </UFormField>
 

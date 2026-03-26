@@ -2,8 +2,8 @@
 import { onBeforeRouteLeave } from 'vue-router'
 
 useHead({
-  title: 'Profile — illusion Arc',
-  meta: [{ name: 'description', content: 'Edit your Illusion Arc profile.' }]
+  title: 'My Profile — illusion Arc',
+  meta: [{ name: 'description', content: 'Manage your profile settings and referral sharing.' }]
 })
 
 definePageMeta({
@@ -20,6 +20,12 @@ type ReferralSummary = {
   referralBonusAvailableBdt: number
 }
 
+type CountryOpt = {
+  label: string
+  dial: string
+  iso: string
+}
+
 const supabase = useSupabaseClient()
 const toast = useToast()
 const router = useRouter()
@@ -31,6 +37,7 @@ const loadingProfile = ref(true)
 const avatarUploading = ref(false)
 const loadingReferral = ref(true)
 const copyingReferral = ref(false)
+const copyingShareMessage = ref(false)
 
 const referral = reactive<ReferralSummary>({
   referralCode: null,
@@ -59,18 +66,6 @@ const pending = reactive({
   url: '' as string
 })
 
-type CountryOpt = {
-  label: string
-  dial: string
-  iso: string
-}
-
-function isoToFlagEmoji(iso: string) {
-  const code = String(iso || '').trim().toUpperCase()
-  if (!/^[A-Z]{2}$/.test(code)) return '🏳️'
-  return code.replace(/[A-Z]/g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)))
-}
-
 const COUNTRY_CODES: CountryOpt[] = [
   { label: 'US +1', dial: '+1', iso: 'US' },
   { label: 'GB +44', dial: '+44', iso: 'GB' },
@@ -84,17 +79,14 @@ const COUNTRY_CODES: CountryOpt[] = [
   { label: 'SE +46', dial: '+46', iso: 'SE' },
   { label: 'NO +47', dial: '+47', iso: 'NO' },
   { label: 'DK +45', dial: '+45', iso: 'DK' },
-
   { label: 'BR +55', dial: '+55', iso: 'BR' },
   { label: 'MX +52', dial: '+52', iso: 'MX' },
   { label: 'AR +54', dial: '+54', iso: 'AR' },
-
   { label: 'IN +91', dial: '+91', iso: 'IN' },
   { label: 'PK +92', dial: '+92', iso: 'PK' },
   { label: 'BD +880', dial: '+880', iso: 'BD' },
   { label: 'LK +94', dial: '+94', iso: 'LK' },
   { label: 'NP +977', dial: '+977', iso: 'NP' },
-
   { label: 'JP +81', dial: '+81', iso: 'JP' },
   { label: 'KR +82', dial: '+82', iso: 'KR' },
   { label: 'CN +86', dial: '+86', iso: 'CN' },
@@ -103,7 +95,6 @@ const COUNTRY_CODES: CountryOpt[] = [
   { label: 'TH +66', dial: '+66', iso: 'TH' },
   { label: 'ID +62', dial: '+62', iso: 'ID' },
   { label: 'PH +63', dial: '+63', iso: 'PH' },
-
   { label: 'AE +971', dial: '+971', iso: 'AE' },
   { label: 'SA +966', dial: '+966', iso: 'SA' },
   { label: 'EG +20', dial: '+20', iso: 'EG' },
@@ -112,6 +103,12 @@ const COUNTRY_CODES: CountryOpt[] = [
 
 const selectedCountry = ref<CountryOpt>(COUNTRY_CODES.find((c) => c.iso === 'BD') || COUNTRY_CODES[0])
 const phoneLocal = ref('')
+
+function isoToFlagEmoji(iso: string) {
+  const code = String(iso || '').trim().toUpperCase()
+  if (!/^[A-Z]{2}$/.test(code)) return '🏳️'
+  return code.replace(/[A-Z]/g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)))
+}
 
 function onlyDigits(v: string) {
   return String(v || '').replace(/[^\d]/g, '')
@@ -152,6 +149,57 @@ const mustCompleteBecauseRedirected = computed(() => String(route.query.needPhon
 
 const successfulReferralCount = computed(() => Math.max(0, Number(referral.referralCount || 0)))
 const totalReferralBonusDisplay = computed(() => successfulReferralCount.value * 10)
+
+const appOrigin = computed(() => {
+  if (import.meta.client && window?.location?.origin) return window.location.origin
+  return ''
+})
+
+const signupReferralUrl = computed(() => {
+  const code = String(referral.referralCode || '').trim()
+  if (!code) return ''
+  const origin = appOrigin.value
+  const path = `/login?mode=signup&ref=${encodeURIComponent(code)}`
+  return origin ? `${origin}${path}` : path
+})
+
+const shareMessage = computed(() => {
+  const code = String(referral.referralCode || '').trim()
+  const link = signupReferralUrl.value
+  if (!code) return ''
+
+  return [
+    'ঈদের ছুটিতে একটু Gaming করে iPhone জিততে পারলে কেমন হয়? 😄🎮',
+    '',
+    'Salami Rush Eid Tournament-এ join করার সময় আমার referral code ব্যবহার করলে আপনি subscription-এ ৳10 bonus পাবেন 👇',
+    '',
+    `Referral Code: ${code}`,
+    link ? `Sign up link: ${link}` : '',
+    '',
+    'এখনই join করুন এবং compete করুন! 🚀'
+  ]
+    .filter(Boolean)
+    .join('\n')
+})
+
+const whatsappShareUrl = computed(() =>
+  shareMessage.value ? `https://wa.me/?text=${encodeURIComponent(shareMessage.value)}` : '#'
+)
+
+const facebookShareUrl = computed(() =>
+  signupReferralUrl.value
+    ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(signupReferralUrl.value)}&quote=${encodeURIComponent(shareMessage.value)}`
+    : '#'
+)
+
+const tiktokShareUrl = computed(() => signupReferralUrl.value || '#')
+const instagramShareUrl = computed(() => signupReferralUrl.value || '#')
+
+const linkedinShareUrl = computed(() =>
+  signupReferralUrl.value
+    ? `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(signupReferralUrl.value)}`
+    : '#'
+)
 
 onBeforeRouteLeave(() => {
   if (mustHavePhone.value) {
@@ -272,6 +320,35 @@ async function copyReferralCode() {
     })
   } finally {
     copyingReferral.value = false
+  }
+}
+
+async function copyShareMessage() {
+  if (!shareMessage.value) {
+    toast.add({
+      title: 'Nothing to copy',
+      description: 'Referral message is not ready yet.',
+      color: 'warning'
+    })
+    return
+  }
+
+  try {
+    copyingShareMessage.value = true
+    await navigator.clipboard.writeText(shareMessage.value)
+    toast.add({
+      title: 'Copied',
+      description: 'Share message copied successfully.',
+      color: 'success'
+    })
+  } catch {
+    toast.add({
+      title: 'Copy failed',
+      description: 'Please copy it manually.',
+      color: 'error'
+    })
+  } finally {
+    copyingShareMessage.value = false
   }
 }
 
@@ -515,235 +592,379 @@ function initials(name: string) {
 </script>
 
 <template>
-  <UContainer class="py-10 md:py-14">
-    <div class="mx-auto max-w-5xl">
-      <div class="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 class="text-3xl md:text-5xl font-semibold tracking-tight text-black dark:text-white">
-            Profile
-          </h1>
-          <p class="mt-2 text-sm md:text-base text-black/70 dark:text-white/70">
-            Manage your display name, phone number, avatar and referral details.
-          </p>
-        </div>
+  <UContainer class="py-6 md:py-8">
+    <div class="mx-auto max-w-6xl space-y-5">
+      <div class="rounded-[28px] border border-black/10 bg-gradient-to-br from-white via-white to-emerald-50/70 p-5 shadow-sm dark:border-white/10 dark:from-white/7 dark:via-white/5 dark:to-emerald-500/10 md:p-6">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div class="flex items-center gap-4 min-w-0">
+            <div class="relative h-18 w-18 md:h-20 md:w-20 overflow-hidden rounded-3xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
+              <img
+                v-if="state.avatar_url"
+                :src="state.avatar_url"
+                class="h-full w-full object-cover"
+                alt="Avatar"
+                referrerpolicy="no-referrer"
+              />
+              <div
+                v-else
+                class="grid h-full w-full place-items-center text-lg md:text-xl font-bold text-black/70 dark:text-white/70"
+              >
+                {{ initials(state.display_name) }}
+              </div>
 
-        <div class="flex items-center gap-2">
-          <UButton
-            variant="soft"
-            icon="i-heroicons-arrow-left"
-            :disabled="loading || avatarUploading"
-            @click="cancel"
-          >
-            Back
-          </UButton>
+              <div v-if="avatarUploading" class="absolute inset-0 grid place-items-center bg-black/60">
+                <span class="i-heroicons-arrow-path-20-solid animate-spin text-xl text-white"></span>
+              </div>
+            </div>
 
-          <UButton
-            color="primary"
-            variant="solid"
-            icon="i-heroicons-check-circle"
-            :loading="loading"
-            :disabled="loadingProfile || avatarUploading"
-            @click="save"
-          >
-            Save changes
-          </UButton>
+            <div class="min-w-0">
+              <div class="text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-700/80 dark:text-emerald-300/80">
+                Profile Settings
+              </div>
+              <h1 class="mt-1 truncate text-2xl font-semibold text-black dark:text-white md:text-3xl">
+                My Profile
+              </h1>
+              <p class="mt-1 text-sm text-black/65 dark:text-white/65">
+                Update your profile, contact details and referral settings.
+              </p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              variant="soft"
+              icon="i-heroicons-arrow-left"
+              :disabled="loading || avatarUploading"
+              @click="cancel"
+            >
+              Back
+            </UButton>
+
+            <UButton
+              color="primary"
+              variant="solid"
+              icon="i-heroicons-check-circle"
+              :loading="loading"
+              :disabled="loadingProfile || avatarUploading"
+              @click="save"
+            >
+              Save changes
+            </UButton>
+          </div>
         </div>
       </div>
 
       <div
         v-if="mustHavePhone"
-        class="mt-6 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4"
+        class="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4"
       >
         <div class="flex items-start gap-3">
-          <div class="mt-0.5 h-10 w-10 rounded-2xl border border-amber-500/25 bg-amber-500/10 grid place-items-center">
+          <div class="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-amber-500/25 bg-amber-500/10">
             <UIcon name="i-heroicons-exclamation-triangle" class="h-5 w-5 opacity-90" />
           </div>
           <div class="min-w-0">
             <div class="font-semibold text-black dark:text-white">Phone number required</div>
-            <div class="text-sm mt-1 text-black/70 dark:text-white/70">
+            <div class="mt-1 text-sm text-black/70 dark:text-white/70">
               Please add your phone number and save changes to continue.
             </div>
           </div>
         </div>
       </div>
 
-      <div class="mt-8 grid gap-6 lg:grid-cols-[360px_1fr] items-start">
-        <UCard class="border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur">
-          <template #header>
-            <div class="flex items-center justify-between">
-              <div class="font-semibold text-black dark:text-white">Avatar</div>
-              <div v-if="loadingProfile" class="text-xs text-black/60 dark:text-white/60">Loading…</div>
-            </div>
-          </template>
+      <input ref="avatarInput" class="hidden" type="file" accept="image/*" @change="onPickAvatar" />
 
-          <div class="grid gap-4">
-            <div class="flex items-center gap-4">
-              <div class="relative h-20 w-20 rounded-full overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-black/30">
-                <img
-                  v-if="state.avatar_url"
-                  :src="state.avatar_url"
-                  class="h-full w-full object-cover"
-                  alt="Avatar"
-                  referrerpolicy="no-referrer"
-                />
-                <div v-else class="h-full w-full grid place-items-center font-semibold text-black/70 dark:text-white/70">
-                  {{ initials(state.display_name) }}
-                </div>
-
-                <div v-if="avatarUploading" class="absolute inset-0 grid place-items-center bg-black/60">
-                  <span class="i-heroicons-arrow-path-20-solid animate-spin text-xl text-white"></span>
-                </div>
-              </div>
-
-              <div class="min-w-0 flex-1">
-                <div class="text-xs text-black/60 dark:text-white/60">Display name</div>
-                <div class="mt-1 text-lg font-semibold text-black dark:text-white truncate">
-                  {{ state.display_name || '—' }}
-                </div>
-
-                <div class="mt-2 text-xs text-black/60 dark:text-white/60">Phone</div>
-                <div class="mt-1 text-sm font-medium text-black dark:text-white tabular-nums truncate">
-                  {{ phonePreview || '—' }}
-                </div>
-              </div>
-            </div>
-
-            <input ref="avatarInput" class="hidden" type="file" accept="image/*" @change="onPickAvatar" />
-
-            <div class="grid gap-2">
-              <UButton
-                variant="soft"
-                icon="i-heroicons-arrow-up-tray"
-                :disabled="avatarUploading || loadingProfile || loading"
-                @click="openAvatarPicker"
-              >
-                Upload
-              </UButton>
-
-              <UButton
-                v-if="state.avatar_url"
-                variant="ghost"
-                icon="i-heroicons-x-mark"
-                :disabled="avatarUploading || loadingProfile || loading"
-                @click="clearAvatar"
-              >
-                Clear
-              </UButton>
-            </div>
-          </div>
-        </UCard>
-
-        <div class="grid gap-6">
-          <UCard class="border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur">
+      <div class="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <div class="space-y-5">
+          <UCard class="overflow-hidden border border-black/10 bg-white/80 shadow-sm dark:border-white/10 dark:bg-white/5">
             <template #header>
               <div class="flex items-center justify-between gap-3">
-                <div class="font-semibold text-black dark:text-white">Referral</div>
-                <div v-if="loadingReferral" class="text-xs text-black/60 dark:text-white/60">Loading…</div>
+                <div>
+                  <div class="text-lg font-semibold text-black dark:text-white">Account Overview</div>
+                  <div class="mt-1 text-xs text-black/55 dark:text-white/55">
+                    Keep your profile clean and up to date.
+                  </div>
+                </div>
+                <div v-if="loadingProfile" class="text-xs text-black/55 dark:text-white/55">Loading…</div>
               </div>
             </template>
 
-            <div class="grid gap-5">
+            <div class="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <div class="rounded-3xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <div class="mx-auto relative h-28 w-28 overflow-hidden rounded-3xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
+                  <img
+                    v-if="state.avatar_url"
+                    :src="state.avatar_url"
+                    class="h-full w-full object-cover"
+                    alt="Avatar"
+                    referrerpolicy="no-referrer"
+                  />
+                  <div
+                    v-else
+                    class="grid h-full w-full place-items-center text-2xl font-bold text-black/70 dark:text-white/70"
+                  >
+                    {{ initials(state.display_name) }}
+                  </div>
+                </div>
+
+                <div class="mt-3 text-center">
+                  <div class="text-xs text-black/55 dark:text-white/55">Current display name</div>
+                  <div class="mt-1 truncate text-base font-semibold text-black dark:text-white">
+                    {{ state.display_name || '—' }}
+                  </div>
+                </div>
+
+                <div class="mt-4 grid gap-2">
+                  <UButton
+                    variant="soft"
+                    icon="i-heroicons-arrow-up-tray"
+                    :disabled="avatarUploading || loadingProfile || loading"
+                    @click="openAvatarPicker"
+                  >
+                    Upload photo
+                  </UButton>
+
+                  <UButton
+                    v-if="state.avatar_url"
+                    variant="ghost"
+                    icon="i-heroicons-x-mark"
+                    :disabled="avatarUploading || loadingProfile || loading"
+                    @click="clearAvatar"
+                  >
+                    Remove photo
+                  </UButton>
+                </div>
+              </div>
+
+              <div class="space-y-4">
+                <UFormGroup label="Display name" required>
+                  <UInput
+                    v-model="state.display_name"
+                    placeholder="Enter your display name"
+                    icon="i-heroicons-user"
+                    size="lg"
+                    :disabled="loadingProfile || avatarUploading || loading"
+                  />
+                </UFormGroup>
+
+                <div class="space-y-2">
+                  <div class="text-sm font-medium text-black dark:text-white">
+                    {{ isAdmin ? 'Phone number (optional)' : 'Phone number' }}
+                  </div>
+
+                  <div class="grid grid-cols-[112px_minmax(0,1fr)] gap-2 items-start sm:grid-cols-[128px_minmax(0,1fr)]">
+                    <USelectMenu
+                      v-model="selectedCountry"
+                      :items="COUNTRY_CODES"
+                      class="w-full"
+                      :ui="{ width: 'w-full' }"
+                      :search-input="{ placeholder: 'Search…', icon: 'i-heroicons-magnifying-glass' }"
+                      :disabled="loadingProfile || loading || avatarUploading"
+                    >
+                      <template #label>
+                        <span class="inline-flex items-center gap-2 whitespace-nowrap tabular-nums">
+                          <span class="text-base leading-none">{{ isoToFlagEmoji(selectedCountry.iso) }}</span>
+                          <span class="whitespace-nowrap">{{ selectedCountry.dial }}</span>
+                        </span>
+                      </template>
+
+                      <template #option="{ option }">
+                        <span class="inline-flex items-center gap-2 whitespace-nowrap tabular-nums">
+                          <span class="text-base leading-none">{{ isoToFlagEmoji(option.iso) }}</span>
+                          <span class="whitespace-nowrap">{{ option.label }}</span>
+                        </span>
+                      </template>
+                    </USelectMenu>
+
+                    <UInput
+                      v-model="phoneLocal"
+                      placeholder="Phone number"
+                      autocomplete="tel"
+                      icon="i-heroicons-phone"
+                      size="lg"
+                      :disabled="loadingProfile || loading || avatarUploading"
+                    />
+                  </div>
+
+                  <div class="rounded-2xl border border-black/10 bg-black/[0.03] px-3 py-2.5 text-sm dark:border-white/10 dark:bg-white/[0.03]">
+                    <div class="text-[11px] text-black/55 dark:text-white/55">Stored phone format</div>
+                    <div class="mt-1 font-medium tabular-nums text-black dark:text-white">
+                      {{ phonePreview || '—' }}
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="!isAdmin && (mustCompleteBecauseRedirected || mustHavePhone)"
+                    class="text-xs text-amber-700 dark:text-amber-300"
+                  >
+                    Phone is mandatory to continue.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </UCard>
+
+          <UCard class="border border-black/10 bg-white/80 shadow-sm dark:border-white/10 dark:bg-white/5">
+            <template #header>
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-lg font-semibold text-black dark:text-white">Referral & Rewards</div>
+                  <div class="mt-1 text-xs text-black/55 dark:text-white/55">
+                    Track subscriptions from your referral code.
+                  </div>
+                </div>
+                <div v-if="loadingReferral" class="text-xs text-black/55 dark:text-white/55">Loading…</div>
+              </div>
+            </template>
+
+            <div class="space-y-4">
               <div class="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
                 <div>
-                  <div class="text-xs text-black/60 dark:text-white/60">Your referral code</div>
-                  <div class="mt-2 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.03] px-4 py-3">
-                    <div class="text-xl font-semibold tracking-[0.18em] text-black dark:text-white">
+                  <div class="text-xs text-black/55 dark:text-white/55">Your referral code</div>
+                  <div class="mt-2 rounded-2xl border border-dashed border-emerald-500/35 bg-emerald-500/10 px-4 py-3.5">
+                    <div class="text-xl md:text-2xl font-bold tracking-[0.22em] text-emerald-900 dark:text-emerald-100">
                       {{ referral.referralCode || '—' }}
                     </div>
                   </div>
                 </div>
 
-                <UButton
-                  variant="soft"
-                  color="primary"
-                  icon="i-heroicons-clipboard-document"
-                  :disabled="loadingReferral || !referral.referralCode"
-                  :loading="copyingReferral"
-                  @click="copyReferralCode"
-                >
-                  Copy code
-                </UButton>
+                <div class="flex flex-wrap gap-2">
+                  <UButton
+                    variant="soft"
+                    color="primary"
+                    icon="i-heroicons-clipboard-document"
+                    :disabled="loadingReferral || !referral.referralCode"
+                    :loading="copyingReferral"
+                    @click="copyReferralCode"
+                  >
+                    Copy code
+                  </UButton>
+                </div>
               </div>
 
-              <div class="grid gap-4 sm:grid-cols-2">
-                <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.03] p-4">
-                  <div class="text-xs text-black/60 dark:text-white/60">Users subscribed with your code</div>
-                  <div class="mt-2 text-2xl font-semibold text-black dark:text-white">
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div class="text-xs text-black/55 dark:text-white/55">Users subscribed with your code</div>
+                  <div class="mt-1.5 text-3xl font-bold text-black dark:text-white">
                     {{ successfulReferralCount }}
                   </div>
                 </div>
 
                 <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                   <div class="text-xs text-emerald-900/80 dark:text-emerald-100/80">Total referral bonus</div>
-                  <div class="mt-2 text-2xl font-semibold text-emerald-900 dark:text-emerald-100">
+                  <div class="mt-1.5 text-3xl font-bold text-emerald-900 dark:text-emerald-100">
                     ৳{{ money(totalReferralBonusDisplay) }}
                   </div>
                 </div>
               </div>
 
-              <div class="text-xs text-black/60 dark:text-white/60 leading-relaxed">
-                Share this code with new users. Your referral count and total referral bonus increase only after a user signs up with your code and successfully buys a subscription.
+              <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <div class="text-sm font-medium text-black dark:text-white">How it works</div>
+                <div class="mt-1.5 text-sm leading-relaxed text-black/65 dark:text-white/65">
+                  Share your code with friends. Your referral count and bonus increase only after someone signs up using your code and successfully buys a subscription.
+                </div>
               </div>
             </div>
           </UCard>
+        </div>
 
-          <UCard class="border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur">
+        <div class="space-y-5">
+          <UCard class="border border-black/10 bg-white/80 shadow-sm dark:border-white/10 dark:bg-white/5">
             <template #header>
-              <div class="font-semibold text-black dark:text-white">Profile details</div>
+              <div>
+                <div class="text-lg font-semibold text-black dark:text-white">Share Referral</div>
+                <div class="mt-1 text-xs text-black/55 dark:text-white/55">
+                  Share your referral quickly on social platforms.
+                </div>
+              </div>
             </template>
 
-            <div class="grid gap-5">
-              <UFormGroup label="Display name" required>
-                <UInput
-                  v-model="state.display_name"
-                  placeholder="Your display name"
-                  icon="i-heroicons-user"
-                  :disabled="loadingProfile || avatarUploading || loading"
-                />
-              </UFormGroup>
+            <div class="space-y-4">
+              <div class="grid grid-cols-2 gap-2.5">
+                <UButton
+                  as="a"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :href="whatsappShareUrl"
+                  variant="soft"
+                  color="success"
+                  icon="i-simple-icons-whatsapp"
+                  :disabled="!referral.referralCode"
+                  class="justify-center"
+                >
+                  WhatsApp
+                </UButton>
 
-              <div class="grid gap-3 sm:grid-cols-[190px_1fr]">
-                <UFormGroup :label="isAdmin ? 'Country code (optional)' : 'Country code'" :required="!isAdmin">
-                  <USelectMenu
-                    v-model="selectedCountry"
-                    :items="COUNTRY_CODES"
-                    class="w-full"
-                    :ui="{ width: 'w-full' }"
-                    :search-input="{ placeholder: 'Search…', icon: 'i-heroicons-magnifying-glass' }"
-                    :disabled="loadingProfile || loading || avatarUploading"
-                  >
-                    <template #label>
-                      <span class="inline-flex items-center gap-2 tabular-nums whitespace-nowrap">
-                        <span class="text-base leading-none">{{ isoToFlagEmoji(selectedCountry.iso) }}</span>
-                        <span class="whitespace-nowrap">{{ selectedCountry.label }}</span>
-                      </span>
-                    </template>
+                <UButton
+                  as="a"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :href="facebookShareUrl"
+                  variant="soft"
+                  color="info"
+                  icon="i-simple-icons-facebook"
+                  :disabled="!referral.referralCode"
+                  class="justify-center"
+                >
+                  Facebook
+                </UButton>
 
-                    <template #option="{ option }">
-                      <span class="inline-flex items-center gap-2 tabular-nums whitespace-nowrap">
-                        <span class="text-base leading-none">{{ isoToFlagEmoji(option.iso) }}</span>
-                        <span class="whitespace-nowrap">{{ option.label }}</span>
-                      </span>
-                    </template>
-                  </USelectMenu>
-                </UFormGroup>
+                <UButton
+                  as="a"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :href="tiktokShareUrl"
+                  variant="soft"
+                  color="neutral"
+                  icon="i-simple-icons-tiktok"
+                  :disabled="!referral.referralCode"
+                  class="justify-center"
+                >
+                  TikTok
+                </UButton>
 
-                <UFormGroup :label="isAdmin ? 'Phone number (optional)' : 'Phone number'" :required="!isAdmin">
-                  <UInput
-                    v-model="phoneLocal"
-                    placeholder="Phone number"
-                    autocomplete="tel"
-                    icon="i-heroicons-phone"
-                    :disabled="loadingProfile || loading || avatarUploading"
-                  />
-                </UFormGroup>
+                <UButton
+                  as="a"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :href="instagramShareUrl"
+                  variant="soft"
+                  color="secondary"
+                  icon="i-simple-icons-instagram"
+                  :disabled="!referral.referralCode"
+                  class="justify-center"
+                >
+                  Instagram
+                </UButton>
+
+                <UButton
+                  as="a"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :href="linkedinShareUrl"
+                  variant="soft"
+                  color="primary"
+                  icon="i-simple-icons-linkedin"
+                  :disabled="!referral.referralCode"
+                  class="col-span-2 justify-center"
+                >
+                  LinkedIn
+                </UButton>
               </div>
 
-              <div
-                v-if="!isAdmin && (mustCompleteBecauseRedirected || mustHavePhone)"
-                class="text-xs text-amber-700 dark:text-amber-300"
+              <UButton
+                variant="solid"
+                color="primary"
+                icon="i-heroicons-document-duplicate"
+                :disabled="!shareMessage"
+                :loading="copyingShareMessage"
+                block
+                @click="copyShareMessage"
               >
-                Phone is mandatory to continue.
+                Copy share message
+              </UButton>
+
+              <div class="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-4 text-sm leading-relaxed text-sky-900 dark:text-sky-100">
+                Facebook and LinkedIn can share the link directly. For TikTok and Instagram, open the signup link and paste the copied message in your caption, bio, or DM.
               </div>
             </div>
           </UCard>
