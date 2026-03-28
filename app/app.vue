@@ -11,18 +11,17 @@
         <h1>রক্ষণাবেক্ষণ চলছে</h1>
 
         <p class="subtitle">
-          সবার জন্য আরও ফেয়ার ও নির্ভরযোগ্য গেমপ্লে নিশ্চিত করতে আমরা সাময়িকভাবে সিস্টেম আপডেট করছি।
+          সাইটের কিছু জরুরি আপডেটের কাজ চলছে।
         </p>
 
         <p class="time">
-          কোনো ধরনের <strong>bug</strong>, <strong>exploit</strong> বা <strong>unfair advantage</strong> দূর করতে আমাদের কাজ চলছে।
+          আমরা <strong>৩০ মিনিটের মধ্যে</strong> আবার ফিরে আসছি।
         </p>
 
         <div class="loader"></div>
 
         <p class="footer">
-          খুব শিগগিরই নতুন আপডেটসহ আবার ফিরে আসছি।<br />
-          সবাই যেন সমানভাবে খেলতে পারে — সেটাই আমাদের লক্ষ্য। ❤️
+          আপনার ধৈর্যের জন্য ধন্যবাদ ❤️
         </p>
       </div>
     </div>
@@ -53,7 +52,7 @@ import LandingTournamentBanner from '~/components/ads/LandingTournamentBanner.vu
 import BreakingNewsTicker from '~/components/BreakingNewsTicker.vue'
 
 // Toggle this
-const isMaintenance = false
+const isMaintenance = true
 </script>
 
 <style scoped>
