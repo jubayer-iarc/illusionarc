@@ -3,14 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-  <title>Unity Web Player | Salami Rush Web</title>
+  <title>Unity Web Player | Boss Rush</title>
 
   <meta
     name="viewport"
     content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
   />
-
-  <link rel="shortcut icon" href="TemplateData/favicon.ico" />
 
   <style>
     :root {
@@ -81,23 +79,6 @@
       }
     }
 
-    /* Real fullscreen: remove portrait-frame limits */
-    body.is-fullscreen #unity-shell {
-      padding: 0;
-      width: 100vw;
-      height: 100dvh;
-    }
-
-    body.is-fullscreen #unity-frame {
-      width: 100vw;
-      height: 100dvh;
-      max-width: none;
-      max-height: none;
-      aspect-ratio: auto;
-      border-radius: 0;
-      box-shadow: none;
-    }
-
     #unity-container {
       position: absolute;
       inset: 0;
@@ -110,7 +91,7 @@
       width: 100%;
       height: 100%;
       display: block;
-      background: #000;
+      background: #000 url('Build/boss2.jpg') center / cover no-repeat;
       touch-action: none;
       -webkit-user-select: none;
       user-select: none;
@@ -174,15 +155,6 @@
       }
     }
 
-    #unity-warning {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      right: 12px;
-      z-index: 8;
-      display: none;
-    }
-
     @media (prefers-reduced-motion: reduce) {
       .spinner {
         animation-duration: 1.4s;
@@ -208,16 +180,14 @@
             <div class="loading-text">ধৈর্য ধরে অপেক্ষা করুন, গেমটি লোড হচ্ছে</div>
           </div>
         </div>
-
-        <div id="unity-warning"></div>
       </div>
     </div>
   </div>
 
+  <script src="Build/boss2.loader.js"></script>
   <script>
     var canvas = document.querySelector("#unity-canvas");
     var loadingOverlay = document.querySelector("#loading-overlay");
-    var warningBanner = document.querySelector("#unity-warning");
 
     function hideLoader() {
       canvas.classList.add("ready");
@@ -230,67 +200,6 @@
       }, 140);
     }
 
-    function unityShowBanner(msg, type) {
-      function updateBannerVisibility() {
-        warningBanner.style.display = warningBanner.children.length ? "block" : "none";
-      }
-
-      var div = document.createElement("div");
-      div.innerHTML = msg;
-      div.style.marginBottom = "8px";
-      div.style.padding = "10px 12px";
-      div.style.borderRadius = "10px";
-      div.style.fontSize = "13px";
-      div.style.fontFamily = "Arial, sans-serif";
-      div.style.boxSizing = "border-box";
-
-      if (type === "error") {
-        div.style.background = "rgba(220, 38, 38, 0.92)";
-        div.style.color = "#fff";
-      } else {
-        div.style.background = "rgba(250, 204, 21, 0.95)";
-        div.style.color = "#111";
-
-        setTimeout(function () {
-          if (div.parentNode === warningBanner) {
-            warningBanner.removeChild(div);
-            updateBannerVisibility();
-          }
-        }, 5000);
-      }
-
-      warningBanner.appendChild(div);
-      updateBannerVisibility();
-    }
-
-    function updateFullscreenClass() {
-      var isFullscreen =
-        !!document.fullscreenElement ||
-        !!document.webkitFullscreenElement ||
-        !!document.msFullscreenElement;
-
-      document.body.classList.toggle("is-fullscreen", isFullscreen);
-    }
-
-    document.addEventListener("fullscreenchange", updateFullscreenClass);
-    document.addEventListener("webkitfullscreenchange", updateFullscreenClass);
-    document.addEventListener("msfullscreenchange", updateFullscreenClass);
-
-    var buildUrl = "Build";
-    var loaderUrl = buildUrl + "/90312b85fd40658d0ac6a12b53cfbdcd.loader.js";
-
-    var config = {
-      arguments: [],
-      dataUrl: buildUrl + "/cb0a9449da8e085df62fb78c8e855f2a.data.unityweb",
-      frameworkUrl: buildUrl + "/c024d28f8d0ae4d502a1588176522cd2.framework.js.unityweb",
-      codeUrl: buildUrl + "/4c36022fb2fa5ec15d4c4b499b488421.wasm.unityweb",
-      streamingAssetsUrl: "StreamingAssets",
-      companyName: "DefaultCompany",
-      productName: "Salami Rush Web",
-      productVersion: "0.1.0",
-      showBanner: unityShowBanner
-    };
-
     if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
       var meta = document.createElement("meta");
       meta.name = "viewport";
@@ -298,32 +207,27 @@
         "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover";
       document.getElementsByTagName("head")[0].appendChild(meta);
 
-      // Optional for better mobile performance:
-      // config.devicePixelRatio = 1;
+      document.body.style.textAlign = "left";
     }
 
-    canvas.style.background =
-      "url('" + buildUrl + "/2dbb8b80a355da3bcc88fced8097c06b.jpg') center / cover no-repeat";
-
-    var script = document.createElement("script");
-    script.src = loaderUrl;
-
-    script.onload = function () {
-      createUnityInstance(canvas, config)
-        .then(function () {
-          hideLoader();
-          updateFullscreenClass();
-        })
-        .catch(function (message) {
-          alert(message);
-        });
-    };
-
-    script.onerror = function () {
-      alert("Failed to load Unity loader script.");
-    };
-
-    document.body.appendChild(script);
+    createUnityInstance(canvas, {
+      arguments: [],
+      dataUrl: "Build/boss2.data.unityweb",
+      frameworkUrl: "Build/boss2.framework.js.unityweb",
+      codeUrl: "Build/boss2.wasm.unityweb",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "illusion Lab",
+      productName: "Boss Rush",
+      productVersion: "0.11"
+      // matchWebGLToCanvasSize: false,
+      // devicePixelRatio: 1,
+    })
+      .then(function () {
+        hideLoader();
+      })
+      .catch(function (message) {
+        alert(message);
+      });
   </script>
 </body>
 </html>
