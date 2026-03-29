@@ -13,8 +13,14 @@
   <style>
     :root {
       --game-aspect: 9 / 16;
-      --game-max-width: 460px;
       --frame-gap: 12px;
+      --frame-radius: 18px;
+      --frame-max-width: 460px;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
     }
 
     html,
@@ -31,10 +37,12 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #000;
       font-family: Arial, sans-serif;
+      text-align: center;
+      background: #000;
     }
 
+    /* Outer shell */
     #unity-shell {
       width: 100vw;
       height: 100dvh;
@@ -42,11 +50,11 @@
       align-items: center;
       justify-content: center;
       padding: var(--frame-gap);
-      box-sizing: border-box;
-      background: #000;
       overflow: hidden;
+      background: #000;
     }
 
+    /* Always keep portrait frame */
     #unity-frame {
       position: relative;
       aspect-ratio: var(--game-aspect);
@@ -55,17 +63,17 @@
       max-width: min(
         calc((100dvh - (var(--frame-gap) * 2)) * 9 / 16),
         calc(100vw - (var(--frame-gap) * 2)),
-        var(--game-max-width)
+        var(--frame-max-width)
       );
       max-height: calc(100dvh - (var(--frame-gap) * 2));
       background: #000;
       overflow: hidden;
-      border-radius: 18px;
+      border-radius: var(--frame-radius);
     }
 
     @media (max-aspect-ratio: 9/16) {
       #unity-frame {
-        width: min(calc(100vw - (var(--frame-gap) * 2)), var(--game-max-width));
+        width: min(calc(100vw - (var(--frame-gap) * 2)), var(--frame-max-width));
         height: auto;
         max-height: calc(100dvh - (var(--frame-gap) * 2));
       }
@@ -79,6 +87,7 @@
       }
     }
 
+    /* Unity area */
     #unity-container {
       position: absolute;
       inset: 0;
@@ -91,27 +100,28 @@
       width: 100%;
       height: 100%;
       display: block;
-      background: #000 url('Build/boss2.jpg') center / cover no-repeat;
+      background: #000 url("Build/boss2.jpg") center / cover no-repeat;
       touch-action: none;
       -webkit-user-select: none;
       user-select: none;
       opacity: 0;
-      transition: opacity 0.12s ease;
+      transition: opacity 0.15s ease;
     }
 
     #unity-canvas.ready {
       opacity: 1;
     }
 
+    /* Loading overlay */
     #loading-overlay {
       position: absolute;
       inset: 0;
+      z-index: 10;
       display: flex;
       align-items: center;
       justify-content: center;
       background: rgba(0, 0, 0, 0.18);
-      z-index: 6;
-      transition: opacity 0.12s ease;
+      transition: opacity 0.15s ease;
     }
 
     #loading-overlay.hidden {
@@ -136,7 +146,6 @@
       border: 4px solid rgba(255,255,255,0.14);
       border-top-color: #22d3ee;
       animation: spin 0.75s linear infinite;
-      box-sizing: border-box;
     }
 
     .loading-text {
@@ -197,7 +206,7 @@
         if (loadingOverlay && loadingOverlay.parentNode) {
           loadingOverlay.remove();
         }
-      }, 140);
+      }, 180);
     }
 
     if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
@@ -212,22 +221,20 @@
 
     createUnityInstance(canvas, {
       arguments: [],
-      dataUrl: "Build/boss2.data.unityweb",
-      frameworkUrl: "Build/boss2.framework.js.unityweb",
-      codeUrl: "Build/boss2.wasm.unityweb",
+      dataUrl: "Build/boss2.data.br",
+      frameworkUrl: "Build/boss2.framework.js.br",
+      codeUrl: "Build/boss2.wasm.br",
       streamingAssetsUrl: "StreamingAssets",
       companyName: "illusion Lab",
       productName: "Boss Rush",
       productVersion: "0.11"
       // matchWebGLToCanvasSize: false,
       // devicePixelRatio: 1,
-    })
-      .then(function () {
-        hideLoader();
-      })
-      .catch(function (message) {
-        alert(message);
-      });
+    }).then(function (unityInstance) {
+      hideLoader();
+    }).catch(function (message) {
+      alert(message);
+    });
   </script>
 </body>
 </html>

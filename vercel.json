@@ -1,7 +1,13 @@
 {
   "crons": [
-    { "path": "/api/cron/daily?secret=@cron_secret", "schedule": "0 0 * * *" },
-    { "path": "/api/cron/weekly?secret=@cron_secret", "schedule": "0 0 * * 6" }
+    {
+      "path": "/api/cron/daily?secret=@cron_secret",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/weekly?secret=@cron_secret",
+      "schedule": "0 0 * * 6"
+    }
   ],
   "headers": [
     {
@@ -14,20 +20,83 @@
       ]
     },
     {
-      "source": "/games/(.*)\\.(data|wasm|js|symbols|json)",
+      "source": "/games/(.*)/Build/(.*)\\.data\\.br",
       "headers": [
         {
           "key": "Cache-Control",
           "value": "public, max-age=31536000, immutable"
+        },
+        {
+          "key": "Content-Encoding",
+          "value": "br"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/octet-stream"
         }
       ]
     },
     {
-      "source": "/games/(.*)\\.(data\\.br|wasm\\.br|js\\.br|symbols\\.br|data\\.gz|wasm\\.gz|js\\.gz|symbols\\.gz)",
+      "source": "/games/(.*)/Build/(.*)\\.framework\\.js\\.br",
       "headers": [
         {
           "key": "Cache-Control",
           "value": "public, max-age=31536000, immutable"
+        },
+        {
+          "key": "Content-Encoding",
+          "value": "br"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/javascript"
+        }
+      ]
+    },
+    {
+      "source": "/games/(.*)/Build/(.*)\\.wasm\\.br",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        },
+        {
+          "key": "Content-Encoding",
+          "value": "br"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/wasm"
+        }
+      ]
+    },
+    {
+      "source": "/games/(.*)/Build/(.*)\\.loader\\.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/javascript"
+        }
+      ]
+    },
+    {
+      "source": "/games/(.*)/Build/(.*)\\.symbols\\.json\\.br",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        },
+        {
+          "key": "Content-Encoding",
+          "value": "br"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json"
         }
       ]
     }
