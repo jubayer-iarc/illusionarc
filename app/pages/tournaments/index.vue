@@ -615,7 +615,7 @@ function windowText(t: AnyTournament) {
           <div class="flex items-end justify-between gap-3">
             <div>
               <div class="text-xs text-black/60 dark:text-white/60">Browse</div>
-              <h2 class="mt-1 text-lg sm:text-xl font-semibold text-black dark:text-white">Upcoming & Ended</h2>
+              <h2 class="mt-1 text-lg sm:text-xl font-semibold text-black dark:text-white">Tournaments</h2>
             </div>
 
             <div class="text-xs text-black/60 dark:text-white/60">
