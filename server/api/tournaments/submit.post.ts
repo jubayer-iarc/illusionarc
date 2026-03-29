@@ -27,6 +27,134 @@ type SubmissionReason =
   | 'rpc_submit_failed'
   | 'score_save_failed'
 
+type JsonPrimitive = string | number | boolean | null
+type JsonValue = JsonPrimitive | JsonObject | JsonValue[]
+type JsonObject = { [key: string]: JsonValue }
+
+type NormalizedRect = {
+  width: number | null
+  height: number | null
+  top: number | null
+  left: number | null
+}
+
+type NormalizedScreenCheckpoint = {
+  label: string | null
+  capturedAt: string | null
+  screenWidth: number | null
+  screenHeight: number | null
+  availWidth: number | null
+  availHeight: number | null
+  innerWidth: number | null
+  innerHeight: number | null
+  outerWidth: number | null
+  outerHeight: number | null
+  clientWidth: number | null
+  clientHeight: number | null
+  visualViewportWidth: number | null
+  visualViewportHeight: number | null
+  devicePixelRatio: number | null
+  orientation: string | null
+  userAgent: string | null
+  frameRect: NormalizedRect | null
+  containerRect: NormalizedRect | null
+  canvasRect: NormalizedRect | null
+}
+
+type NormalizedSubmissionMeta = JsonObject & {
+  screen_checkpoints?: {
+    load: NormalizedScreenCheckpoint | null
+    mid: NormalizedScreenCheckpoint | null
+    game_over: NormalizedScreenCheckpoint | null
+  }
+}
+
+function toFiniteNumberOrNull(value: unknown) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function toShortStringOrNull(value: unknown, max = 200) {
+  if (typeof value !== 'string') return null
+  const v = value.trim()
+  if (!v) return null
+  return v.slice(0, max)
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeRect(value: unknown): NormalizedRect | null {
+  if (!isPlainObject(value)) return null
+
+  return {
+    width: toFiniteNumberOrNull(value.width),
+    height: toFiniteNumberOrNull(value.height),
+    top: toFiniteNumberOrNull(value.top),
+    left: toFiniteNumberOrNull(value.left)
+  }
+}
+
+function normalizeScreenCheckpoint(value: unknown): NormalizedScreenCheckpoint | null {
+  if (!isPlainObject(value)) return null
+
+  return {
+    label: toShortStringOrNull(value.label, 32),
+    capturedAt: toShortStringOrNull(value.capturedAt, 64),
+    screenWidth: toFiniteNumberOrNull(value.screenWidth),
+    screenHeight: toFiniteNumberOrNull(value.screenHeight),
+    availWidth: toFiniteNumberOrNull(value.availWidth),
+    availHeight: toFiniteNumberOrNull(value.availHeight),
+    innerWidth: toFiniteNumberOrNull(value.innerWidth),
+    innerHeight: toFiniteNumberOrNull(value.innerHeight),
+    outerWidth: toFiniteNumberOrNull(value.outerWidth),
+    outerHeight: toFiniteNumberOrNull(value.outerHeight),
+    clientWidth: toFiniteNumberOrNull(value.clientWidth),
+    clientHeight: toFiniteNumberOrNull(value.clientHeight),
+    visualViewportWidth: toFiniteNumberOrNull(value.visualViewportWidth),
+    visualViewportHeight: toFiniteNumberOrNull(value.visualViewportHeight),
+    devicePixelRatio: toFiniteNumberOrNull(value.devicePixelRatio),
+    orientation: toShortStringOrNull(value.orientation, 64),
+    userAgent: toShortStringOrNull(value.userAgent, 600),
+    frameRect: normalizeRect(value.frameRect),
+    containerRect: normalizeRect(value.containerRect),
+    canvasRect: normalizeRect(value.canvasRect)
+  }
+}
+
+function normalizeIncomingMeta(value: unknown): NormalizedSubmissionMeta {
+  const result: NormalizedSubmissionMeta = {}
+
+  if (!isPlainObject(value)) {
+    return result
+  }
+
+  if (isPlainObject(value.screen_checkpoints)) {
+    result.screen_checkpoints = {
+      load: normalizeScreenCheckpoint(value.screen_checkpoints.load),
+      mid: normalizeScreenCheckpoint(value.screen_checkpoints.mid),
+      game_over: normalizeScreenCheckpoint(value.screen_checkpoints.game_over)
+    }
+  }
+
+  return result
+}
+
+function mergeMeta(...parts: Array<Record<string, any> | undefined | null>): JsonObject {
+  const out: JsonObject = {}
+
+  for (const part of parts) {
+    if (!part || typeof part !== 'object' || Array.isArray(part)) continue
+
+    for (const [key, value] of Object.entries(part)) {
+      out[key] = value as JsonValue
+    }
+  }
+
+  return out
+}
+
 export default defineEventHandler(async (event) => {
   const client = await serverSupabaseClient(event)
 
@@ -100,6 +228,8 @@ export default defineEventHandler(async (event) => {
     rawDeviceType === 'Emulator'
       ? rawDeviceType
       : 'PC'
+
+  const incomingMeta = normalizeIncomingMeta(body?.meta)
 
   if (!tournamentSlug) {
     throw createError({
@@ -190,10 +320,13 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'tournament_not_live',
-      meta: {
-        tournament_slug: tournamentSlug,
-        tournament_status: t.status
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug,
+          tournament_status: t.status
+        }
+      )
     })
 
     throw createError({
@@ -230,9 +363,12 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'invalid_session',
-      meta: {
-        tournament_slug: tournamentSlug
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug
+        }
+      )
     })
 
     throw createError({
@@ -251,9 +387,12 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'invalid_session_nonce',
-      meta: {
-        tournament_slug: tournamentSlug
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug
+        }
+      )
     })
 
     throw createError({
@@ -272,10 +411,13 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'session_not_active',
-      meta: {
-        tournament_slug: tournamentSlug,
-        session_status: session.status
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug,
+          session_status: session.status
+        }
+      )
     })
 
     throw createError({
@@ -299,9 +441,12 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'invalid_session_start_time',
-      meta: {
-        tournament_slug: tournamentSlug
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug
+        }
+      )
     })
 
     throw createError({
@@ -332,10 +477,13 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'session_expired',
-      meta: {
-        tournament_slug: tournamentSlug,
-        expires_at: session.expires_at
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug,
+          expires_at: session.expires_at
+        }
+      )
     })
 
     throw createError({
@@ -354,10 +502,13 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'session_already_used',
-      meta: {
-        tournament_slug: tournamentSlug,
-        used_at: session.used_at
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug,
+          used_at: session.used_at
+        }
+      )
     })
 
     throw createError({
@@ -376,10 +527,13 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'device_type_mismatch',
-      meta: {
-        tournament_slug: tournamentSlug,
-        expected_device_type: session.device_type
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug,
+          expected_device_type: session.device_type
+        }
+      )
     })
 
     throw createError({
@@ -430,10 +584,13 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'replaced_by_newer_session',
-      meta: {
-        tournament_slug: tournamentSlug,
-        newer_session_id: newerSession.id
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug,
+          newer_session_id: newerSession.id
+        }
+      )
     })
 
     throw createError({
@@ -498,10 +655,13 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'rpc_submit_failed',
-      meta: {
-        tournament_slug: tournamentSlug,
-        rpc_error: rpcErr.message
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug,
+          rpc_error: rpcErr.message
+        }
+      )
     })
 
     throw createError({
@@ -524,9 +684,12 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'score_save_failed',
-      meta: {
-        tournament_slug: tournamentSlug
-      }
+      meta: mergeMeta(
+        incomingMeta,
+        {
+          tournament_slug: tournamentSlug
+        }
+      )
     })
 
     throw createError({
@@ -553,10 +716,13 @@ export default defineEventHandler(async (event) => {
         : row.kept_best === true
           ? 'kept_existing_best'
           : 'accepted',
-    meta: {
-      tournament_slug: tournamentSlug,
-      player_name: playerName
-    }
+    meta: mergeMeta(
+      incomingMeta,
+      {
+        tournament_slug: tournamentSlug,
+        player_name: playerName
+      }
+    )
   })
 
   return {

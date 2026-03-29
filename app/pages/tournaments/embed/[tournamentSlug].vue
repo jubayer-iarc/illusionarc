@@ -77,6 +77,9 @@ type RunEventPayload = {
   raw?: any
 }
 
+type ScreenCheckpointKey = 'load' | 'mid' | 'game_over'
+type ScreenCheckpointPayload = Record<string, any>
+
 const t = ref<AnyTournament | null>(null)
 const loading = ref(true)
 const err = ref<string | null>(null)
@@ -107,6 +110,7 @@ function resetSessionState() {
   sessionExpiresAt.value = ''
   wsTicket.value = ''
   wsTicketExp.value = 0
+  resetSubmissionMeta()
 }
 
 /* ---------------- WebSocket State ---------------- */
@@ -314,6 +318,94 @@ function shouldSendRunEvent(eventType: string) {
 
 function clearRunEventThrottle() {
   runEventLastSentByType.clear()
+}
+
+/* ---------------- Screen checkpoint meta ---------------- */
+const screenCheckpoints = ref<{
+  load: ScreenCheckpointPayload | null
+  mid: ScreenCheckpointPayload | null
+  game_over: ScreenCheckpointPayload | null
+}>({
+  load: null,
+  mid: null,
+  game_over: null
+})
+
+function resetSubmissionMeta() {
+  screenCheckpoints.value = {
+    load: null,
+    mid: null,
+    game_over: null
+  }
+}
+
+function normalizeFiniteNumber(value: any) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function normalizeRect(raw: any) {
+  if (!raw || typeof raw !== 'object') return null
+
+  return {
+    width: normalizeFiniteNumber(raw.width),
+    height: normalizeFiniteNumber(raw.height),
+    top: normalizeFiniteNumber(raw.top),
+    left: normalizeFiniteNumber(raw.left)
+  }
+}
+
+function normalizeScreenCheckpoint(raw: any) {
+  if (!raw || typeof raw !== 'object') return null
+
+  return {
+    label: raw.label ? String(raw.label) : null,
+    capturedAt: raw.capturedAt ? String(raw.capturedAt) : null,
+    screenWidth: normalizeFiniteNumber(raw.screenWidth),
+    screenHeight: normalizeFiniteNumber(raw.screenHeight),
+    availWidth: normalizeFiniteNumber(raw.availWidth),
+    availHeight: normalizeFiniteNumber(raw.availHeight),
+    innerWidth: normalizeFiniteNumber(raw.innerWidth),
+    innerHeight: normalizeFiniteNumber(raw.innerHeight),
+    outerWidth: normalizeFiniteNumber(raw.outerWidth),
+    outerHeight: normalizeFiniteNumber(raw.outerHeight),
+    clientWidth: normalizeFiniteNumber(raw.clientWidth),
+    clientHeight: normalizeFiniteNumber(raw.clientHeight),
+    visualViewportWidth: normalizeFiniteNumber(raw.visualViewportWidth),
+    visualViewportHeight: normalizeFiniteNumber(raw.visualViewportHeight),
+    devicePixelRatio: normalizeFiniteNumber(raw.devicePixelRatio),
+    orientation: raw.orientation ? String(raw.orientation) : null,
+    userAgent: raw.userAgent ? String(raw.userAgent) : null,
+    frameRect: normalizeRect(raw.frameRect),
+    containerRect: normalizeRect(raw.containerRect),
+    canvasRect: normalizeRect(raw.canvasRect)
+  }
+}
+
+function buildSubmissionMeta() {
+  return {
+    screen_checkpoints: {
+      load: screenCheckpoints.value.load,
+      mid: screenCheckpoints.value.mid,
+      game_over: screenCheckpoints.value.game_over
+    }
+  }
+}
+
+function onWindowMessage(event: MessageEvent) {
+  const data = event.data
+  if (!data || typeof data !== 'object') return
+
+  const type = String((data as any).type || '').trim()
+  if (type !== 'IA_SCREEN_CHECKPOINT') return
+
+  const checkpoint = String((data as any).checkpoint || '').trim() as ScreenCheckpointKey
+  if (checkpoint !== 'load' && checkpoint !== 'mid' && checkpoint !== 'game_over') return
+
+  const normalized = normalizeScreenCheckpoint((data as any).payload)
+  if (!normalized) return
+
+  screenCheckpoints.value[checkpoint] = normalized
 }
 
 /* ---------------- Helpers ---------------- */
@@ -836,7 +928,8 @@ async function flushBestScore() {
         score: scoreToSend,
         deviceType: deviceType.value,
         sessionId: sessionId.value,
-        sessionNonce: sessionNonce.value
+        sessionNonce: sessionNonce.value,
+        meta: buildSubmissionMeta()
       }
     })
 
@@ -907,6 +1000,7 @@ onMounted(async () => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
   document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
   window.addEventListener('popstate', onPopState)
+  window.addEventListener('message', onWindowMessage)
 
   refreshPlayerMount()
   await init()
@@ -921,6 +1015,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
   window.removeEventListener('popstate', onPopState)
+  window.removeEventListener('message', onWindowMessage)
 })
 
 watch(
@@ -974,11 +1069,6 @@ watch(isPlayable, async (v, prev) => {
               Starts in
               <span class="font-mono">{{ msToClock(startsInMs) }}</span>
             </template>
-
-            <!-- <span class="mx-2 opacity-40">•</span>
-            <span :class="wsAuthed ? 'text-emerald-400' : 'text-yellow-400'">
-              {{ wsAuthed ? 'Live session connected' : 'Connecting session...' }}
-            </span> -->
           </div>
         </div>
 

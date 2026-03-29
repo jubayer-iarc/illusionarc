@@ -42,7 +42,6 @@
       background: #000;
     }
 
-    /* Outer shell */
     #unity-shell {
       width: 100vw;
       height: 100dvh;
@@ -54,7 +53,6 @@
       background: #000;
     }
 
-    /* Always keep portrait frame */
     #unity-frame {
       position: relative;
       aspect-ratio: var(--game-aspect);
@@ -87,7 +85,6 @@
       }
     }
 
-    /* Unity area */
     #unity-container {
       position: absolute;
       inset: 0;
@@ -112,7 +109,6 @@
       opacity: 1;
     }
 
-    /* Loading overlay */
     #loading-overlay {
       position: absolute;
       inset: 0;
@@ -195,46 +191,168 @@
 
   <script src="Build/boss2.loader.js"></script>
   <script>
-    var canvas = document.querySelector("#unity-canvas");
-    var loadingOverlay = document.querySelector("#loading-overlay");
+    (function () {
+      var canvas = document.querySelector("#unity-canvas");
+      var loadingOverlay = document.querySelector("#loading-overlay");
+      var unityFrame = document.querySelector("#unity-frame");
+      var unityContainer = document.querySelector("#unity-container");
 
-    function hideLoader() {
-      canvas.classList.add("ready");
-      loadingOverlay.classList.add("hidden");
+      var midCheckpointTimer = null;
+      var screenCheckpoints = {
+        load: null,
+        mid: null,
+        game_over: null
+      };
 
-      setTimeout(function () {
-        if (loadingOverlay && loadingOverlay.parentNode) {
-          loadingOverlay.remove();
+      function hideLoader() {
+        canvas.classList.add("ready");
+        loadingOverlay.classList.add("hidden");
+
+        setTimeout(function () {
+          if (loadingOverlay && loadingOverlay.parentNode) {
+            loadingOverlay.remove();
+          }
+        }, 180);
+      }
+
+      function nowIso() {
+        try {
+          return new Date().toISOString();
+        } catch (e) {
+          return null;
         }
-      }, 180);
-    }
+      }
 
-    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-      var meta = document.createElement("meta");
-      meta.name = "viewport";
-      meta.content =
-        "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover";
-      document.getElementsByTagName("head")[0].appendChild(meta);
+      function getOrientation() {
+        if (window.screen && window.screen.orientation && window.screen.orientation.type) {
+          return String(window.screen.orientation.type);
+        }
 
-      document.body.style.textAlign = "left";
-    }
+        if (typeof window.orientation !== "undefined") {
+          var angle = Number(window.orientation) || 0;
+          return Math.abs(angle) === 90 ? "landscape-legacy" : "portrait-legacy";
+        }
 
-    createUnityInstance(canvas, {
-      arguments: [],
-      dataUrl: "Build/boss2.data.br",
-      frameworkUrl: "Build/boss2.framework.js.br",
-      codeUrl: "Build/boss2.wasm.br",
-      streamingAssetsUrl: "StreamingAssets",
-      companyName: "illusion Lab",
-      productName: "Boss Rush",
-      productVersion: "0.11"
-      // matchWebGLToCanvasSize: false,
-      // devicePixelRatio: 1,
-    }).then(function (unityInstance) {
-      hideLoader();
-    }).catch(function (message) {
-      alert(message);
-    });
+        return window.innerWidth > window.innerHeight ? "landscape" : "portrait";
+      }
+
+      function rectData(el) {
+        if (!el || typeof el.getBoundingClientRect !== "function") return null;
+        var rect = el.getBoundingClientRect();
+
+        return {
+          width: Math.round(rect.width || 0),
+          height: Math.round(rect.height || 0),
+          top: Math.round(rect.top || 0),
+          left: Math.round(rect.left || 0)
+        };
+      }
+
+      function collectScreenSnapshot(label) {
+        return {
+          label: label,
+          capturedAt: nowIso(),
+          screenWidth: Number(window.screen && window.screen.width) || null,
+          screenHeight: Number(window.screen && window.screen.height) || null,
+          availWidth: Number(window.screen && window.screen.availWidth) || null,
+          availHeight: Number(window.screen && window.screen.availHeight) || null,
+          innerWidth: Number(window.innerWidth) || null,
+          innerHeight: Number(window.innerHeight) || null,
+          outerWidth: Number(window.outerWidth) || null,
+          outerHeight: Number(window.outerHeight) || null,
+          clientWidth: Number(document.documentElement && document.documentElement.clientWidth) || null,
+          clientHeight: Number(document.documentElement && document.documentElement.clientHeight) || null,
+          visualViewportWidth:
+            window.visualViewport && typeof window.visualViewport.width === "number"
+              ? Math.round(window.visualViewport.width)
+              : null,
+          visualViewportHeight:
+            window.visualViewport && typeof window.visualViewport.height === "number"
+              ? Math.round(window.visualViewport.height)
+              : null,
+          devicePixelRatio: Number(window.devicePixelRatio) || 1,
+          orientation: getOrientation(),
+          userAgent: navigator.userAgent || "",
+          frameRect: rectData(unityFrame),
+          containerRect: rectData(unityContainer),
+          canvasRect: rectData(canvas)
+        };
+      }
+
+      function postCheckpointToParent(label, snapshot) {
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage(
+              {
+                type: "IA_SCREEN_CHECKPOINT",
+                checkpoint: label,
+                payload: snapshot
+              },
+              "*"
+            );
+          }
+        } catch (e) {}
+      }
+
+      function saveCheckpoint(label) {
+        var snapshot = collectScreenSnapshot(label);
+        screenCheckpoints[label] = snapshot;
+        postCheckpointToParent(label, snapshot);
+        return snapshot;
+      }
+
+      window.IA_RecordMidCheckpoint = function () {
+        return saveCheckpoint("mid");
+      };
+
+      window.IA_RecordGameOverCheckpoint = function () {
+        return saveCheckpoint("game_over");
+      };
+
+      window.IA_GetSubmissionMeta = function () {
+        return {
+          screen_checkpoints: JSON.parse(JSON.stringify(screenCheckpoints))
+        };
+      };
+
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        var meta = document.createElement("meta");
+        meta.name = "viewport";
+        meta.content =
+          "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover";
+        document.getElementsByTagName("head")[0].appendChild(meta);
+
+        document.body.style.textAlign = "left";
+      }
+
+      createUnityInstance(canvas, {
+        arguments: [],
+        dataUrl: "Build/boss2.data.br",
+        frameworkUrl: "Build/boss2.framework.js.br",
+        codeUrl: "Build/boss2.wasm.br",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "illusion Lab",
+        productName: "Boss Rush",
+        productVersion: "0.11"
+      }).then(function (unityInstance) {
+        window.unityInstance = unityInstance;
+        hideLoader();
+
+        saveCheckpoint("load");
+
+        if (midCheckpointTimer) {
+          clearTimeout(midCheckpointTimer);
+        }
+
+        midCheckpointTimer = setTimeout(function () {
+          if (!screenCheckpoints.mid) {
+            saveCheckpoint("mid");
+          }
+        }, 45000);
+      }).catch(function (message) {
+        alert(message);
+      });
+    })();
   </script>
 </body>
 </html>

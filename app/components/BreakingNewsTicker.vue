@@ -65,7 +65,8 @@ const notices: NoticeItem[] = [
   {
     type: 'আপডেট',
     themeClass: 'theme-cyan',
-    text: 'সহায়তার জন্য FAQ দেখুন অথবা official WhatsApp support ব্যবহার করুন।'
+    // text: 'সহায়তার জন্য FAQ দেখুন অথবা official WhatsApp support ব্যবহার করুন।'
+    text: 'সহায়তার জন্য official WhatsApp support ব্যবহার করুন।'
   },
   /*
   {
