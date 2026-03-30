@@ -77,8 +77,27 @@ type RunEventPayload = {
   raw?: any
 }
 
-type ScreenCheckpointKey = 'load' | 'mid' | 'game_over'
-type ScreenCheckpointPayload = Record<string, any>
+type CanvasAuditSample = {
+  seq: number | null
+  phase: string | null
+  capturedAt: string | null
+  elapsedMs: number | null
+  canvas: {
+    width: number | null
+    height: number | null
+  } | null
+  frame: {
+    width: number | null
+    height: number | null
+  } | null
+  container: {
+    width: number | null
+    height: number | null
+  } | null
+  canvasRatio: number | null
+  frameRatio: number | null
+  orientation: string | null
+}
 
 const t = ref<AnyTournament | null>(null)
 const loading = ref(true)
@@ -320,23 +339,17 @@ function clearRunEventThrottle() {
   runEventLastSentByType.clear()
 }
 
-/* ---------------- Screen checkpoint meta ---------------- */
-const screenCheckpoints = ref<{
-  load: ScreenCheckpointPayload | null
-  mid: ScreenCheckpointPayload | null
-  game_over: ScreenCheckpointPayload | null
-}>({
-  load: null,
-  mid: null,
-  game_over: null
-})
+/* ---------------- Canvas audit meta ---------------- */
+const canvasAuditStartedAt = ref<string | null>(null)
+const canvasAuditSamples = ref<CanvasAuditSample[]>([])
+const canvasAuditLatest = ref<CanvasAuditSample | null>(null)
+const canvasAuditGameOver = ref<CanvasAuditSample | null>(null)
 
 function resetSubmissionMeta() {
-  screenCheckpoints.value = {
-    load: null,
-    mid: null,
-    game_over: null
-  }
+  canvasAuditStartedAt.value = null
+  canvasAuditSamples.value = []
+  canvasAuditLatest.value = null
+  canvasAuditGameOver.value = null
 }
 
 function normalizeFiniteNumber(value: any) {
@@ -344,50 +357,86 @@ function normalizeFiniteNumber(value: any) {
   return Number.isFinite(n) ? n : null
 }
 
-function normalizeRect(raw: any) {
+function normalizeSize(raw: any) {
   if (!raw || typeof raw !== 'object') return null
 
   return {
     width: normalizeFiniteNumber(raw.width),
-    height: normalizeFiniteNumber(raw.height),
-    top: normalizeFiniteNumber(raw.top),
-    left: normalizeFiniteNumber(raw.left)
+    height: normalizeFiniteNumber(raw.height)
   }
 }
 
-function normalizeScreenCheckpoint(raw: any) {
+function normalizeCanvasAuditSample(raw: any): CanvasAuditSample | null {
   if (!raw || typeof raw !== 'object') return null
 
   return {
-    label: raw.label ? String(raw.label) : null,
+    seq: normalizeFiniteNumber(raw.seq),
+    phase: raw.phase ? String(raw.phase) : null,
     capturedAt: raw.capturedAt ? String(raw.capturedAt) : null,
-    screenWidth: normalizeFiniteNumber(raw.screenWidth),
-    screenHeight: normalizeFiniteNumber(raw.screenHeight),
-    availWidth: normalizeFiniteNumber(raw.availWidth),
-    availHeight: normalizeFiniteNumber(raw.availHeight),
-    innerWidth: normalizeFiniteNumber(raw.innerWidth),
-    innerHeight: normalizeFiniteNumber(raw.innerHeight),
-    outerWidth: normalizeFiniteNumber(raw.outerWidth),
-    outerHeight: normalizeFiniteNumber(raw.outerHeight),
-    clientWidth: normalizeFiniteNumber(raw.clientWidth),
-    clientHeight: normalizeFiniteNumber(raw.clientHeight),
-    visualViewportWidth: normalizeFiniteNumber(raw.visualViewportWidth),
-    visualViewportHeight: normalizeFiniteNumber(raw.visualViewportHeight),
-    devicePixelRatio: normalizeFiniteNumber(raw.devicePixelRatio),
-    orientation: raw.orientation ? String(raw.orientation) : null,
-    userAgent: raw.userAgent ? String(raw.userAgent) : null,
-    frameRect: normalizeRect(raw.frameRect),
-    containerRect: normalizeRect(raw.containerRect),
-    canvasRect: normalizeRect(raw.canvasRect)
+    elapsedMs: normalizeFiniteNumber(raw.elapsedMs),
+    canvas: normalizeSize(raw.canvas),
+    frame: normalizeSize(raw.frame),
+    container: normalizeSize(raw.container),
+    canvasRatio: normalizeFiniteNumber(raw.canvasRatio),
+    frameRatio: normalizeFiniteNumber(raw.frameRatio),
+    orientation: raw.orientation ? String(raw.orientation) : null
+  }
+}
+
+function pushCanvasAuditSample(sample: CanvasAuditSample) {
+  const seq = sample.seq ?? null
+
+  if (seq != null) {
+    const existingIndex = canvasAuditSamples.value.findIndex(item => item.seq === seq)
+    if (existingIndex >= 0) {
+      canvasAuditSamples.value[existingIndex] = sample
+    } else {
+      canvasAuditSamples.value.push(sample)
+      canvasAuditSamples.value.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    }
+  } else {
+    canvasAuditSamples.value.push(sample)
+  }
+
+  canvasAuditLatest.value = sample
+
+  if (sample.phase === 'game_over') {
+    canvasAuditGameOver.value = sample
+  }
+}
+
+function buildSyntheticGameOverFromLatest() {
+  const latest = canvasAuditLatest.value
+  if (!latest) return null
+
+  return {
+    ...latest,
+    phase: 'game_over_fallback',
+    seq: latest.seq,
+    capturedAt: latest.capturedAt,
+    elapsedMs: latest.elapsedMs
   }
 }
 
 function buildSubmissionMeta() {
+  const finalGameOver = canvasAuditGameOver.value || buildSyntheticGameOverFromLatest()
+
   return {
-    screen_checkpoints: {
-      load: screenCheckpoints.value.load,
-      mid: screenCheckpoints.value.mid,
-      game_over: screenCheckpoints.value.game_over
+    canvas_audit: {
+      startedAt: canvasAuditStartedAt.value,
+      samples: canvasAuditSamples.value,
+      latest: canvasAuditLatest.value,
+      gameOver: finalGameOver,
+      summary: {
+        sampleCount: canvasAuditSamples.value.length,
+        hasRealGameOver: !!canvasAuditGameOver.value,
+        usedFallbackGameOver: !canvasAuditGameOver.value && !!canvasAuditLatest.value,
+        suspiciousLandscapeCanvas: canvasAuditSamples.value.some(sample => {
+          const w = sample.canvas?.width ?? 0
+          const h = sample.canvas?.height ?? 0
+          return !!w && !!h && w > h
+        })
+      }
     }
   }
 }
@@ -397,15 +446,16 @@ function onWindowMessage(event: MessageEvent) {
   if (!data || typeof data !== 'object') return
 
   const type = String((data as any).type || '').trim()
-  if (type !== 'IA_SCREEN_CHECKPOINT') return
+  if (type !== 'IA_CANVAS_AUDIT') return
 
-  const checkpoint = String((data as any).checkpoint || '').trim() as ScreenCheckpointKey
-  if (checkpoint !== 'load' && checkpoint !== 'mid' && checkpoint !== 'game_over') return
+  const sample = normalizeCanvasAuditSample((data as any).payload)
+  if (!sample) return
 
-  const normalized = normalizeScreenCheckpoint((data as any).payload)
-  if (!normalized) return
+  if (!canvasAuditStartedAt.value && sample.capturedAt) {
+    canvasAuditStartedAt.value = sample.capturedAt
+  }
 
-  screenCheckpoints.value[checkpoint] = normalized
+  pushCanvasAuditSample(sample)
 }
 
 /* ---------------- Helpers ---------------- */

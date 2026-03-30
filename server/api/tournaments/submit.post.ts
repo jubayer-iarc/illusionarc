@@ -31,41 +31,31 @@ type JsonPrimitive = string | number | boolean | null
 type JsonValue = JsonPrimitive | JsonObject | JsonValue[]
 type JsonObject = { [key: string]: JsonValue }
 
-type NormalizedRect = {
+type NormalizedSize = {
   width: number | null
   height: number | null
-  top: number | null
-  left: number | null
 }
 
-type NormalizedScreenCheckpoint = {
-  label: string | null
+type NormalizedCanvasAuditSample = {
+  seq: number | null
+  phase: string | null
   capturedAt: string | null
-  screenWidth: number | null
-  screenHeight: number | null
-  availWidth: number | null
-  availHeight: number | null
-  innerWidth: number | null
-  innerHeight: number | null
-  outerWidth: number | null
-  outerHeight: number | null
-  clientWidth: number | null
-  clientHeight: number | null
-  visualViewportWidth: number | null
-  visualViewportHeight: number | null
-  devicePixelRatio: number | null
+  elapsedMs: number | null
+  canvas: NormalizedSize | null
+  frame: NormalizedSize | null
+  container: NormalizedSize | null
+  canvasRatio: number | null
+  frameRatio: number | null
   orientation: string | null
-  userAgent: string | null
-  frameRect: NormalizedRect | null
-  containerRect: NormalizedRect | null
-  canvasRect: NormalizedRect | null
 }
 
 type NormalizedSubmissionMeta = JsonObject & {
-  screen_checkpoints?: {
-    load: NormalizedScreenCheckpoint | null
-    mid: NormalizedScreenCheckpoint | null
-    game_over: NormalizedScreenCheckpoint | null
+  canvas_audit?: {
+    startedAt: string | null
+    samples: NormalizedCanvasAuditSample[]
+    latest: NormalizedCanvasAuditSample | null
+    gameOver: NormalizedCanvasAuditSample | null
+    summary?: JsonObject
   }
 }
 
@@ -85,42 +75,43 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function normalizeRect(value: unknown): NormalizedRect | null {
+function normalizeSize(value: unknown): NormalizedSize | null {
   if (!isPlainObject(value)) return null
 
   return {
     width: toFiniteNumberOrNull(value.width),
-    height: toFiniteNumberOrNull(value.height),
-    top: toFiniteNumberOrNull(value.top),
-    left: toFiniteNumberOrNull(value.left)
+    height: toFiniteNumberOrNull(value.height)
   }
 }
 
-function normalizeScreenCheckpoint(value: unknown): NormalizedScreenCheckpoint | null {
+function normalizeCanvasAuditSample(value: unknown): NormalizedCanvasAuditSample | null {
   if (!isPlainObject(value)) return null
 
   return {
-    label: toShortStringOrNull(value.label, 32),
+    seq: toFiniteNumberOrNull(value.seq),
+    phase: toShortStringOrNull(value.phase, 40),
     capturedAt: toShortStringOrNull(value.capturedAt, 64),
-    screenWidth: toFiniteNumberOrNull(value.screenWidth),
-    screenHeight: toFiniteNumberOrNull(value.screenHeight),
-    availWidth: toFiniteNumberOrNull(value.availWidth),
-    availHeight: toFiniteNumberOrNull(value.availHeight),
-    innerWidth: toFiniteNumberOrNull(value.innerWidth),
-    innerHeight: toFiniteNumberOrNull(value.innerHeight),
-    outerWidth: toFiniteNumberOrNull(value.outerWidth),
-    outerHeight: toFiniteNumberOrNull(value.outerHeight),
-    clientWidth: toFiniteNumberOrNull(value.clientWidth),
-    clientHeight: toFiniteNumberOrNull(value.clientHeight),
-    visualViewportWidth: toFiniteNumberOrNull(value.visualViewportWidth),
-    visualViewportHeight: toFiniteNumberOrNull(value.visualViewportHeight),
-    devicePixelRatio: toFiniteNumberOrNull(value.devicePixelRatio),
-    orientation: toShortStringOrNull(value.orientation, 64),
-    userAgent: toShortStringOrNull(value.userAgent, 600),
-    frameRect: normalizeRect(value.frameRect),
-    containerRect: normalizeRect(value.containerRect),
-    canvasRect: normalizeRect(value.canvasRect)
+    elapsedMs: toFiniteNumberOrNull(value.elapsedMs),
+    canvas: normalizeSize(value.canvas),
+    frame: normalizeSize(value.frame),
+    container: normalizeSize(value.container),
+    canvasRatio: toFiniteNumberOrNull(value.canvasRatio),
+    frameRatio: toFiniteNumberOrNull(value.frameRatio),
+    orientation: toShortStringOrNull(value.orientation, 32)
   }
+}
+
+function normalizeSummary(value: unknown): JsonObject | undefined {
+  if (!isPlainObject(value)) return undefined
+
+  const out: JsonObject = {}
+
+  if ('sampleCount' in value) out.sampleCount = toFiniteNumberOrNull(value.sampleCount)
+  if ('hasRealGameOver' in value) out.hasRealGameOver = Boolean(value.hasRealGameOver)
+  if ('usedFallbackGameOver' in value) out.usedFallbackGameOver = Boolean(value.usedFallbackGameOver)
+  if ('suspiciousLandscapeCanvas' in value) out.suspiciousLandscapeCanvas = Boolean(value.suspiciousLandscapeCanvas)
+
+  return out
 }
 
 function normalizeIncomingMeta(value: unknown): NormalizedSubmissionMeta {
@@ -130,11 +121,19 @@ function normalizeIncomingMeta(value: unknown): NormalizedSubmissionMeta {
     return result
   }
 
-  if (isPlainObject(value.screen_checkpoints)) {
-    result.screen_checkpoints = {
-      load: normalizeScreenCheckpoint(value.screen_checkpoints.load),
-      mid: normalizeScreenCheckpoint(value.screen_checkpoints.mid),
-      game_over: normalizeScreenCheckpoint(value.screen_checkpoints.game_over)
+  if (isPlainObject(value.canvas_audit)) {
+    const rawSamples = Array.isArray(value.canvas_audit.samples)
+      ? value.canvas_audit.samples
+      : []
+
+    result.canvas_audit = {
+      startedAt: toShortStringOrNull(value.canvas_audit.startedAt, 64),
+      samples: rawSamples
+        .map(normalizeCanvasAuditSample)
+        .filter((x): x is NormalizedCanvasAuditSample => !!x),
+      latest: normalizeCanvasAuditSample(value.canvas_audit.latest),
+      gameOver: normalizeCanvasAuditSample(value.canvas_audit.gameOver),
+      summary: normalizeSummary(value.canvas_audit.summary)
     }
   }
 
@@ -320,13 +319,10 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'tournament_not_live',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug,
-          tournament_status: t.status
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug,
+        tournament_status: t.status
+      })
     })
 
     throw createError({
@@ -363,12 +359,9 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'invalid_session',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug
+      })
     })
 
     throw createError({
@@ -387,12 +380,9 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'invalid_session_nonce',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug
+      })
     })
 
     throw createError({
@@ -411,13 +401,10 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'session_not_active',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug,
-          session_status: session.status
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug,
+        session_status: session.status
+      })
     })
 
     throw createError({
@@ -441,12 +428,9 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'invalid_session_start_time',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug
+      })
     })
 
     throw createError({
@@ -477,13 +461,10 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'session_expired',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug,
-          expires_at: session.expires_at
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug,
+        expires_at: session.expires_at
+      })
     })
 
     throw createError({
@@ -502,13 +483,10 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'session_already_used',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug,
-          used_at: session.used_at
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug,
+        used_at: session.used_at
+      })
     })
 
     throw createError({
@@ -527,13 +505,10 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'device_type_mismatch',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug,
-          expected_device_type: session.device_type
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug,
+        expected_device_type: session.device_type
+      })
     })
 
     throw createError({
@@ -584,13 +559,10 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'replaced_by_newer_session',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug,
-          newer_session_id: newerSession.id
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug,
+        newer_session_id: newerSession.id
+      })
     })
 
     throw createError({
@@ -655,13 +627,10 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'rpc_submit_failed',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug,
-          rpc_error: rpcErr.message
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug,
+        rpc_error: rpcErr.message
+      })
     })
 
     throw createError({
@@ -684,12 +653,9 @@ export default defineEventHandler(async (event) => {
       submittedScore: score,
       accepted: false,
       reason: 'score_save_failed',
-      meta: mergeMeta(
-        incomingMeta,
-        {
-          tournament_slug: tournamentSlug
-        }
-      )
+      meta: mergeMeta(incomingMeta, {
+        tournament_slug: tournamentSlug
+      })
     })
 
     throw createError({
@@ -716,13 +682,10 @@ export default defineEventHandler(async (event) => {
         : row.kept_best === true
           ? 'kept_existing_best'
           : 'accepted',
-    meta: mergeMeta(
-      incomingMeta,
-      {
-        tournament_slug: tournamentSlug,
-        player_name: playerName
-      }
-    )
+    meta: mergeMeta(incomingMeta, {
+      tournament_slug: tournamentSlug,
+      player_name: playerName
+    })
   })
 
   return {
