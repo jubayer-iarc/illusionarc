@@ -799,7 +799,7 @@ function trackSocialClick(platform: string) {
               class="!rounded-full"
               @click="trackSubscribeClick"
             >
-              খেলতে সাবস্ক্রাইব করুন
+              টুর্নামেন্টে সাবস্ক্রাইব করুন
             </UButton>
             <UButton
               v-else-if="user"
@@ -956,7 +956,7 @@ function trackSocialClick(platform: string) {
                       to="/subscribe"
                       @click="trackSubscribeClick"
                     >
-                      খেলতে সাবস্ক্রাইব করুন
+                      টুর্নামেন্টে সাবস্ক্রাইব করুন
                     </UButton>
 
                     <UButton
@@ -978,7 +978,7 @@ function trackSocialClick(platform: string) {
                       class="practice-btn !rounded-[18px] min-h-[48px]"
                       @click="trackPracticeClick"
                     >
-                      প্র্যাকটিস
+                      প্র‍্যাকটিস করুন
                     </UButton>
                   </div>
 
@@ -1397,7 +1397,7 @@ function trackSocialClick(platform: string) {
                     to="/subscribe"
                     @click="trackSubscribeClick"
                   >
-                    খেলতে সাবস্ক্রাইব করুন
+                    টুর্নামেন্টে সাবস্ক্রাইব করুন
                   </UButton>
 
                   <UButton
@@ -1419,7 +1419,7 @@ function trackSocialClick(platform: string) {
                     class="practice-btn !rounded-[18px] min-h-[48px]"
                     @click="trackPracticeClick"
                   >
-                    প্র্যাকটিস
+                    প্র‍্যাকটিস করুন
                   </UButton>
                 </div>
 
