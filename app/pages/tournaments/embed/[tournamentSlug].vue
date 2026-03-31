@@ -99,6 +99,18 @@ type CanvasAuditSample = {
   orientation: string | null
 }
 
+type SubmitPublicKeyResponse = {
+  keyId: string
+  publicKey: string
+}
+
+type EncryptedSubmitRequest = {
+  keyId: string
+  encryptedKey: string
+  iv: string
+  ciphertext: string
+}
+
 const t = ref<AnyTournament | null>(null)
 const loading = ref(true)
 const err = ref<string | null>(null)
@@ -456,6 +468,160 @@ function onWindowMessage(event: MessageEvent) {
   }
 
   pushCanvasAuditSample(sample)
+}
+
+/* ---------------- Secure Submit Helpers ---------------- */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
+function stringToArrayBuffer(value: string): ArrayBuffer {
+  return new TextEncoder().encode(value).buffer
+}
+
+function pemToArrayBuffer(pem: string): ArrayBuffer {
+  const clean = pem
+    .replace(/-----BEGIN PUBLIC KEY-----/g, '')
+    .replace(/-----END PUBLIC KEY-----/g, '')
+    .replace(/\s+/g, '')
+
+  const binary = atob(clean)
+  const bytes = new Uint8Array(binary.length)
+
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+
+  return bytes.buffer
+}
+
+async function importPublicKey(publicKeyPem: string): Promise<CryptoKey> {
+  return await crypto.subtle.importKey(
+    'spki',
+    pemToArrayBuffer(publicKeyPem),
+    {
+      name: 'RSA-OAEP',
+      hash: 'SHA-256'
+    },
+    false,
+    ['encrypt']
+  )
+}
+
+async function encryptTournamentSubmitPayload(
+  payload: Record<string, unknown>,
+  keyId: string,
+  publicKeyPem: string
+): Promise<EncryptedSubmitRequest> {
+  const aesKey = await crypto.subtle.generateKey(
+    {
+      name: 'AES-GCM',
+      length: 256
+    },
+    true,
+    ['encrypt']
+  )
+
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const plaintext = stringToArrayBuffer(JSON.stringify(payload))
+
+  const ciphertext = await crypto.subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv
+    },
+    aesKey,
+    plaintext
+  )
+
+  const rawAesKey = await crypto.subtle.exportKey('raw', aesKey)
+  const publicKey = await importPublicKey(publicKeyPem)
+
+  const encryptedKey = await crypto.subtle.encrypt(
+    {
+      name: 'RSA-OAEP'
+    },
+    publicKey,
+    rawAesKey
+  )
+
+  return {
+    keyId,
+    encryptedKey: arrayBufferToBase64(encryptedKey),
+    iv: arrayBufferToBase64(iv.buffer),
+    ciphertext: arrayBufferToBase64(ciphertext)
+  }
+}
+
+async function submitEncryptedScore(scoreToSend: number) {
+  const { keyId, publicKey } = await $fetch<SubmitPublicKeyResponse>(
+    '/api/tournaments/submit-public-key'
+  )
+
+  const submitPayload = {
+    tournamentSlug: tournamentSlug.value,
+    score: scoreToSend,
+    deviceType: deviceType.value,
+    sessionId: sessionId.value,
+    sessionNonce: sessionNonce.value,
+    meta: buildSubmissionMeta()
+  }
+
+  const encryptedBody = await encryptTournamentSubmitPayload(
+    submitPayload,
+    keyId,
+    publicKey
+  )
+
+  const supabase = useSupabaseClient()
+
+const { data: userData, error: userErr } = await supabase.auth.getUser()
+if (userErr || !userData?.user) {
+  throw new Error('You must be logged in to submit score')
+}
+
+let {
+  data: { session }
+} = await supabase.auth.getSession()
+
+if (!session?.access_token) {
+  const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession()
+  if (refreshErr || !refreshed?.session?.access_token) {
+    throw new Error('Unable to refresh login session')
+  }
+  session = refreshed.session
+}
+
+const accessToken = session.access_token
+
+  const config = useRuntimeConfig()
+  const supabaseUrl = config.public.supabaseUrl
+  const supabaseAnonKey = config.public.supabaseAnonKey
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Missing Supabase public config')
+  }
+
+  const functionUrl = `${supabaseUrl}/functions/v1/tournament-submit-secure`
+
+  return await $fetch<{
+    ok?: boolean
+    updated?: boolean
+    kept_best?: boolean
+    final_score?: number
+  }>(functionUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: supabaseAnonKey
+    },
+    body: encryptedBody
+  })
 }
 
 /* ---------------- Helpers ---------------- */
@@ -965,25 +1131,9 @@ async function flushBestScore() {
   try {
     const scoreToSend = bestQueuedScore.value
 
-    const res = await $fetch<{
-      ok?: boolean
-      updated?: boolean
-      keptBest?: boolean
-      finalScore?: number
-    }>('/api/tournaments/submit', {
-      method: 'POST',
-      credentials: 'include',
-      body: {
-        tournamentSlug: tournamentSlug.value,
-        score: scoreToSend,
-        deviceType: deviceType.value,
-        sessionId: sessionId.value,
-        sessionNonce: sessionNonce.value,
-        meta: buildSubmissionMeta()
-      }
-    })
+    const res = await submitEncryptedScore(scoreToSend)
 
-    const finalScore = Number(res?.finalScore ?? scoreToSend)
+    const finalScore = Number(res?.final_score ?? scoreToSend)
 
     bestSentScore.value = Math.max(
       bestSentScore.value,
@@ -1001,7 +1151,7 @@ async function flushBestScore() {
     if (nowMs - lastSubmitErrorAt.value > 2500) {
       toast.add({
         title: 'Score submit failed',
-        description: e?.data?.message || e?.message || 'Try again',
+        description: e?.data?.error || e?.data?.message || e?.message || 'Try again',
         color: 'error'
       })
       lastSubmitErrorAt.value = nowMs

@@ -172,7 +172,7 @@ export default defineNuxtConfig({
         'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com'],
 
         'default-src': ["'self'"],
-        'connect-src': ["'self'", 'https:', 'wss:', 'https://www.facebook.com', 'https://connect.facebook.net'],
+        'connect-src': ["'self'", 'https:', 'wss:', 'https://www.facebook.com', 'https://connect.facebook.net', 'https://*.supabase.co', 'wss://*.supabase.co'],
         'img-src': ["'self'", 'data:', 'blob:', 'https:', 'https://www.facebook.com'],
         'font-src': ["'self'", 'data:', 'https:'],
         'style-src': ["'self'", 'https:', "'unsafe-inline'"],
@@ -210,9 +210,9 @@ export default defineNuxtConfig({
           xFrameOptions: false,
           crossOriginEmbedderPolicy: false,
           crossOriginOpenerPolicy: false,
-          contentSecurityPolicy: {
-            'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com']
-          }
+          // contentSecurityPolicy: {
+          //   'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com']
+          // }
         }
       }
     },
@@ -238,9 +238,9 @@ export default defineNuxtConfig({
           xFrameOptions: false,
           crossOriginEmbedderPolicy: false,
           crossOriginOpenerPolicy: false,
-          contentSecurityPolicy: {
-            'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com']
-          }
+          // contentSecurityPolicy: {
+          //   'frame-ancestors': ["'self'", 'https://illusionarc.com', 'https://www.illusionarc.com']
+          // }
         }
       }
     },
