@@ -724,11 +724,7 @@ function playHard(tournamentSlug: string) {
   window.location.assign(url)
 }
 
-const practiceLink = computed(() => {
-  const gameSlug = getGameSlug(t.value)
-  if (!gameSlug) return '/arcade'
-  return `/arcade/${encodeURIComponent(gameSlug)}`
-})
+const practiceLink = '/arcade/salami-rush-practice?play=1'
 
 const fullLeaderboardLink = computed(() => {
   const gameSlug = getGameSlug(t.value)
@@ -974,16 +970,15 @@ function trackSocialClick(platform: string) {
                     </UButton>
 
                     <UButton
-                      v-if="isScheduled && game"
                       :to="practiceLink"
                       block
                       size="lg"
                       variant="solid"
-                      color="primary"
+                      color="secondary"
                       class="practice-btn !rounded-[18px] min-h-[48px]"
                       @click="trackPracticeClick"
                     >
-                      প্র্যাকটিস করুন
+                      প্র্যাকটিস
                     </UButton>
                   </div>
 
@@ -1416,7 +1411,6 @@ function trackSocialClick(platform: string) {
                   </UButton>
 
                   <UButton
-                    v-if="isScheduled && game"
                     :to="practiceLink"
                     block
                     size="lg"
@@ -1425,7 +1419,7 @@ function trackSocialClick(platform: string) {
                     class="practice-btn !rounded-[18px] min-h-[48px]"
                     @click="trackPracticeClick"
                   >
-                    প্র্যাকটিস করুন
+                    প্র্যাকটিস
                   </UButton>
                 </div>
 
