@@ -1,5 +1,5 @@
 // server/api/tournaments/winners.get.ts
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseClient } from '#supabase/server'
 import { createError, getQuery } from 'h3'
 
 type PrizeRelation = {
@@ -32,12 +32,15 @@ type TournamentRow = {
 }
 
 export default defineEventHandler(async (event) => {
-  const adminDb = await serverSupabaseServiceRole(event)
+  const db = await serverSupabaseClient(event)
   const q = getQuery(event)
 
   const slug = String(q.slug || '').trim()
   if (!slug) {
-    throw createError({ statusCode: 400, statusMessage: 'Missing slug' })
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Missing slug'
+    })
   }
 
   function clean(v: any) {
@@ -67,21 +70,45 @@ export default defineEventHandler(async (event) => {
       prize_label: labelPrize,
       prize_bdt: w?.prize_bdt ?? null,
       tournament_prize: joinedPrize
-        ? {
+          ? {
             id: String(joinedPrize.id || '').trim(),
             title: String(joinedPrize.title || '').trim(),
             description: joinedPrize.description || null,
             image_url: joinedPrize.image_url || null,
             image_path: joinedPrize.image_path || null
           }
-        : null
+          : null
     }
   }
 
+  async function readTournament(): Promise<TournamentRow> {
+    const { data, error } = await db
+        .from('tournaments')
+        .select('id, slug, ends_at, status, finalized')
+        .eq('slug', slug)
+        .maybeSingle()
+
+    if (error) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: error.message
+      })
+    }
+
+    if (!data?.id) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Tournament not found'
+      })
+    }
+
+    return data as TournamentRow
+  }
+
   async function readWinners(): Promise<WinnerRow[]> {
-    const { data, error } = await adminDb
-      .from('tournament_winners')
-      .select(`
+    const { data, error } = await db
+        .from('tournament_winners')
+        .select(`
         rank,
         player_name,
         score,
@@ -99,72 +126,57 @@ export default defineEventHandler(async (event) => {
           image_path
         )
       `)
-      .eq('tournament_slug', slug)
-      .order('rank', { ascending: true })
+        .eq('tournament_slug', slug)
+        .order('rank', { ascending: true })
 
     if (error) {
-      throw createError({ statusCode: 500, statusMessage: error.message })
+      throw createError({
+        statusCode: 500,
+        statusMessage: error.message
+      })
     }
 
     return (data || []).map(normalizeWinnerRow)
   }
 
-  async function readTournament(): Promise<TournamentRow> {
-    const { data: t, error: tErr } = await adminDb
-      .from('tournaments')
-      .select('id, slug, ends_at, status, finalized')
-      .eq('slug', slug)
-      .maybeSingle()
-
-    if (tErr) {
-      throw createError({ statusCode: 500, statusMessage: tErr.message })
-    }
-    if (!t?.id) {
-      throw createError({ statusCode: 404, statusMessage: 'Tournament not found' })
-    }
-
-    return t as TournamentRow
-  }
-
-  // 1) Read tournament first
   const tournament = await readTournament()
 
-  // 2) Quick return if winners already exist
   const existing = await readWinners()
   if (existing.length) {
-    return { slug, winners: existing }
+    return {
+      slug,
+      winners: existing
+    }
   }
 
-  // 3) Decide if ended
-  const endsAtIso = String(tournament.ends_at || '')
-  const status = String(tournament.status || '').toLowerCase()
-  const finalized = Boolean(tournament.finalized)
-
-  const endsMs = endsAtIso ? new Date(endsAtIso).getTime() : 0
+  const endsMs = tournament.ends_at ? new Date(tournament.ends_at).getTime() : 0
   const nowMs = Date.now()
   const endedByTime = endsMs ? nowMs >= endsMs : false
-  const endedByStatus = status === 'ended'
-  const isEnded = endedByTime || endedByStatus
+  const endedByStatus = String(tournament.status || '').toLowerCase() === 'ended'
 
-  if (!isEnded) {
-    return { slug, winners: [] }
+  if (!endedByTime && !endedByStatus) {
+    return {
+      slug,
+      winners: []
+    }
   }
 
-  // 4) Auto-finalize
-  // Keep this only if your DB function exists.
-  try {
-    await (adminDb as any).rpc('finalize_tournament_winners', {
-      p_tournament_id: String(tournament.id),
-      p_force: false
-    })
-  } catch (e: any) {
+  const { error: finalizeError } = await (db as any).rpc('finalize_tournament_winners', {
+    p_tournament_id: String(tournament.id),
+    p_force: false
+  })
+
+  if (finalizeError) {
     throw createError({
       statusCode: 500,
-      statusMessage: e?.message || 'Finalize failed'
+      statusMessage: finalizeError.message || 'Finalize failed'
     })
   }
 
-  // 5) Return winners after finalize
   const winners = await readWinners()
-  return { slug, winners, finalizedWas: finalized }
+
+  return {
+    slug,
+    winners
+  }
 })
