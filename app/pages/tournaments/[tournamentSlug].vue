@@ -373,6 +373,7 @@ const promoYoutubeEmbedUrl = computed(() => {
 })
 
 const supportWhatsAppNumber = '8801329662037'
+const whatsappGroupLink = 'https://chat.whatsapp.com/FwaPHb83unj1MZbaXtyZLO?mode=gi_t'
 
 const issueReportMessage = computed(() => {
   const tournamentTitle = String(t.value?.title || 'Tournament').trim()
@@ -731,13 +732,13 @@ function trackLeaderboardClick() {
 
 function trackWhatsappReportClick() {
   trackMeta('Contact', {
-    contact_channel: 'whatsapp'
+    contact_channel: 'whatsapp_report'
   })
 }
 
-function trackContactPageClick() {
+function trackWhatsappGroupClick() {
   trackMeta('Contact', {
-    contact_channel: 'contact_page'
+    contact_channel: 'whatsapp_group'
   })
 }
 
@@ -1311,19 +1312,21 @@ function trackSocialClick(platform: string) {
                     </div>
                     <div class="mt-2 text-sm leading-7 text-black/70 sm:text-base dark:text-white/75">
                       টুর্নামেন্ট, স্কোর, লোডিং, সাবমিশন বা গেম চালু না হওয়ার মতো কোনো সমস্যা হলে আমাদের জানান।
-                      আপনি চাইলে Contact পেজে গিয়ে রিপোর্ট করতে পারেন, অথবা সরাসরি WhatsApp-এ মেসেজ পাঠাতে পারেন।
+                      আপনি চাইলে আমাদের WhatsApp Group-এ join করতে পারেন, অথবা সরাসরি WhatsApp-এ রিপোর্ট পাঠাতে পারেন।
                     </div>
                   </div>
 
                   <div class="flex flex-col gap-3 sm:flex-row">
-                    <NuxtLink
-                        to="/contact"
+                    <a
+                        :href="whatsappGroupLink"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         class="wa-report-btn inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95"
-                        @click="trackContactPageClick"
+                        @click="trackWhatsappGroupClick"
                     >
-                      <UIcon name="i-heroicons-envelope" class="h-5 w-5" />
-                      Contact Page
-                    </NuxtLink>
+                      <UIcon name="i-simple-icons-whatsapp" class="h-5 w-5" />
+                      Whatsapp Group-এ জয়েন করুন
+                    </a>
 
                     <a
                         :href="whatsappReportLink"
