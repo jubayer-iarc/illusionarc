@@ -34,11 +34,7 @@ type StartSessionResponse = {
 }
 
 type WsServerMessage =
-  | {
-      type: 'WELCOME'
-      sessionId?: string
-      message?: string
-    }
+  | { type: 'WELCOME'; sessionId?: string; message?: string }
   | {
       type: 'HELLO_ACK'
       ok?: boolean
@@ -47,29 +43,11 @@ type WsServerMessage =
       serverTime?: number
       ticketExp?: number
     }
-  | {
-      type: 'PONG'
-      ts?: number
-    }
-  | {
-      type: 'KEEPALIVE_ACK'
-      ts?: number
-    }
-  | {
-      type: 'RUN_EVENT_ACK'
-      eventType?: string
-      value?: number
-      ts?: number
-    }
-  | {
-      type: 'FINISH_ACK'
-      ts?: number
-    }
-  | {
-      type: 'ERROR'
-      code?: string
-      message?: string
-    }
+  | { type: 'PONG'; ts?: number }
+  | { type: 'KEEPALIVE_ACK'; ts?: number }
+  | { type: 'RUN_EVENT_ACK'; eventType?: string; value?: number; ts?: number }
+  | { type: 'FINISH_ACK'; ts?: number }
+  | { type: 'ERROR'; code?: string; message?: string }
 
 type RunEventPayload = {
   eventType: string
@@ -82,18 +60,9 @@ type CanvasAuditSample = {
   phase: string | null
   capturedAt: string | null
   elapsedMs: number | null
-  canvas: {
-    width: number | null
-    height: number | null
-  } | null
-  frame: {
-    width: number | null
-    height: number | null
-  } | null
-  container: {
-    width: number | null
-    height: number | null
-  } | null
+  canvas: { width: number | null; height: number | null } | null
+  frame: { width: number | null; height: number | null } | null
+  container: { width: number | null; height: number | null } | null
   canvasRatio: number | null
   frameRatio: number | null
   orientation: string | null
@@ -111,6 +80,63 @@ type EncryptedSubmitRequest = {
   ciphertext: string
 }
 
+/* ---------------- Device Fingerprint Type ---------------- */
+type DeviceFingerprint = {
+  // Classification result
+  deviceType: DeviceType
+
+  // Raw signals sent to server for validation
+  signals: {
+    // UA-derived (weakest — emulators spoof freely)
+    uaMobile: boolean
+    uaAndroid: boolean
+    uaIOS: boolean
+    uaEmulatorKeyword: boolean
+    platform: string
+
+    // Hardware capacity (reflects HOST machine for emulators)
+    cores: number
+    memory: number // deviceMemory GB
+    dpr: number
+
+    // Pointer / input
+    maxTouchPoints: number
+    hasTouchApi: boolean
+    hasMousePointer: boolean // pointer: fine
+
+    // WebGL (emulators often passthrough host GPU now)
+    glRenderer: string
+    glVendor: string
+    glIsSoftware: boolean // SwiftShader / llvmpipe etc.
+
+    // Touch quality (strongest client-side signal)
+    // Real capacitive screens: radiusX/Y > 0, force > 0
+    // Emulators: synthetic events with all zeros
+    touchQuality: 'real' | 'fake' | 'none' | 'timeout'
+
+    // Sensor (good but needs permission on iOS 13+)
+    sensorSignal: 'real' | 'static' | 'unavailable' | 'not_checked'
+    sensorVariance: number
+
+    // Network hint (not Safari-compatible — -1 when unavailable)
+    connectionRtt: number
+    connectionDownlink: number
+    connectionType: string
+
+    // Geometry mismatches (emulators in windowed mode often leak these)
+    outerInnerGap: number
+    screenEqualsViewport: boolean
+
+    // Battery (emulators often stuck at 100% or throw)
+    batteryLevel: number   // 0–1, -1 if unavailable
+    batteryCharging: boolean | null
+
+    // Timing: how long the sensor check actually took (emulators can fire
+    // synthetic motion events instantly to pass the check)
+    sensorCheckDurationMs: number
+  }
+}
+
 const t = ref<AnyTournament | null>(null)
 const loading = ref(true)
 const err = ref<string | null>(null)
@@ -123,6 +149,7 @@ const isFullscreen = ref(false)
 const fullscreenHistoryArmed = ref(false)
 const canUseFullscreen = ref(false)
 const deviceType = ref<DeviceType>('PC')
+const deviceFingerprint = ref<DeviceFingerprint | null>(null)
 
 /* ---------------- Session State ---------------- */
 const sessionLoading = ref(false)
@@ -166,34 +193,18 @@ function resetWsFlags() {
 }
 
 function clearWsTimers() {
-  if (wsPingTimer) {
-    clearInterval(wsPingTimer)
-    wsPingTimer = null
-  }
-  if (wsKeepAliveTimer) {
-    clearInterval(wsKeepAliveTimer)
-    wsKeepAliveTimer = null
-  }
-  if (wsReconnectTimer) {
-    clearTimeout(wsReconnectTimer)
-    wsReconnectTimer = null
-  }
+  if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null }
+  if (wsKeepAliveTimer) { clearInterval(wsKeepAliveTimer); wsKeepAliveTimer = null }
+  if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null }
 }
 
 function cleanupWebSocket() {
   clearWsTimers()
   resetWsFlags()
   wsClosingIntentional.value = true
-
-  try {
-    ws.value?.close()
-  } catch {}
-
+  try { ws.value?.close() } catch {}
   ws.value = null
-
-  setTimeout(() => {
-    wsClosingIntentional.value = false
-  }, 0)
+  setTimeout(() => { wsClosingIntentional.value = false }, 0)
 }
 
 function getWsUrl() {
@@ -205,7 +216,6 @@ function getWsUrl() {
 function scheduleWsReconnect() {
   if (!isPlayable.value || !sessionReady.value) return
   if (wsReconnectTimer) return
-
   wsReconnectTimer = setTimeout(() => {
     wsReconnectTimer = null
     connectTournamentSocket()
@@ -216,7 +226,6 @@ function sendWsJson(payload: Record<string, any>) {
   if (!ws.value) return false
   if (ws.value.readyState !== WebSocket.OPEN) return false
   if (!wsAuthed.value) return false
-
   try {
     ws.value.send(JSON.stringify(payload))
     return true
@@ -233,9 +242,7 @@ function connectTournamentSocket() {
   resetWsFlags()
   wsClosingIntentional.value = false
 
-  try {
-    ws.value?.close()
-  } catch {}
+  try { ws.value?.close() } catch {}
 
   const url = getWsUrl()
   if (!url) return
@@ -245,7 +252,6 @@ function connectTournamentSocket() {
 
   socket.onopen = () => {
     wsConnected.value = true
-
     socket.send(JSON.stringify({
       type: 'HELLO',
       sessionId: sessionId.value,
@@ -264,30 +270,13 @@ function connectTournamentSocket() {
       if (data.type === 'HELLO_ACK') {
         wsAuthed.value = true
         wsLastPongAt.value = Date.now()
-        if (typeof data.ticketExp === 'number') {
-          wsTicketExp.value = data.ticketExp
-        }
+        if (typeof data.ticketExp === 'number') wsTicketExp.value = data.ticketExp
         return
       }
-
-      if (data.type === 'PONG') {
-        wsLastPongAt.value = Date.now()
-        return
-      }
-
-      if (data.type === 'KEEPALIVE_ACK') {
-        wsLastPongAt.value = Date.now()
-        return
-      }
-
-      if (data.type === 'RUN_EVENT_ACK') {
-        wsLastRunEventAckAt.value = Date.now()
-        return
-      }
-
-      if (data.type === 'ERROR') {
-        console.warn('[Tournament WS]', data.code, data.message)
-      }
+      if (data.type === 'PONG') { wsLastPongAt.value = Date.now(); return }
+      if (data.type === 'KEEPALIVE_ACK') { wsLastPongAt.value = Date.now(); return }
+      if (data.type === 'RUN_EVENT_ACK') { wsLastRunEventAckAt.value = Date.now(); return }
+      if (data.type === 'ERROR') console.warn('[Tournament WS]', data.code, data.message)
     } catch (error) {
       console.warn('[Tournament WS] Failed to parse message', error)
     }
@@ -296,15 +285,12 @@ function connectTournamentSocket() {
   socket.onclose = () => {
     wsConnected.value = false
     wsAuthed.value = false
-
     if (!wsClosingIntentional.value && isPlayable.value && sessionReady.value) {
       scheduleWsReconnect()
     }
   }
 
-  socket.onerror = () => {
-    wsConnected.value = false
-  }
+  socket.onerror = () => { wsConnected.value = false }
 
   wsPingTimer = setInterval(() => {
     if (!ws.value || ws.value.readyState !== WebSocket.OPEN || !wsAuthed.value) return
@@ -371,7 +357,6 @@ function normalizeFiniteNumber(value: any) {
 
 function normalizeSize(raw: any) {
   if (!raw || typeof raw !== 'object') return null
-
   return {
     width: normalizeFiniteNumber(raw.width),
     height: normalizeFiniteNumber(raw.height)
@@ -380,7 +365,6 @@ function normalizeSize(raw: any) {
 
 function normalizeCanvasAuditSample(raw: any): CanvasAuditSample | null {
   if (!raw || typeof raw !== 'object') return null
-
   return {
     seq: normalizeFiniteNumber(raw.seq),
     phase: raw.phase ? String(raw.phase) : null,
@@ -411,16 +395,12 @@ function pushCanvasAuditSample(sample: CanvasAuditSample) {
   }
 
   canvasAuditLatest.value = sample
-
-  if (sample.phase === 'game_over') {
-    canvasAuditGameOver.value = sample
-  }
+  if (sample.phase === 'game_over') canvasAuditGameOver.value = sample
 }
 
 function buildSyntheticGameOverFromLatest() {
   const latest = canvasAuditLatest.value
   if (!latest) return null
-
   return {
     ...latest,
     phase: 'game_over_fallback',
@@ -432,7 +412,6 @@ function buildSyntheticGameOverFromLatest() {
 
 function buildSubmissionMeta() {
   const finalGameOver = canvasAuditGameOver.value || buildSyntheticGameOverFromLatest()
-
   return {
     canvas_audit: {
       startedAt: canvasAuditStartedAt.value,
@@ -449,7 +428,9 @@ function buildSubmissionMeta() {
           return !!w && !!h && w > h
         })
       }
-    }
+    },
+    // Include full fingerprint in every submission for server-side analysis
+    deviceFingerprint: deviceFingerprint.value ?? null
   }
 }
 
@@ -492,11 +473,7 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
 
   const binary = atob(clean)
   const bytes = new Uint8Array(binary.length)
-
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
   return bytes.buffer
 }
 
@@ -504,10 +481,7 @@ async function importPublicKey(publicKeyPem: string): Promise<CryptoKey> {
   return await crypto.subtle.importKey(
     'spki',
     pemToArrayBuffer(publicKeyPem),
-    {
-      name: 'RSA-OAEP',
-      hash: 'SHA-256'
-    },
+    { name: 'RSA-OAEP', hash: 'SHA-256' },
     false,
     ['encrypt']
   )
@@ -519,10 +493,7 @@ async function encryptTournamentSubmitPayload(
   publicKeyPem: string
 ): Promise<EncryptedSubmitRequest> {
   const aesKey = await crypto.subtle.generateKey(
-    {
-      name: 'AES-GCM',
-      length: 256
-    },
+    { name: 'AES-GCM', length: 256 },
     true,
     ['encrypt']
   )
@@ -531,10 +502,7 @@ async function encryptTournamentSubmitPayload(
   const plaintext = stringToArrayBuffer(JSON.stringify(payload))
 
   const ciphertext = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv
-    },
+    { name: 'AES-GCM', iv },
     aesKey,
     plaintext
   )
@@ -543,9 +511,7 @@ async function encryptTournamentSubmitPayload(
   const publicKey = await importPublicKey(publicKeyPem)
 
   const encryptedKey = await crypto.subtle.encrypt(
-    {
-      name: 'RSA-OAEP'
-    },
+    { name: 'RSA-OAEP' },
     publicKey,
     rawAesKey
   )
@@ -580,24 +546,22 @@ async function submitEncryptedScore(scoreToSend: number) {
 
   const supabase = useSupabaseClient()
 
-const { data: userData, error: userErr } = await supabase.auth.getUser()
-if (userErr || !userData?.user) {
-  throw new Error('You must be logged in to submit score')
-}
-
-let {
-  data: { session }
-} = await supabase.auth.getSession()
-
-if (!session?.access_token) {
-  const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession()
-  if (refreshErr || !refreshed?.session?.access_token) {
-    throw new Error('Unable to refresh login session')
+  const { data: userData, error: userErr } = await supabase.auth.getUser()
+  if (userErr || !userData?.user) {
+    throw new Error('You must be logged in to submit score')
   }
-  session = refreshed.session
-}
 
-const accessToken = session.access_token
+  let { data: { session } } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession()
+    if (refreshErr || !refreshed?.session?.access_token) {
+      throw new Error('Unable to refresh login session')
+    }
+    session = refreshed.session
+  }
+
+  const accessToken = session.access_token
 
   const config = useRuntimeConfig()
   const supabaseUrl = config.public.supabaseUrl
@@ -628,216 +592,458 @@ const accessToken = session.access_token
 function getGameSlug(x: AnyTournament) {
   return String(x?.game_slug ?? x?.gameSlug ?? '').trim()
 }
-
 function getStartsAt(x: AnyTournament) {
   return String(x?.starts_at ?? x?.startsAt ?? '').trim()
 }
-
 function getEndsAt(x: AnyTournament) {
   return String(x?.ends_at ?? x?.endsAt ?? '').trim()
 }
-
 function getStatus(x: AnyTournament) {
-  return String(x?.status || 'scheduled') as
-    | 'scheduled'
-    | 'live'
-    | 'ended'
-    | 'canceled'
+  return String(x?.status || 'scheduled') as 'scheduled' | 'live' | 'ended' | 'canceled'
 }
-
 function safeTimeMs(s: string) {
   const ms = new Date(s).getTime()
   return Number.isFinite(ms) ? ms : 0
 }
-
 function msToClock(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return '00D:00H:00M'
-
   const totalMinutes = Math.floor(ms / 1000 / 60)
   const days = Math.floor(totalMinutes / (60 * 24))
   const hours = Math.floor((totalMinutes % (60 * 24)) / 60)
   const minutes = totalMinutes % 60
-
-  const d = String(days).padStart(2, '0')
-  const h = String(hours).padStart(2, '0')
-  const m = String(minutes).padStart(2, '0')
-
-  return `${d}D:${h}H:${m}M`
+  return `${String(days).padStart(2, '0')}D:${String(hours).padStart(2, '0')}H:${String(minutes).padStart(2, '0')}M`
 }
-
 function getFullscreenRequestEl(el: any) {
   if (!el) return null
-  return (
-    el.requestFullscreen ||
-    el.webkitRequestFullscreen ||
-    el.webkitEnterFullscreen ||
-    null
-  )
+  return el.requestFullscreen || el.webkitRequestFullscreen || el.webkitEnterFullscreen || null
 }
-
 function getFullscreenExitDoc(doc: any) {
   if (!doc) return null
   return doc.exitFullscreen || doc.webkitExitFullscreen || null
 }
-
 function detectFullscreenSupport() {
   if (typeof document === 'undefined') return false
   const el: any = rootEl.value || document.documentElement
   const requestFn = getFullscreenRequestEl(el)
-  const enabled =
-    typeof document.fullscreenEnabled === 'boolean'
-      ? document.fullscreenEnabled
-      : true
-
+  const enabled = typeof document.fullscreenEnabled === 'boolean' ? document.fullscreenEnabled : true
   return !!requestFn && enabled
 }
-
 function withQuery(url: string, params: Record<string, string | number | boolean | null | undefined>) {
   const [base, hash = ''] = url.split('#')
   const [path, search = ''] = base.split('?')
-
   const qs = new URLSearchParams(search)
-
   for (const [key, value] of Object.entries(params)) {
     if (value == null) continue
     qs.set(key, String(value))
   }
-
   const queryString = qs.toString()
   return `${path}${queryString ? `?${queryString}` : ''}${hash ? `#${hash}` : ''}`
 }
 
-/* ---------------- Device Detection ---------------- */
-function getWebGLRendererInfo() {
+/* ================================================================
+   DEVICE DETECTION — rewritten
+   ================================================================
+
+   Strategy (in order of reliability):
+
+   1. Touch event metadata         — STRONGEST client-side signal
+      Real capacitive screens always produce radiusX/Y > 0 and
+      force > 0. Emulators inject synthetic MouseEvent-backed touch
+      events where every metadata field is 0. This cannot be easily
+      faked without patching the browser's native event path.
+
+   2. Sensor variance + timing     — STRONG, but needs permission (iOS)
+      Real devices held in hand have micro-jitter. Emulators either
+      output 0,0,0 every tick or replay a static vector. We also
+      record HOW FAST events fired — emulators can dispatch 8 events
+      in <10ms to race through the threshold; real devices fire at
+      ~60 Hz (≈133ms for 8 events).
+
+   3. Network RTT                  — MEDIUM (unavailable in Safari)
+      Desktop LAN connections show <10ms RTT. Real cellular mobile
+      is 30–200ms. Emulators share the desktop's LAN.
+
+   4. Battery API                  — MEDIUM (deprecated/unavailable many browsers)
+      Emulators often report 100% + charging indefinitely, or throw.
+
+   5. WebGL renderer               — WEAK (modern emulators passthrough GPU)
+      Still catches software renderers (SwiftShader, llvmpipe).
+
+   6. UA string                    — WEAKEST, used only as tiebreaker
+      Emulators spoof this trivially. We never use it as primary.
+
+   Classification rules:
+   - touchQuality === 'real'                   → Mobile (hardware confirmed)
+   - sensorSignal === 'real' (with timing ok)  → Mobile (strong corroboration)
+   - uaMobile + multiple PC-class hardware     → Emulator
+   - uaMobile + no suspicious hardware         → Mobile (best guess)
+   - else                                      → PC
+================================================================ */
+
+function getWebGLInfo(): { renderer: string; vendor: string; isSoftware: boolean } {
   let renderer = ''
   let vendor = ''
-
   try {
     const canvas = document.createElement('canvas')
-    const gl =
-      (canvas.getContext('webgl') ||
-        canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null
+    const gl = (
+      canvas.getContext('webgl') ||
+      canvas.getContext('experimental-webgl')
+    ) as WebGLRenderingContext | null
 
-    if (!gl) return { renderer, vendor }
-
-    const ext = gl.getExtension('WEBGL_debug_renderer_info')
-    if (!ext) return { renderer, vendor }
-
-    renderer = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '')
-    vendor = String(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) || '')
-  } catch {}
-
-  return { renderer, vendor }
-}
-
-async function detectSensorSignal(): Promise<'real' | 'static' | 'unavailable' | 'not_checked'> {
-  if (typeof window === 'undefined') return 'not_checked'
-  if (typeof DeviceMotionEvent === 'undefined') return 'not_checked'
-
-  return await new Promise((resolve) => {
-    let count = 0
-    let changed = 0
-    const values: number[] = []
-
-    const handler = (e: DeviceMotionEvent) => {
-      count++
-
-      const a = e.accelerationIncludingGravity
-      const x = Number(a?.x ?? 0)
-      const y = Number(a?.y ?? 0)
-      const z = Number(a?.z ?? 0)
-
-      values.push(x, y, z)
-
-      if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01 || Math.abs(z) > 0.01) {
-        changed++
-      }
-
-      if (count >= 8) {
-        window.removeEventListener('devicemotion', handler as EventListener)
-
-        const mean = values.reduce((s, v) => s + v, 0) / (values.length || 1)
-        const variance =
-          values.reduce((s, v) => s + (v - mean) ** 2, 0) / (values.length || 1)
-
-        if (changed > 0 && variance > 0.0001) resolve('real')
-        else if (changed > 0) resolve('static')
-        else resolve('unavailable')
+    if (gl) {
+      const ext = gl.getExtension('WEBGL_debug_renderer_info')
+      if (ext) {
+        renderer = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '')
+        vendor = String(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) || '')
       }
     }
+  } catch {}
 
-    window.addEventListener('devicemotion', handler as EventListener)
+  const isSoftware = /SwiftShader|llvmpipe|softpipe|Microsoft Basic Render/i.test(renderer)
+  return { renderer, vendor, isSoftware }
+}
 
-    setTimeout(() => {
-      window.removeEventListener('devicemotion', handler as EventListener)
-      if (count === 0) resolve('unavailable')
-      else resolve('static')
-    }, 1800)
+/**
+ * Waits for up to `timeoutMs` for a real touch event and inspects
+ * its metadata. Returns immediately if we can tell no touch hardware
+ * exists at all (maxTouchPoints === 0 and no touch API).
+ *
+ * Real capacitive screens:   radiusX > 0 || radiusY > 0 || force > 0
+ * Emulator injected touches: all metadata fields are 0
+ */
+function collectTouchQuality(timeoutMs = 4000): Promise<'real' | 'fake' | 'none' | 'timeout'> {
+  return new Promise(resolve => {
+    // No touch hardware at all
+    if (
+      typeof window === 'undefined' ||
+      (!('ontouchstart' in window) && navigator.maxTouchPoints === 0)
+    ) {
+      return resolve('none')
+    }
+
+    let settled = false
+
+    function done(result: 'real' | 'fake' | 'none' | 'timeout') {
+      if (settled) return
+      settled = true
+      window.removeEventListener('touchstart', handler, true)
+      resolve(result)
+    }
+
+    function handler(e: TouchEvent) {
+      const touch = e.changedTouches?.[0] ?? e.touches?.[0]
+      if (!touch) return done('fake')
+
+      const rx = Number(touch.radiusX ?? 0)
+      const ry = Number(touch.radiusY ?? 0)
+      const force = Number((touch as any).force ?? 0)
+      // Some browsers expose touchType ('stylus' vs 'direct')
+      const touchType = String((touch as any).touchType ?? '')
+
+      const isReal = rx > 0 || ry > 0 || force > 0 || touchType === 'direct'
+      done(isReal ? 'real' : 'fake')
+    }
+
+    // Use capture phase so we get the rawest event before any framework
+    window.addEventListener('touchstart', handler, { passive: true, capture: true })
+    setTimeout(() => done('timeout'), timeoutMs)
   })
 }
 
-async function detectDeviceType(): Promise<DeviceType> {
-  if (typeof navigator === 'undefined' || typeof window === 'undefined') {
-    return 'PC'
-  }
+/**
+ * Listens to DeviceMotionEvent for up to `maxEvents` samples or
+ * `timeoutMs` ms. Returns the signal quality and variance, plus
+ * the actual elapsed time (emulators fire events far too fast).
+ */
+function collectSensorSignal(
+  maxEvents = 8,
+  timeoutMs = 1800
+): Promise<{
+  signal: 'real' | 'static' | 'unavailable' | 'not_checked'
+  variance: number
+  durationMs: number
+}> {
+  return new Promise(resolve => {
+    if (typeof window === 'undefined' || typeof DeviceMotionEvent === 'undefined') {
+      return resolve({ signal: 'not_checked', variance: 0, durationMs: 0 })
+    }
 
+    const startedAt = Date.now()
+    let count = 0
+    const values: number[] = []
+
+    function finish() {
+      window.removeEventListener('devicemotion', handler as EventListener)
+      const durationMs = Date.now() - startedAt
+
+      if (count === 0) {
+        return resolve({ signal: 'unavailable', variance: 0, durationMs })
+      }
+
+      const mean = values.reduce((s, v) => s + v, 0) / values.length
+      const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length
+
+      // Emulators that try to fake the sensor may fire all 8 events in <50ms.
+      // Real devices fire at ~60 Hz so 8 events take ≥100ms.
+      const suspiciouslyFast = durationMs < 80 && count >= maxEvents
+
+      if (suspiciouslyFast) {
+        return resolve({ signal: 'static', variance, durationMs })
+      }
+
+      if (variance > 0.001) {
+        resolve({ signal: 'real', variance, durationMs })
+      } else if (values.some(v => v !== 0)) {
+        resolve({ signal: 'static', variance, durationMs })
+      } else {
+        resolve({ signal: 'unavailable', variance, durationMs })
+      }
+    }
+
+    function handler(e: DeviceMotionEvent) {
+      count++
+      const a = e.accelerationIncludingGravity
+      values.push(
+        Number(a?.x ?? 0),
+        Number(a?.y ?? 0),
+        Number(a?.z ?? 0)
+      )
+      if (count >= maxEvents) finish()
+    }
+
+    window.addEventListener('devicemotion', handler as EventListener)
+    setTimeout(finish, timeoutMs)
+  })
+}
+
+/**
+ * Reads battery info. Returns -1 for level if unavailable.
+ * Emulators often report level=1, charging=true indefinitely.
+ */
+async function collectBatteryInfo(): Promise<{
+  level: number
+  charging: boolean | null
+}> {
+  try {
+    const nav: any = navigator
+    if (typeof nav.getBattery !== 'function') return { level: -1, charging: null }
+    const battery = await nav.getBattery()
+    return {
+      level: Number(battery.level ?? -1),
+      charging: typeof battery.charging === 'boolean' ? battery.charging : null
+    }
+  } catch {
+    return { level: -1, charging: null }
+  }
+}
+
+/**
+ * Main device detection. Runs all probes in parallel where possible,
+ * then classifies based on the combined signal set.
+ *
+ * The touch quality probe waits up to 4s for the first touch.
+ * Everything else resolves independently. We wait for sensor (1.8s
+ * max) and battery concurrently while the tournament data is already
+ * loading, so the wall-clock cost is hidden behind the API call.
+ *
+ * Call this at the START of onMounted, before init(), so that by the
+ * time createRunSession() is called, deviceType is already set.
+ * The touch probe continues in the background and updates deviceType
+ * if it gets a definitive answer before score submission.
+ */
+async function buildDeviceFingerprint(): Promise<DeviceFingerprint> {
   const nav: any = navigator
+
+  // ── Static signals (synchronous) ─────────────────────────────────
   const ua = String(nav.userAgent || '')
   const platform = String(nav.platform || '')
-  const cores = Number(nav.hardwareConcurrency || 0) || 0
-  const memory = Number(nav.deviceMemory || 0) || 0
-  const touchPoints = Number(nav.maxTouchPoints || 0) || 0
-  const hasTouch = touchPoints > 0 || 'ontouchstart' in window
-  const hasMousePointer = !!window.matchMedia?.('(pointer: fine)').matches
+  const cores = Number(nav.hardwareConcurrency || 0)
+  const memory = Number(nav.deviceMemory || 0)
   const dpr = Number(window.devicePixelRatio || 1)
+  const maxTouchPoints = Number(nav.maxTouchPoints || 0)
+  const hasTouchApi = 'ontouchstart' in window
+  const hasMousePointer = !!window.matchMedia?.('(pointer: fine)').matches
 
-  const isMobileUA =
-    /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(ua)
-  const isAndroidUA = /Android/i.test(ua)
-  const isIOSUA = /iPhone|iPad|iPod/i.test(ua)
-
-  let score = 0
-
-  if (/Emulator|sdk_gphone|sdk_phone|generic|Andy\b/i.test(ua)) score += 40
-
-  const { renderer } = getWebGLRendererInfo()
-
-  if (/SwiftShader|llvmpipe|softpipe|Microsoft Basic Render/i.test(renderer)) score += 40
-  if (isMobileUA && /NVIDIA|AMD Radeon|GeForce|Intel.*Iris|Intel.*UHD|Intel.*HD Graphics/i.test(renderer)) score += 35
-  if (isMobileUA && /Win32|Win64|WOW64|MacIntel|MacPPC/i.test(platform)) score += 30
-  if (isMobileUA && /Linux x86_64/i.test(platform)) score += 25
-  if (isMobileUA && cores > 8) score += 20
-  if (isMobileUA && cores > 16) score += 10
-  if (isMobileUA && memory >= 8) score += 15
-  if (isMobileUA && hasTouch && hasMousePointer) score += 20
-  if (isMobileUA && !hasTouch) score += 15
+  const uaMobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(ua)
+  const uaAndroid = /Android/i.test(ua)
+  const uaIOS = /iPhone|iPad|iPod/i.test(ua)
+  const uaEmulatorKeyword = /Emulator|sdk_gphone|sdk_phone|generic|Andy\b/i.test(ua)
 
   const outerInnerGap = Math.max(
     Math.abs(window.outerWidth - window.innerWidth),
     Math.abs(window.outerHeight - window.innerHeight)
   )
-  if (outerInnerGap > 160) score += 20
-
   const screenEqualsViewport =
     window.screen.width === window.innerWidth &&
     window.screen.height === window.innerHeight
 
-  if (isMobileUA && screenEqualsViewport) score += 10
-  if (isMobileUA && dpr === 1) score += 10
+  const { renderer: glRenderer, vendor: glVendor, isSoftware: glIsSoftware } = getWebGLInfo()
 
-  const sensorSignal = await detectSensorSignal()
-  if (isMobileUA && sensorSignal === 'static') score += 10
-  if (isMobileUA && sensorSignal === 'unavailable') score += 5
+  const connectionRtt = Number(nav.connection?.rtt ?? -1)
+  const connectionDownlink = Number(nav.connection?.downlink ?? -1)
+  const connectionType = String(nav.connection?.effectiveType ?? nav.connection?.type ?? '')
 
-  if (score >= 50) return 'Emulator'
-  if (isAndroidUA || isIOSUA || (isMobileUA && hasTouch)) return 'Mobile'
-  return 'PC'
+  // ── Async signals (run in parallel) ──────────────────────────────
+  // Touch probe runs independently — we do NOT await it here so it
+  // doesn't block classification. We await the shorter probes only.
+  const [sensorResult, batteryResult] = await Promise.all([
+    collectSensorSignal(),
+    collectBatteryInfo()
+  ])
+
+  // Touch probe: start it now, we'll collect its result later if
+  // still pending. For classification, we use what we have.
+  // (The probe was started at component mount, see onMounted.)
+
+  // ── Classification ───────────────────────────────────────────────
+  // We build a score only for Emulator detection. Mobile vs PC is
+  // decided by positive hardware evidence, not by a score.
+
+  let emulatorScore = 0
+
+  // Hard Emulator signals
+  if (uaEmulatorKeyword) emulatorScore += 50
+  if (glIsSoftware) emulatorScore += 45
+
+  // Desktop GPU in a mobile UA — modern emulators passthrough GPU
+  // so this now only adds a small weight rather than a large one
+  if (uaMobile && /NVIDIA|AMD Radeon|GeForce|Intel.*Iris|Intel.*UHD|Intel.*HD Graphics/i.test(glRenderer)) {
+    emulatorScore += 20
+  }
+
+  // Desktop platform string with mobile UA
+  if (uaMobile && /Win32|Win64|WOW64|MacIntel|MacPPC/i.test(platform)) emulatorScore += 35
+  if (uaMobile && /Linux x86_64/i.test(platform)) emulatorScore += 25
+
+  // Implausibly high hardware specs for a real phone
+  if (uaMobile && cores > 12) emulatorScore += 15
+  if (uaMobile && memory >= 16) emulatorScore += 15
+
+  // Touch + fine pointer simultaneously (emulators with mouse passthrough)
+  if (uaMobile && hasTouchApi && hasMousePointer) emulatorScore += 20
+
+  // No touch API at all despite mobile UA
+  if (uaMobile && !hasTouchApi && maxTouchPoints === 0) emulatorScore += 20
+
+  // Sensor: static or unavailable on a supposedly mobile device
+  // Weight is small — real phones with no permission also show unavailable
+  if (uaMobile && sensorResult.signal === 'static') emulatorScore += 15
+  if (uaMobile && sensorResult.signal === 'unavailable') emulatorScore += 5
+  // Suspiciously fast sensor events
+  if (uaMobile && sensorResult.durationMs < 80 && sensorResult.signal !== 'not_checked') {
+    emulatorScore += 20
+  }
+
+  // Desktop-class network latency with mobile UA
+  if (uaMobile && connectionRtt >= 0 && connectionRtt < 8) emulatorScore += 15
+
+  // Battery always at 100% + always charging = typical emulator default
+  if (uaMobile && batteryResult.level === 1 && batteryResult.charging === true) {
+    emulatorScore += 10
+  }
+
+  // Outer/inner size gap typical of browser chrome on desktop
+  if (uaMobile && outerInnerGap > 150) emulatorScore += 15
+
+  // ── Final classification ──────────────────────────────────────────
+  // Priority order:
+  // 1. Emulator score threshold  (hardware evidence overrides UA)
+  // 2. Sensor 'real'             (strong positive mobile evidence)
+  // 3. UA-based mobile           (weakest — only used if nothing contradicts)
+
+  let classification: DeviceType
+
+  if (emulatorScore >= 45) {
+    classification = 'Emulator'
+  } else if (sensorResult.signal === 'real') {
+    // Real motion sensor = definitely a physical device
+    classification = 'Mobile'
+  } else if (uaAndroid || uaIOS) {
+    // UA says mobile and no strong contradicting signals
+    classification = 'Mobile'
+  } else if (uaMobile && (hasTouchApi || maxTouchPoints > 0)) {
+    classification = 'Mobile'
+  } else {
+    classification = 'PC'
+  }
+
+  return {
+    deviceType: classification,
+    signals: {
+      uaMobile,
+      uaAndroid,
+      uaIOS,
+      uaEmulatorKeyword,
+      platform,
+      cores,
+      memory,
+      dpr,
+      maxTouchPoints,
+      hasTouchApi,
+      hasMousePointer,
+      glRenderer,
+      glVendor,
+      glIsSoftware,
+      touchQuality: 'timeout', // will be updated when touch probe resolves
+      sensorSignal: sensorResult.signal,
+      sensorVariance: sensorResult.variance,
+      connectionRtt,
+      connectionDownlink,
+      connectionType,
+      outerInnerGap,
+      screenEqualsViewport,
+      batteryLevel: batteryResult.level,
+      batteryCharging: batteryResult.charging,
+      sensorCheckDurationMs: sensorResult.durationMs
+    }
+  }
+}
+
+/**
+ * Starts the touch quality probe in the background. When it
+ * resolves, updates deviceFingerprint and potentially upgrades
+ * an ambiguous classification. Must be called after mount.
+ */
+let touchProbePromise: Promise<'real' | 'fake' | 'none' | 'timeout'> | null = null
+
+function startTouchProbe() {
+  touchProbePromise = collectTouchQuality(4000)
+
+  touchProbePromise.then(quality => {
+    if (!deviceFingerprint.value) return
+
+    // Update the stored signal
+    deviceFingerprint.value.signals.touchQuality = quality
+
+    if (quality === 'real') {
+      // Confirmed physical capacitive screen — override to Mobile
+      // unless we already have very strong emulator evidence
+      const wasEmulator = deviceFingerprint.value.deviceType === 'Emulator'
+
+      // Only override emulator classification if sensor also said real
+      // (both sensors AND touch real = certainly not an emulator)
+      const sensorAlsoReal = deviceFingerprint.value.signals.sensorSignal === 'real'
+
+      if (!wasEmulator || sensorAlsoReal) {
+        deviceFingerprint.value.deviceType = 'Mobile'
+        deviceType.value = 'Mobile'
+      }
+    } else if (quality === 'fake') {
+      // Synthetic touch with zero metadata — upgrade to Emulator
+      // if we already suspect it's not a real PC
+      const fp = deviceFingerprint.value
+      if (fp.signals.uaMobile && fp.deviceType !== 'PC') {
+        fp.deviceType = 'Emulator'
+        deviceType.value = 'Emulator'
+      }
+    }
+    // 'none' or 'timeout' — no touch came in, don't change classification
+  })
 }
 
 /* ---------------- Time Logic ---------------- */
 const startMs = computed(() => (t.value ? safeTimeMs(getStartsAt(t.value)) : 0))
 const endMs = computed(() => (t.value ? safeTimeMs(getEndsAt(t.value)) : 0))
-
 const startsInMs = computed(() => Math.max(0, startMs.value - now.value))
 const endsInMs = computed(() => Math.max(0, endMs.value - now.value))
 
@@ -869,7 +1075,6 @@ const sessionReady = computed(() =>
 
 const resolvedGame = computed(() => {
   if (!game.value || !sessionReady.value) return null
-
   return {
     ...game.value,
     sourceUrl: withQuery(game.value.sourceUrl, {
@@ -920,16 +1125,11 @@ function disarmMobileBackExit() {
 
 async function enterFullscreen() {
   if (!canUseFullscreen.value) return
-
   try {
     const el: any = rootEl.value || document.documentElement
     const requestFn = getFullscreenRequestEl(el)
     if (!requestFn) return
-
-    if (!document.fullscreenElement) {
-      await requestFn.call(el)
-    }
-
+    if (!document.fullscreenElement) await requestFn.call(el)
     syncFullscreenState()
     armMobileBackExit()
   } catch {
@@ -945,11 +1145,8 @@ async function exitFullscreen() {
   try {
     const doc: any = document
     const exitFn = getFullscreenExitDoc(doc)
-    if (doc.fullscreenElement && exitFn) {
-      await exitFn.call(doc)
-    }
+    if (doc.fullscreenElement && exitFn) await exitFn.call(doc)
   } catch {}
-
   syncFullscreenState()
   disarmMobileBackExit()
 }
@@ -968,24 +1165,26 @@ async function loadTournamentSafe() {
     const api = await bySlug(tournamentSlug.value)
     if (api) return api
   } catch {}
-
   return (FALLBACK as any).find((x: any) => x.slug === tournamentSlug.value) || null
 }
 
 async function createRunSession() {
-  if (!tournamentSlug.value) {
-    throw new Error('Missing tournament slug')
-  }
+  if (!tournamentSlug.value) throw new Error('Missing tournament slug')
 
   sessionLoading.value = true
-
   try {
     const res = await $fetch<StartSessionResponse>('/api/tournaments/start-session', {
       method: 'POST',
       credentials: 'include',
       body: {
         tournamentSlug: tournamentSlug.value,
-        deviceType: deviceType.value
+        deviceType: deviceType.value,
+        // Send the full fingerprint so server can validate/override
+        deviceFingerprint: deviceFingerprint.value
+          ? {
+              signals: deviceFingerprint.value.signals
+            }
+          : undefined
       }
     })
 
@@ -1019,27 +1218,16 @@ async function init() {
     const found = await loadTournamentSafe()
     if (myToken !== initToken) return
 
-    if (!found) {
-      err.value = 'Tournament not found'
-      return
-    }
+    if (!found) { err.value = 'Tournament not found'; return }
 
     t.value = found
-
-    if (!game.value) {
-      err.value = 'Game not found'
-      return
-    }
-
+    if (!game.value) { err.value = 'Game not found'; return }
     if (!isPlayable.value) return
 
     await createRunSession()
     if (myToken !== initToken) return
 
-    if (!sessionReady.value) {
-      err.value = 'Failed to create play session'
-      return
-    }
+    if (!sessionReady.value) { err.value = 'Failed to create play session'; return }
 
     connectTournamentSocket()
     refreshPlayerMount()
@@ -1054,7 +1242,6 @@ async function init() {
 async function restartRun() {
   if (restarting.value) return
   restarting.value = true
-
   try {
     sendWsFinish()
     clearRunEventThrottle()
@@ -1064,9 +1251,7 @@ async function restartRun() {
 
     await createRunSession()
 
-    if (!sessionReady.value) {
-      throw new Error('Failed to create a new run session')
-    }
+    if (!sessionReady.value) throw new Error('Failed to create a new run session')
 
     connectTournamentSocket()
     refreshPlayerMount()
@@ -1102,19 +1287,13 @@ function onRunEvent(payload: RunEventPayload) {
     ts: Date.now()
   })
 
-  if (sent) {
-    wsLastRunEventAt.value = Date.now()
-  }
+  if (sent) wsLastRunEventAt.value = Date.now()
 }
 
 /* ---------------- Navigation ---------------- */
 async function closePage() {
   sendWsFinish()
-
-  if (isFullscreen.value) {
-    await exitFullscreen()
-  }
-
+  if (isFullscreen.value) await exitFullscreen()
   cleanupWebSocket()
   await navigateTo(`/tournaments/${tournamentSlug.value}`)
 }
@@ -1127,12 +1306,9 @@ async function flushBestScore() {
   if (bestQueuedScore.value <= bestSentScore.value) return
 
   submitInFlight.value = true
-
   try {
     const scoreToSend = bestQueuedScore.value
-
     const res = await submitEncryptedScore(scoreToSend)
-
     const finalScore = Number(res?.final_score ?? scoreToSend)
 
     bestSentScore.value = Math.max(
@@ -1147,7 +1323,6 @@ async function flushBestScore() {
     }
   } catch (e: any) {
     const nowMs = Date.now()
-
     if (nowMs - lastSubmitErrorAt.value > 2500) {
       toast.add({
         title: 'Score submit failed',
@@ -1176,9 +1351,7 @@ async function onScore(score: number) {
 /* ---------------- Lifecycle ---------------- */
 function onFullscreenChange() {
   syncFullscreenState()
-  if (!isFullscreen.value) {
-    disarmMobileBackExit()
-  }
+  if (!isFullscreen.value) disarmMobileBackExit()
 }
 
 async function onPopState() {
@@ -1189,18 +1362,29 @@ async function onPopState() {
 }
 
 onMounted(async () => {
-  deviceType.value = await detectDeviceType()
+  // Start touch probe immediately on mount — it waits passively for
+  // the first user touch in the background without blocking anything.
+  startTouchProbe()
 
-  tick = setInterval(() => {
-    now.value = Date.now()
-  }, 1000)
+  // Run sensor + battery probes concurrently with tournament load.
+  // buildDeviceFingerprint() awaits sensor (≤1.8s) and battery,
+  // but init() is also awaited after it, so total wall-clock cost
+  // is max(fingerprintTime, tournamentLoadTime) not their sum.
+  const [fp] = await Promise.all([
+    buildDeviceFingerprint(),
+    // Kick off the clock and DOM listeners immediately
+    Promise.resolve().then(() => {
+      tick = setInterval(() => { now.value = Date.now() }, 1000)
+      canUseFullscreen.value = detectFullscreenSupport()
+      document.addEventListener('fullscreenchange', onFullscreenChange)
+      document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
+      window.addEventListener('popstate', onPopState)
+      window.addEventListener('message', onWindowMessage)
+    })
+  ])
 
-  canUseFullscreen.value = detectFullscreenSupport()
-
-  document.addEventListener('fullscreenchange', onFullscreenChange)
-  document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
-  window.addEventListener('popstate', onPopState)
-  window.addEventListener('message', onWindowMessage)
+  deviceFingerprint.value = fp
+  deviceType.value = fp.deviceType
 
   refreshPlayerMount()
   await init()
@@ -1338,10 +1522,7 @@ watch(isPlayable, async (v, prev) => {
       }"
     >
       <ClientOnly>
-        <div
-          v-if="loading"
-          class="grid h-full w-full place-items-center bg-black"
-        >
+        <div v-if="loading" class="grid h-full w-full place-items-center bg-black">
           <div class="px-6 text-center">
             <div class="text-lg font-semibold">Loading…</div>
             <div class="mt-2 text-sm opacity-70">Preparing tournament</div>
@@ -1355,17 +1536,10 @@ watch(isPlayable, async (v, prev) => {
           <div class="max-w-md text-center">
             <div class="text-lg font-semibold">{{ err }}</div>
             <div class="mt-4 flex justify-center gap-2">
-              <UButton
-                class="!rounded-full"
-                :to="`/tournaments/${tournamentSlug}`"
-              >
+              <UButton class="!rounded-full" :to="`/tournaments/${tournamentSlug}`">
                 Back to details
               </UButton>
-              <UButton
-                variant="soft"
-                class="!rounded-full"
-                to="/tournaments"
-              >
+              <UButton variant="soft" class="!rounded-full" to="/tournaments">
                 All tournaments
               </UButton>
             </div>
@@ -1379,7 +1553,7 @@ watch(isPlayable, async (v, prev) => {
           <div class="max-w-md text-center">
             <div class="text-lg font-semibold">Tournament is not live</div>
             <p class="mt-2 text-sm opacity-80">
-              You can’t play outside the tournament window.
+              You can't play outside the tournament window.
             </p>
           </div>
         </div>
