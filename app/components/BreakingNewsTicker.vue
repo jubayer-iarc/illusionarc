@@ -1,8 +1,8 @@
 <template>
   <div
-    class="ticker-shell"
-    role="region"
-    aria-label="Important notices"
+      class="ticker-shell"
+      role="region"
+      aria-label="Important notices"
   >
     <div class="ticker-live">
       <span class="ticker-live__dot" />
@@ -13,10 +13,10 @@
       <div class="ticker-track">
         <div class="ticker-group">
           <div
-            v-for="(item, index) in notices"
-            :key="`first-${index}`"
-            class="ticker-item"
-            :class="item.themeClass"
+              v-for="(item, index) in notices"
+              :key="`first-${index}`"
+              class="ticker-item"
+              :class="item.themeClass"
           >
             <span class="ticker-item__type">{{ item.type }}:</span>
             <span class="ticker-item__text">{{ item.text }}</span>
@@ -25,10 +25,10 @@
 
         <div class="ticker-group" aria-hidden="true">
           <div
-            v-for="(item, index) in notices"
-            :key="`second-${index}`"
-            class="ticker-item"
-            :class="item.themeClass"
+              v-for="(item, index) in notices"
+              :key="`second-${index}`"
+              class="ticker-item"
+              :class="item.themeClass"
           >
             <span class="ticker-item__type">{{ item.type }}:</span>
             <span class="ticker-item__text">{{ item.text }}</span>
@@ -55,26 +55,18 @@ const notices: NoticeItem[] = [
   {
     type: 'সতর্কতা',
     themeClass: 'theme-rose',
-    text: 'অস্বাভাবিক activity পর্যবেক্ষণে রাখা হচ্ছে। যেকোনো exploit, device manipulation বা score manipulation শনাক্তে স্কোর রিসেট বা অংশগ্রহণ বাতিল করা হবে।'
+    text: 'অস্বাভাবিক activity পর্যবেক্ষণে রাখা হচ্ছে। যেকোনো exploit, device manipulation, score manipulation, অন্য কারও ID দিয়ে খেলা বা অন্য কাউকে নিজের ID ব্যবহার করতে দিলে সেক্ষেত্রে স্কোর রিসেট, অংশগ্রহণ বাতিল বা user ban করা হবে।'
   },
   {
     type: 'নোটিশ',
     themeClass: 'theme-green',
-    text: 'prize claim-এর জন্য payment invoice,  highest score gameplay screenshot ও screen record সংরক্ষণ করুন।'
+    text: 'prize claim-এর জন্য payment invoice, highest score gameplay screenshot ও screen record সংরক্ষণ করুন।'
   },
   {
     type: 'আপডেট',
     themeClass: 'theme-cyan',
-    // text: 'সহায়তার জন্য FAQ দেখুন অথবা official WhatsApp support ব্যবহার করুন।'
     text: 'সহায়তার জন্য official WhatsApp support ব্যবহার করুন।'
-  },
-  /*
-  {
-    type: 'গুরুত্বপূর্ণ ঘোষণা',
-    themeClass: 'theme-red',
-    text: 'টুর্নামেন্ট চলাকালীন কিছু bug, exploit, score manipulation, device manipulation এবং emulator-based unfair activity আমাদের নজরে এসেছে। এর ফলে কিছু player অনিচ্ছাকৃতভাবে unfair advantage পাচ্ছিলেন, যা একটি স্বচ্ছ প্রতিযোগিতার জন্য উপযুক্ত নয়। এই বিষয়টি গুরুত্বসহকারে বিবেচনা করে, Management-এর সিদ্ধান্ত অনুযায়ী আমরা গেমের প্রয়োজনীয় bug fix এবং সম্পূর্ণ leaderboard-কে review করে fair ভাবে সমন্বয় করেছি। বর্তমান leaderboard-এ players-দের overall ranking hierarchy যতটা সম্ভব বজায় রাখা হয়েছে, তবে যাদের activity-তে অস্বাভাবিকতা বা unfair advantage পাওয়া গেছে, তাদের ক্ষেত্রে ranking সমন্বয় করা হয়েছে। আমাদের Tournament-এর লক্ষ্য হলো একটি স্বচ্ছ, ন্যায্য ও বিশ্বাসযোগ্য competition নিশ্চিত করা। যারা bug ও issue report করে আমাদের সহায়তা করেছেন, তাদের আন্তরিক ধন্যবাদ। সামনের ১০ দিন ভালোভাবে খেলুন, fair way-তে compete করুন, এবং পুরস্কারের জন্য আত্মবিশ্বাসের সঙ্গে প্রতিযোগিতা করুন।'
   }
-    */
 ]
 </script>
 
@@ -102,8 +94,8 @@ const notices: NoticeItem[] = [
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.45);
   box-shadow:
-    0 10px 30px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+      0 10px 30px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.55);
   backdrop-filter: blur(16px) saturate(165%);
   -webkit-backdrop-filter: blur(16px) saturate(165%);
 }
@@ -129,8 +121,8 @@ const notices: NoticeItem[] = [
 
   background: linear-gradient(135deg, #ff4d6d 0%, #ff6a00 56%, #ff9a1f 100%);
   box-shadow:
-    0 10px 22px rgba(255, 106, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      0 10px 22px rgba(255, 106, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .ticker-live__dot {
@@ -141,17 +133,17 @@ const notices: NoticeItem[] = [
   border-radius: 999px;
 
   background: radial-gradient(
-    circle at 35% 35%,
-    #ffffff 0%,
-    #fff7ed 28%,
-    #ffd7a3 56%,
-    #ff8a00 100%
+      circle at 35% 35%,
+      #ffffff 0%,
+      #fff7ed 28%,
+      #ffd7a3 56%,
+      #ff8a00 100%
   );
 
   box-shadow:
-    0 0 0 0 rgba(255, 138, 0, 0.55),
-    0 0 12px rgba(255, 120, 0, 0.95),
-    0 0 24px rgba(255, 90, 0, 0.45);
+      0 0 0 0 rgba(255, 138, 0, 0.55),
+      0 0 12px rgba(255, 120, 0, 0.95),
+      0 0 24px rgba(255, 90, 0, 0.45);
 
   animation: liveDotPulse 1.5s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
@@ -195,8 +187,8 @@ const notices: NoticeItem[] = [
 
   background: rgba(255, 255, 255, 0.36);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.52),
-    inset 0 -1px 0 rgba(148, 163, 184, 0.14);
+      inset 0 1px 0 rgba(255, 255, 255, 0.52),
+      inset 0 -1px 0 rgba(148, 163, 184, 0.14);
 }
 
 .ticker-marquee::before {
@@ -208,10 +200,10 @@ const notices: NoticeItem[] = [
   height: 100%;
   pointer-events: none;
   background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.18) 0%,
-    rgba(255, 255, 255, 0.04) 68%,
-    rgba(255, 255, 255, 0) 100%
+      90deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.04) 68%,
+      rgba(255, 255, 255, 0) 100%
   );
 }
 
@@ -220,7 +212,7 @@ const notices: NoticeItem[] = [
   width: max-content;
   height: 100%;
   will-change: transform;
-  animation: tickerMarquee 56s linear infinite;
+  animation: tickerMarquee 62s linear infinite;
 }
 
 .ticker-shell:hover .ticker-track {
@@ -262,33 +254,33 @@ const notices: NoticeItem[] = [
 /* Vibrant themes */
 .theme-amber {
   background: linear-gradient(
-    90deg,
-    rgba(255, 233, 138, 0.98) 0%,
-    rgba(255, 193, 7, 0.94) 100%
+      90deg,
+      rgba(255, 233, 138, 0.98) 0%,
+      rgba(255, 193, 7, 0.94) 100%
   );
 }
 
 .theme-rose {
   background: linear-gradient(
-    90deg,
-    rgba(255, 190, 200, 0.98) 0%,
-    rgba(255, 99, 132, 0.92) 100%
+      90deg,
+      rgba(255, 190, 200, 0.98) 0%,
+      rgba(255, 99, 132, 0.92) 100%
   );
 }
 
 .theme-green {
   background: linear-gradient(
-    90deg,
-    rgba(134, 239, 172, 0.98) 0%,
-    rgba(34, 197, 94, 0.92) 100%
+      90deg,
+      rgba(134, 239, 172, 0.98) 0%,
+      rgba(34, 197, 94, 0.92) 100%
   );
 }
 
 .theme-cyan {
   background: linear-gradient(
-    90deg,
-    rgba(125, 211, 252, 0.98) 0%,
-    rgba(14, 165, 233, 0.92) 100%
+      90deg,
+      rgba(125, 211, 252, 0.98) 0%,
+      rgba(14, 165, 233, 0.92) 100%
   );
 }
 
@@ -306,30 +298,30 @@ const notices: NoticeItem[] = [
   0% {
     transform: scale(1);
     box-shadow:
-      0 0 0 0 rgba(255, 138, 0, 0.55),
-      0 0 12px rgba(255, 120, 0, 0.95),
-      0 0 24px rgba(255, 90, 0, 0.45);
+        0 0 0 0 rgba(255, 138, 0, 0.55),
+        0 0 12px rgba(255, 120, 0, 0.95),
+        0 0 24px rgba(255, 90, 0, 0.45);
   }
   45% {
     transform: scale(1.14);
     box-shadow:
-      0 0 0 8px rgba(255, 138, 0, 0.14),
-      0 0 16px rgba(255, 132, 0, 1),
-      0 0 30px rgba(255, 90, 0, 0.58);
+        0 0 0 8px rgba(255, 138, 0, 0.14),
+        0 0 16px rgba(255, 132, 0, 1),
+        0 0 30px rgba(255, 90, 0, 0.58);
   }
   75% {
     transform: scale(1);
     box-shadow:
-      0 0 0 14px rgba(255, 138, 0, 0),
-      0 0 12px rgba(255, 120, 0, 0.88),
-      0 0 20px rgba(255, 90, 0, 0.35);
+        0 0 0 14px rgba(255, 138, 0, 0),
+        0 0 12px rgba(255, 120, 0, 0.88),
+        0 0 20px rgba(255, 90, 0, 0.35);
   }
   100% {
     transform: scale(1);
     box-shadow:
-      0 0 0 0 rgba(255, 138, 0, 0),
-      0 0 12px rgba(255, 120, 0, 0.95),
-      0 0 24px rgba(255, 90, 0, 0.45);
+        0 0 0 0 rgba(255, 138, 0, 0),
+        0 0 12px rgba(255, 120, 0, 0.95),
+        0 0 24px rgba(255, 90, 0, 0.45);
   }
 }
 
@@ -481,9 +473,5 @@ const notices: NoticeItem[] = [
   .ticker-live__dot::before {
     animation: none;
   }
-}
-.theme-red {
-  background: #dc2626;
-  color: #ffffff;
 }
 </style>
