@@ -168,15 +168,6 @@ function getStartsAt(x: AnyTournament) {
 function getEndsAt(x: AnyTournament) {
   return String(x?.ends_at ?? x?.endsAt ?? '').trim()
 }
-function fmt(dt: string) {
-  if (!dt) return ''
-  const d = new Date(dt)
-  if (Number.isNaN(d.getTime())) return ''
-  return new Intl.DateTimeFormat('bn-BD', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(d)
-}
 function toBnDigits(input: string | number) {
   return String(input).replace(/\d/g, (d) => '০১২৩৪৫৬৭৮৯'[Number(d)])
 }
@@ -312,27 +303,8 @@ const statusBadge = computed(() => {
   }
 })
 
-const introPitch = computed(() => {
-  return 'এই ঈদে শুধু Facebook Scroll না করে নিজের গেমিং স্কিল দিয়ে আকর্ষণীয় গিফট জিতে নেওয়ার সুযোগ। Illusion Arc নিয়ে এসেছে Eid Salami Rush Fest—যেখানে Salami Rush খেলে টপ স্কোরার হলেই মিলবে দারুণ সব পুরস্কার।'
-})
-
-const howToPlayTitle = computed(() => {
-  const g: any = game.value
-  return g?.name ? `${g.name} কীভাবে খেলবেন` : 'কীভাবে খেলবেন'
-})
-
-const howToPlaySummary = computed(() => {
-  return 'Salami Rush হলো এমন একটি গেম যেখানে আপনি মিউজিকের তালে তালে একের পর এক শক্তিশালী বসের মুখোমুখি হবেন। নিয়ন আলোর এই যুদ্ধক্ষেত্রে যতক্ষণ সম্ভব টিকে থাকাই হবে আপনার আসল চ্যালেঞ্জ।'
-})
-
-const howToPlaySteps = computed<string[]>(() => {
-  return [
-    'মোবাইল/ট্যাব: স্ক্রিনের বাম বা ডান পাশে টাচ করে দ্রুত এপাশ-ওপাশ সরে যান।',
-    'কিবোর্ড: বাম ও ডান Arrow Key ব্যবহার করে ডানে-বামে মুভ করুন।',
-    'বসের ছোড়া বুলেট বা গুলি এড়িয়ে যতক্ষণ সম্ভব বেঁচে থাকার চেষ্টা করুন।',
-    'Slow Mo, Shield এবং Magnet-এর মতো পাওয়ার-আপ সংগ্রহ করুন।',
-    'যত বেশি সম্ভব কয়েন সংগ্রহ করে স্কোর বাড়ান।'
-  ]
+const heroNoticeText = computed(() => {
+  return 'Tournament-এ অংশগ্রহণ করার জন্য সবাইকে আন্তরিক ধন্যবাদ। 🙏 আমরা চেষ্টা করছি যেন প্রতিটি deserving player তার প্রাপ্য reward ও gift যথাযথভাবে পায়। সে উদ্দেশ্যে আপনাদের কাছে বিনীত অনুরোধ, অনুগ্রহ করে সবাই নিচের form টি পূরণ করবেন।'
 })
 
 const termsList = computed(() => {
@@ -342,7 +314,7 @@ const termsList = computed(() => {
     'একজন অংশগ্রহণকারী একটি অ্যাকাউন্ট ব্যবহার করতে পারবেন। একাধিক অ্যাকাউন্ট, অ্যাকাউন্ট শেয়ারিং, exploit, score manipulation বা অন্য কোনো অনিয়ম ধরা পড়লে সংশ্লিষ্ট অংশগ্রহণকারী অযোগ্য / ব্যান হতে পারেন।',
     'লিডারবোর্ডে প্রদর্শিত স্কোর platform review ও verification-এর অধীন থাকবে। প্রয়োজনে সন্দেহজনক স্কোর বাতিল বা সমন্বয় করা হতে পারে।',
     'সর্বোচ্চ বৈধ স্কোরধারী অংশগ্রহণকারীরা লিডারবোর্ডে উপরে থাকবেন এবং শীর্ষ ২০ জন পুরস্কারের জন্য বিবেচিত হবেন।',
-    'গেমের সময়সূচী: ১৫ মার্চ ১২:০১ মিনিট থেকে ২ এপ্রিল রাত ১১:৫৯ মিনিট পর্যন্ত।',
+    'গেমের সময়সূচী: ১৫ মার্চ ১২:০১ মিনিট থেকে ৪ এপ্রিল রাত ১১:৫৯ মিনিট পর্যন্ত।',
     'পুরস্কার, ফলাফল ও ক্যাম্পেইনের সকল সিদ্ধান্ত verification, platform policy এবং প্রযোজ্য শর্তাবলীর ভিত্তিতে চূড়ান্তভাবে নির্ধারিত হবে।'
   ]
 })
@@ -374,6 +346,7 @@ const promoYoutubeEmbedUrl = computed(() => {
 
 const supportWhatsAppNumber = '8801329662037'
 const whatsappGroupLink = 'https://chat.whatsapp.com/FwaPHb83unj1MZbaXtyZLO?mode=gi_t'
+const formLink = 'https://forms.gle/VJRtU1d7Ph6AQGhA7'
 
 const issueReportMessage = computed(() => {
   const tournamentTitle = String(t.value?.title || 'Tournament').trim()
@@ -833,11 +806,23 @@ function trackSocialClick(platform: string) {
                 </h1>
 
                 <div class="max-w-4xl text-sm leading-7 text-black/70 sm:text-base dark:text-white/75">
-                  {{ introPitch }}
+                  {{ heroNoticeText }}
                 </div>
 
-                <div class="text-sm text-black/65 sm:text-base dark:text-white/70">
-                  {{ fmt(getStartsAt(t)) }} – {{ fmt(getEndsAt(t)) }}
+                <div class="flex flex-wrap items-center gap-2 pt-1">
+                  <a
+                      :href="formLink"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/15 dark:border-emerald-300/20 dark:text-emerald-200 dark:hover:bg-emerald-400/10"
+                  >
+                    <UIcon name="i-heroicons-document-text" class="h-4 w-4" />
+                    <span>𝗙𝗼𝗿𝗺 𝗟𝗶𝗻𝗸</span>
+                  </a>
+                </div>
+
+                <div class="text-sm break-all text-emerald-700 dark:text-emerald-200">
+                  {{ formLink }}
                 </div>
               </div>
             </div>
@@ -1137,34 +1122,11 @@ function trackSocialClick(platform: string) {
               </div>
             </div>
 
-            <div class="space-y-4">
-              <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">{{ howToPlayTitle }}</h2>
-
-              <div class="rounded-[24px] border border-black/10 bg-white p-4 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-6 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
-                <div class="grid gap-5 lg:grid-cols-[8px_minmax(0,1fr)]">
-                  <div class="hidden rounded-full bg-gradient-to-b from-emerald-400 via-emerald-500 to-transparent lg:block"></div>
-
-                  <div>
-                    <div v-if="howToPlaySummary" class="mb-5 text-sm leading-7 text-black/70 dark:text-white/75">
-                      {{ howToPlaySummary }}
-                    </div>
-
-                    <ul class="space-y-4 sm:space-y-5">
-                      <li v-for="(c, i) in howToPlaySteps" :key="`ctl-${i}`" class="flex gap-3">
-                        <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-black/80 dark:bg-white/80"></span>
-                        <span class="text-sm leading-7 text-slate-900 sm:text-base sm:leading-8 dark:text-white">{{ c }}</span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <section v-if="isEnded" class="space-y-4">
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">চূড়ান্ত ফলাফল</h2>
-                  <div class="mt-1 text-sm text-black/55 dark:text-white/55">টুর্নামেন্ট শেষে শীর্ষ ২০ জন বিজয়ীর তালিকা।</div>
+                  <h2 class="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">লিডারবোর্ড অনুযায়ী ফলাফল</h2>
+                  <div class="mt-1 text-sm text-black/55 dark:text-white/55">যাচাই-বাছাইয়ের পর চূড়ান্ত ফলাফল প্রকাশ করা হবে।</div>
                 </div>
 
                 <UButton size="xs" variant="soft" class="!rounded-full" :loading="winnersPending" @click="loadWinners">
@@ -1238,7 +1200,7 @@ function trackSocialClick(platform: string) {
                     <div>
                       <div class="text-lg font-bold text-slate-900 dark:text-white">শীর্ষ ২০ জন বিজয়ী</div>
                       <div class="mt-1 text-sm text-black/55 dark:text-white/55">
-                        চূড়ান্তভাবে নির্বাচিত শীর্ষ ২০ জন স্কোরার
+                        যাচাই-বাছাইয়ের পর চূড়ান্ত ফলাফল প্রকাশ করা হবে।
                       </div>
                     </div>
                   </div>
