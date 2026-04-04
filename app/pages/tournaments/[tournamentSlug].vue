@@ -1198,7 +1198,7 @@ function trackSocialClick(platform: string) {
                 <div class="rounded-[24px] border border-black/10 bg-white p-4 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-5 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
                   <div class="mb-4 flex items-center justify-between gap-3">
                     <div>
-                      <div class="text-lg font-bold text-slate-900 dark:text-white">শীর্ষ ২০ জন বিজয়ী</div>
+                      <div class="text-lg font-bold text-slate-900 dark:text-white">লিডারবোর্ড অনুযায়ী শীর্ষ ২০ জন বিজয়ী</div>
                       <div class="mt-1 text-sm text-black/55 dark:text-white/55">
                         যাচাই-বাছাইয়ের পর চূড়ান্ত ফলাফল প্রকাশ করা হবে।
                       </div>
