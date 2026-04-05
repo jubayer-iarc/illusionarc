@@ -2,18 +2,18 @@
 import type { ArcadeGame } from '@/data/games'
 
 const props = withDefaults(
-  defineProps<{
-    game: ArcadeGame
-    defer?: boolean
-    fullscreen?: boolean
-    /** change this to force iframe src + remount */
-    cacheKey?: string
-  }>(),
-  {
-    defer: false,
-    fullscreen: false,
-    cacheKey: ''
-  }
+    defineProps<{
+      game: ArcadeGame
+      defer?: boolean
+      fullscreen?: boolean
+      /** change this to force iframe src + remount */
+      cacheKey?: string
+    }>(),
+    {
+      defer: false,
+      fullscreen: false,
+      cacheKey: ''
+    }
 )
 
 const route = useRoute()
@@ -59,14 +59,14 @@ const shouldAutoStart = computed(() => {
 })
 
 watch(
-  shouldAutoStart,
-  (v) => {
-    if (v) {
-      started.value = true
-      resetScoreBridge()
-    }
-  },
-  { immediate: true }
+    shouldAutoStart,
+    (v) => {
+      if (v) {
+        started.value = true
+        resetScoreBridge()
+      }
+    },
+    { immediate: true }
 )
 
 function send(payload: any) {
@@ -137,6 +137,9 @@ function onMessage(e: MessageEvent) {
     const score = Math.floor(rawScore)
     if (score < 0) return
 
+    // stop canvas recording inside iframe when game ends
+    send({ type: 'STOP_CANVAS_RECORDING' })
+
     // Emit only when score improves
     if (score <= bestEmittedScore.value) return
 
@@ -165,27 +168,27 @@ onMounted(() => window.addEventListener('message', onMessage))
 onBeforeUnmount(() => window.removeEventListener('message', onMessage))
 
 watch(
-  () => props.game?.sourceUrl,
-  () => {
-    resetScoreBridge()
-  }
+    () => props.game?.sourceUrl,
+    () => {
+      resetScoreBridge()
+    }
 )
 
 watch(
-  () => props.cacheKey,
-  () => {
-    resetScoreBridge()
-  }
+    () => props.cacheKey,
+    () => {
+      resetScoreBridge()
+    }
 )
 
 // iframe src with cache-bust that changes when cacheKey changes
 const src = computed(() => {
   const autostart =
-    route.query.autostart != null
-      ? String(route.query.autostart)
-      : props.fullscreen
-        ? '1'
-        : '0'
+      route.query.autostart != null
+          ? String(route.query.autostart)
+          : props.fullscreen
+              ? '1'
+              : '0'
 
   const qs = new URLSearchParams()
   qs.set('autostart', autostart)
@@ -204,23 +207,23 @@ defineExpose({ start, stop, reload, send, requestFullscreen })
 <template>
   <div class="relative" :class="props.fullscreen ? 'h-full' : ''">
     <div
-      ref="wrapRef"
-      class="w-full overflow-hidden rounded-2xl border border-white/10 bg-black/30 shadow-2xl"
-      :class="props.fullscreen ? 'h-full' : ''"
-      :style="props.fullscreen ? { height: '100%', minHeight: '100%' } : { minHeight: minHeight + 'px' }"
+        ref="wrapRef"
+        class="w-full overflow-hidden rounded-2xl border border-white/10 bg-black/30 shadow-2xl"
+        :class="props.fullscreen ? 'h-full' : ''"
+        :style="props.fullscreen ? { height: '100%', minHeight: '100%' } : { minHeight: minHeight + 'px' }"
     >
       <div class="relative w-full" :style="props.fullscreen ? { height: '100%' } : { aspectRatio: aspect }">
         <iframe
-          v-if="started"
-          :key="frameKey"
-          ref="iframeRef"
-          class="absolute inset-0 h-full w-full"
-          :src="src"
-          title="Game"
-          allow="autoplay; fullscreen; gamepad"
-          allowfullscreen
-          loading="eager"
-          sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms"
+            v-if="started"
+            :key="frameKey"
+            ref="iframeRef"
+            class="absolute inset-0 h-full w-full"
+            :src="src"
+            title="Game"
+            allow="autoplay; fullscreen; gamepad"
+            allowfullscreen
+            loading="eager"
+            sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms allow-downloads"
         />
 
         <div v-else class="absolute inset-0 grid place-items-center text-sm opacity-70">
