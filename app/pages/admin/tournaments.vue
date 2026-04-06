@@ -2,7 +2,6 @@
 <script setup lang="ts">
 import { GAMES } from '@/data/games'
 
-/** ✅ Ad slots list */
 const AD_SLOTS = [
   { key: 'home_top', label: 'Home — Top Banner' },
   { key: 'home_mid', label: 'Home — Middle Banner' },
@@ -11,7 +10,6 @@ const AD_SLOTS = [
 ] as const
 type AdSlotKey = typeof AD_SLOTS[number]['key']
 
-/** ✅ Banner ratios (stored per ad) */
 const AD_RATIOS = [
   { key: '16/9', label: '16:9 (standard)' },
   { key: '21/9', label: '21:9 (ultrawide)' },
@@ -29,7 +27,6 @@ useHead({ title: 'Admin — Tournaments' })
 const toast = useToast()
 const supabase = useSupabaseClient()
 
-/* ---------------- Types ---------------- */
 type TournamentStatus = 'scheduled' | 'live' | 'ended' | 'canceled' | string
 type PromoVideoType = '' | 'upload' | 'youtube'
 
@@ -45,13 +42,11 @@ type TournamentRow = {
   finalized: boolean
   thumbnail_url?: string | null
   thumbnail_path?: string | null
-
   promo_video_type?: PromoVideoType | null
   promo_video_url?: string | null
   promo_video_path?: string | null
   promo_video_youtube_id?: string | null
   promo_video_title?: string | null
-
   created_at?: string
   updated_at?: string
 }
@@ -119,7 +114,6 @@ type PrizeMapFormRow = {
   rank: number
 }
 
-/* ---------------- State ---------------- */
 const loading = ref(false)
 const errorMsg = ref<string | null>(null)
 
@@ -132,10 +126,8 @@ const selectedId = ref<string | null>(null)
 const selected = computed(() => rows.value.find(r => r.id === selectedId.value) || null)
 const isEditing = computed(() => Boolean(form.id))
 
-/* ---------------- Tabs ---------------- */
 const tab = ref<'details' | 'schedule' | 'ads' | 'winners'>('details')
 
-/* ---------------- Form ---------------- */
 const form = reactive({
   id: '' as string,
   slug: '' as string,
@@ -144,13 +136,10 @@ const form = reactive({
   game_slug: (GAMES[0]?.slug || '') as string,
   starts_local: '' as string,
   ends_local: '' as string,
-
   status: 'scheduled' as TournamentStatus,
   finalized: false as boolean,
-
   thumbnail_url: '' as string,
   thumbnail_path: '' as string,
-
   promo_video_type: '' as PromoVideoType,
   promo_video_url: '' as string,
   promo_video_path: '' as string,
@@ -158,7 +147,25 @@ const form = reactive({
   promo_video_title: '' as string
 })
 
-/* ---------------- Time helpers ---------------- */
+async function getAccessToken() {
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
+  return data.session?.access_token || ''
+}
+
+async function apiFetch<T>(url: string, options: any = {}): Promise<T> {
+  const token = await getAccessToken()
+
+  return await $fetch<T>(url, {
+    ...options,
+    credentials: 'include',
+    headers: {
+      ...(options.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  })
+}
+
 function toIsoFromLocal(dtLocal: string) {
   if (!dtLocal) return ''
   const d = new Date(dtLocal)
@@ -166,6 +173,7 @@ function toIsoFromLocal(dtLocal: string) {
   if (!Number.isFinite(ms)) return ''
   return d.toISOString()
 }
+
 function toLocalInputValue(iso: string) {
   if (!iso) return ''
   const d = new Date(iso)
@@ -179,12 +187,14 @@ function toLocalInputValue(iso: string) {
   const mi = pad(d.getMinutes())
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}`
 }
+
 function fmt(iso: string) {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleString()
 }
+
 function msToClock(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return '00:00:00'
   const total = Math.floor(ms / 1000)
@@ -193,6 +203,7 @@ function msToClock(ms: number) {
   const s = String(total % 60).padStart(2, '0')
   return `${h}:${m}:${s}`
 }
+
 function ordinal(n: number) {
   const v = n % 100
   if (v >= 11 && v <= 13) return `${n}th`
@@ -225,7 +236,6 @@ const timeError = computed(() => {
   return ''
 })
 
-/* ---------------- Derived status (time-based) ---------------- */
 function computeStatusFromWindow(startsAtIso: string, endsAtIso: string, statusStored: TournamentStatus) {
   if (statusStored === 'canceled') return 'canceled'
   const s = new Date(startsAtIso).getTime()
@@ -246,7 +256,6 @@ const derivedStatus = computed<TournamentStatus>(() => {
 const isCanceled = computed(() => derivedStatus.value === 'canceled')
 const isEnded = computed(() => derivedStatus.value === 'ended')
 
-/* ---------------- Slug auto ---------------- */
 function slugify(input: string) {
   return input
     .toLowerCase()
@@ -255,6 +264,7 @@ function slugify(input: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
 }
+
 watch(
   () => form.title,
   (v) => {
@@ -262,7 +272,6 @@ watch(
   }
 )
 
-/* ---------------- File preview helpers ---------------- */
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -271,11 +280,11 @@ function fileToDataUrl(file: File) {
     reader.readAsDataURL(file)
   })
 }
+
 function fileToObjectUrl(file: File) {
   return URL.createObjectURL(file)
 }
 
-/* ---------------- Thumbnail ---------------- */
 const THUMB_BUCKET = 'tournament-thumbnails'
 const thumbUploading = ref(false)
 const thumbFile = ref<File | null>(null)
@@ -339,7 +348,6 @@ async function uploadThumbAndPersist(tournamentId: string) {
   }
 }
 
-/* ---------------- Promo Video ---------------- */
 const VIDEO_BUCKET = 'tournament-videos'
 const videoUploading = ref(false)
 const videoFile = ref<File | null>(null)
@@ -511,7 +519,6 @@ async function clearStoredVideo() {
   toast.add({ title: 'Video cleared', color: 'success' })
 }
 
-/* ---------------- Prize Catalog + Tournament Prize Mapping ---------------- */
 const prizeCatalogLoading = ref(false)
 const prizeMapLoading = ref(false)
 const prizeMapSaving = ref(false)
@@ -698,7 +705,6 @@ async function savePrizeMaps(tournamentId: string) {
   }
 }
 
-/* ---------------- Ads ---------------- */
 const ADS_BUCKET = 'tournament-banners'
 
 const adLoading = ref(false)
@@ -993,13 +999,11 @@ async function deleteAd(adRow: AdRow) {
   }
 }
 
-/* ---------------- API ---------------- */
 async function apiList() {
   loading.value = true
   errorMsg.value = null
   try {
-    const res = await $fetch<{ rows: TournamentRow[] }>('/api/admin/tournaments/list', {
-      credentials: 'include',
+    const res = await apiFetch<{ rows: TournamentRow[] }>('/api/admin/tournaments/list', {
       query: {
         q: q.value || undefined,
         status: filterStatus.value || undefined,
@@ -1054,9 +1058,8 @@ async function apiUpsert(opts: UpsertOpts = {}) {
   errorMsg.value = null
 
   try {
-    const res = await $fetch<{ ok: boolean; tournament: TournamentRow }>('/api/admin/tournaments/upsert', {
+    const res = await apiFetch<{ ok: boolean; tournament: TournamentRow }>('/api/admin/tournaments/upsert', {
       method: 'POST',
-      credentials: 'include',
       body: {
         id: form.id || null,
         slug: form.slug.trim(),
@@ -1067,10 +1070,8 @@ async function apiUpsert(opts: UpsertOpts = {}) {
         ends_at: endsIso.value,
         status: statusToSave,
         finalized: Boolean(form.finalized),
-
         thumbnail_url: form.thumbnail_url || null,
         thumbnail_path: form.thumbnail_path || null,
-
         promo_video_type: form.promo_video_type || null,
         promo_video_url: form.promo_video_url || null,
         promo_video_path: form.promo_video_path || null,
@@ -1088,7 +1089,6 @@ async function apiUpsert(opts: UpsertOpts = {}) {
     form.thumbnail_path = t.thumbnail_path || form.thumbnail_path
     form.status = (t.status || statusToSave) as TournamentStatus
     form.finalized = Boolean(t.finalized)
-
     form.promo_video_type = (t.promo_video_type || form.promo_video_type || '') as PromoVideoType
     form.promo_video_url = t.promo_video_url || form.promo_video_url
     form.promo_video_path = t.promo_video_path || form.promo_video_path
@@ -1116,7 +1116,7 @@ async function apiUpsert(opts: UpsertOpts = {}) {
     }
 
     await apiList()
-    selectTournament(t.id)
+    await selectTournament(t.id)
     return t
   } catch (e: any) {
     toast.add({ title: 'Save failed', description: e?.data?.message || e?.message || 'Try again', color: 'error' })
@@ -1132,7 +1132,10 @@ async function apiDelete(id: string) {
   if (!ok) return
   loading.value = true
   try {
-    await $fetch('/api/admin/tournaments/delete', { method: 'POST', credentials: 'include', body: { id } })
+    await apiFetch('/api/admin/tournaments/delete', {
+      method: 'POST',
+      body: { id }
+    })
     toast.add({ title: 'Deleted', color: 'success' })
     if (selectedId.value === id) resetForm()
     await apiList()
@@ -1150,6 +1153,7 @@ async function cancelTournament() {
   form.status = 'canceled'
   await apiUpsert()
 }
+
 async function uncancelTournament() {
   if (!form.id) return
   const ok = confirm('Uncancel this tournament?')
@@ -1158,7 +1162,6 @@ async function uncancelTournament() {
   await apiUpsert()
 }
 
-/* ---------------- Winners ---------------- */
 const winners = ref<WinnerRow[]>([])
 const winnersLoading = ref(false)
 const winnersErr = ref<string | null>(null)
@@ -1178,8 +1181,7 @@ async function loadWinners() {
 
   winnersLoading.value = true
   try {
-    const res = await $fetch<{ rows: WinnerRow[] }>('/api/admin/tournaments/winners', {
-      credentials: 'include',
+    const res = await apiFetch<{ rows: WinnerRow[] }>('/api/admin/tournaments/winners', {
       query: { tournamentId: form.id || undefined, tournamentSlug: form.slug || undefined }
     })
     winners.value = (res?.rows || []).map(normalizeRewardFields) as WinnerRow[]
@@ -1195,9 +1197,8 @@ async function finalize(force = false) {
   winnersErr.value = null
   winnersLoading.value = true
   try {
-    await $fetch('/api/admin/tournaments/finalize', {
+    await apiFetch('/api/admin/tournaments/finalize', {
       method: 'POST',
-      credentials: 'include',
       body: { tournamentId: form.id, force }
     })
     toast.add({ title: force ? 'Re-finalized' : 'Finalized winners', color: 'success' })
@@ -1214,6 +1215,7 @@ async function finalize(force = false) {
 function requiresTxnId(w: WinnerRow) {
   return (w.reward_method || '') === 'online' && (w.reward_status || '') === 'given'
 }
+
 function validateWinnerReward(w: WinnerRow) {
   if (requiresTxnId(w) && !String(w.reward_txn_id || '').trim()) {
     return 'Transaction ID is required for online rewards marked as GIVEN.'
@@ -1229,9 +1231,8 @@ async function updateWinnerReward(row: WinnerRow) {
   }
 
   try {
-    await $fetch('/api/admin/tournaments/winners.update', {
+    await apiFetch('/api/admin/tournaments/winners.update', {
       method: 'POST',
-      credentials: 'include',
       body: {
         id: row.id,
         reward_status: row.reward_status ?? 'pending',
@@ -1246,7 +1247,6 @@ async function updateWinnerReward(row: WinnerRow) {
   }
 }
 
-/* ---------------- Selection & reset ---------------- */
 function resetForm() {
   selectedId.value = null
   form.id = ''
@@ -1258,7 +1258,6 @@ function resetForm() {
   form.game_slug = GAMES[0]?.slug || ''
   form.status = 'scheduled'
   form.finalized = false
-
   form.promo_video_type = ''
   form.promo_video_url = ''
   form.promo_video_path = ''
@@ -1277,9 +1276,7 @@ function resetForm() {
   winners.value = []
   winnersErr.value = null
   setThumbFile(null)
-
   prizeMaps.value = []
-
   ads.value = []
   activeSlotUsage.value = {}
   resetAdForm()
@@ -1295,20 +1292,16 @@ async function selectTournament(id: string) {
   form.title = t.title
   form.description = t.description || ''
   form.game_slug = t.game_slug
-
   form.starts_local = toLocalInputValue(t.starts_at)
   form.ends_local = toLocalInputValue(t.ends_at)
-
   form.thumbnail_url = t.thumbnail_url || ''
   form.thumbnail_path = t.thumbnail_path || ''
-
   form.promo_video_type = (t.promo_video_type || '') as PromoVideoType
   form.promo_video_url = t.promo_video_url || ''
   form.promo_video_path = t.promo_video_path || ''
   form.promo_video_youtube_id = t.promo_video_youtube_id || ''
   form.promo_video_title = t.promo_video_title || ''
   youtubeInput.value = form.promo_video_youtube_id || ''
-
   form.status = (t.status || 'scheduled') as TournamentStatus
   form.finalized = Boolean(t.finalized)
 
@@ -1325,7 +1318,6 @@ async function selectTournament(id: string) {
   resetAdForm()
 }
 
-/* ---------------- Debounced reload ---------------- */
 function debounce<T extends (...args: any[]) => void>(fn: T, ms: number) {
   let t: any = null
   return (...args: Parameters<T>) => {
@@ -1333,6 +1325,7 @@ function debounce<T extends (...args: any[]) => void>(fn: T, ms: number) {
     t = setTimeout(() => fn(...args), ms)
   }
 }
+
 const reloadDebounced = debounce(() => apiList().catch(() => {}), 250)
 watch([q, filterStatus, filterGame], () => reloadDebounced())
 
@@ -1352,7 +1345,6 @@ onMounted(async () => {
 
 <template>
   <div class="grid gap-4 lg:grid-cols-[380px_1fr]">
-    <!-- LEFT: LIST PANEL -->
     <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur overflow-hidden">
       <div class="p-4 border-b border-black/10 dark:border-white/10">
         <div class="flex items-center justify-between">
@@ -1432,7 +1424,6 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- RIGHT: EDITOR PANEL -->
     <div class="space-y-4">
       <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -1513,7 +1504,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- DETAILS TAB -->
       <div v-if="tab === 'details'" class="grid gap-4 lg:grid-cols-[1fr_360px]">
         <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
           <div class="font-semibold">Tournament Details</div>
@@ -1547,7 +1537,6 @@ onMounted(async () => {
               />
             </div>
 
-            <!-- Promo Video -->
             <div class="mt-2 rounded-3xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
               <div>
                 <div class="font-semibold">Promo Video</div>
@@ -1651,7 +1640,6 @@ onMounted(async () => {
               </div>
             </div>
 
-            <!-- Prize selection -->
             <div class="mt-2 rounded-3xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -1753,7 +1741,6 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- RIGHT -->
         <div class="space-y-4">
           <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
             <div class="flex items-start justify-between">
@@ -1831,7 +1818,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- SCHEDULE TAB -->
       <div
         v-else-if="tab === 'schedule'"
         class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5"
@@ -1885,7 +1871,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- ADS TAB -->
       <div v-else-if="tab === 'ads'" class="grid gap-4 lg:grid-cols-[1fr_360px]">
         <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
           <div class="flex items-start justify-between gap-3">
@@ -2075,7 +2060,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- WINNERS TAB -->
       <div v-else class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>

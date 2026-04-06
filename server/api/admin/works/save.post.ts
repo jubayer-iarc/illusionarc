@@ -59,10 +59,18 @@ function baseSlugFromTitle(title: string) {
 
 async function generateUniqueSlug(db: any, title: string) {
   const base = baseSlugFromTitle(title)
-  if (!base) throw createError({ statusCode: 400, statusMessage: 'Title is required.' })
+  if (!base) {
+    throw createError({ statusCode: 400, statusMessage: 'Title is required.' })
+  }
 
-  const { data, error } = await db.from('works').select('slug').ilike('slug', `${base}%`)
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  const { data, error } = await db
+    .from('works')
+    .select('slug')
+    .ilike('slug', `${base}%`)
+
+  if (error) {
+    throw createError({ statusCode: 500, statusMessage: error.message })
+  }
 
   const slugs = (data || []).map((r: any) => String(r.slug))
   if (!slugs.includes(base)) return base
@@ -75,6 +83,7 @@ async function generateUniqueSlug(db: any, title: string) {
       if (Number.isFinite(n) && n >= max) max = n + 1
     }
   }
+
   return `${base}-${max}`
 }
 
@@ -84,7 +93,6 @@ function extFromPath(path: string) {
 }
 
 function nextGalleryIndexFromExisting(paths: string[]) {
-  // looks for ".../gallery-001.xxx"
   let max = 0
   for (const p of paths) {
     const m = String(p).match(/gallery-(\d{3})\./)
@@ -93,99 +101,175 @@ function nextGalleryIndexFromExisting(paths: string[]) {
   return max + 1
 }
 
-export default defineEventHandler(async (event) => {
+function ensureCleanPath(path: string | null, fieldName: string): string | null {
+  if (!path) return null
+  const p = String(path).trim().replace(/^\/+/, '')
+  if (!p) return null
+  if (p.includes('..')) {
+    throw createError({ statusCode: 400, statusMessage: `${fieldName} is invalid` })
+  }
+  return p
+}
+
+async function createAuthedSupabase(event: any) {
   const runtime = useRuntimeConfig()
   const supabaseUrl = runtime.public.supabaseUrl || process.env.SUPABASE_URL
   const anonKey = runtime.public.supabaseAnonKey || process.env.SUPABASE_KEY
-  const serviceKey = runtime.supabaseServiceRoleKey || process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!supabaseUrl) throw createError({ statusCode: 500, statusMessage: 'Missing NUXT_PUBLIC_SUPABASE_URL' })
-  if (!anonKey) throw createError({ statusCode: 500, statusMessage: 'Missing NUXT_PUBLIC_SUPABASE_ANON_KEY' })
-  if (!serviceKey) throw createError({ statusCode: 500, statusMessage: 'Missing SUPABASE_SERVICE_ROLE_KEY' })
+  if (!supabaseUrl) {
+    throw createError({ statusCode: 500, statusMessage: 'Missing SUPABASE_URL' })
+  }
 
-  // --- auth bootstrap: cookie first, bearer fallback ---
+  if (!anonKey) {
+    throw createError({ statusCode: 500, statusMessage: 'Missing SUPABASE_KEY' })
+  }
+
   let user = await serverSupabaseUser(event)
   let db: any = await serverSupabaseClient(event)
 
   if (!user?.id) {
     const token = getBearerToken(event)
-    if (!token) throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
+    if (!token) {
+      throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
+    }
 
     db = createClient(supabaseUrl, anonKey, {
-      auth: { persistSession: false },
+      auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } }
     })
 
     const { data, error } = await db.auth.getUser()
-    if (error || !data?.user?.id) throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
+    if (error || !data?.user?.id) {
+      throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
+    }
+
     user = data.user
   }
 
+  return { db, user }
+}
+
+async function moveObjectOrThrow(db: any, bucket: string, from: string, to: string) {
+  if (from === to) return
+
+  const { error } = await db.storage.from(bucket).move(from, to)
+  if (error) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: `Storage move failed: ${error.message}`
+    })
+  }
+}
+
+async function removeObjectIfExists(db: any, bucket: string, path: string | null | undefined) {
+  if (!path) return
+  try {
+    await db.storage.from(bucket).remove([path])
+  } catch {
+    // ignore cleanup errors
+  }
+}
+
+export default defineEventHandler(async (event) => {
+  const { db, user } = await createAuthedSupabase(event)
+  const bucket = 'works'
+
   // --- admin check ---
-  const { data: prof, error: pErr } = await db.from('profiles').select('role').eq('user_id', user.id).single()
-  if (pErr) throw createError({ statusCode: 403, statusMessage: pErr.message })
-  if (prof?.role !== 'admin') throw createError({ statusCode: 403, statusMessage: 'Admin only' })
+  const { data: prof, error: pErr } = await db
+    .from('profiles')
+    .select('role')
+    .eq('user_id', user.id)
+    .single()
+
+  if (pErr) {
+    throw createError({ statusCode: 403, statusMessage: pErr.message })
+  }
+
+  if (prof?.role !== 'admin') {
+    throw createError({ statusCode: 403, statusMessage: 'Admin only' })
+  }
 
   // --- normalize body ---
   const raw = (await readBody(event)) as any
+
   const body: Body = {
     id: asUuidOrNull(raw?.id),
     draftId: String(raw?.draftId || '').trim(),
 
-    pendingHeroPath: asStringOrNull(raw?.pendingHeroPath),
+    pendingHeroPath: ensureCleanPath(asStringOrNull(raw?.pendingHeroPath), 'pendingHeroPath'),
     pendingGalleryPaths: Array.isArray(raw?.pendingGalleryPaths)
       ? raw.pendingGalleryPaths
           .filter((x: any) => typeof x === 'string')
-          .map((s: string) => s.trim())
-          .filter((s: string) => s && s !== 'undefined' && s !== 'null')
+          .map((s: string) => ensureCleanPath(s, 'pendingGalleryPaths'))
+          .filter((s: string | null): s is string => !!s)
       : [],
     heroAlt: asStringOrNull(raw?.heroAlt),
 
     title: String(raw?.title || '').trim(),
     category: String(raw?.category || '').trim(),
     short_description: asStringOrNull(raw?.short_description),
-    year: raw?.year == null ? null : Number(raw.year),
+    year: raw?.year == null || raw?.year === '' ? null : Number(raw.year),
     role: asStringOrNull(raw?.role),
-    tools: Array.isArray(raw?.tools) ? raw.tools.map(String) : [],
-    tags: Array.isArray(raw?.tags) ? raw.tags.map(String) : [],
-    highlights: Array.isArray(raw?.highlights) ? raw.highlights.map(String) : [],
+    tools: Array.isArray(raw?.tools) ? raw.tools.map((x: any) => String(x).trim()).filter(Boolean) : [],
+    tags: Array.isArray(raw?.tags) ? raw.tags.map((x: any) => String(x).trim()).filter(Boolean) : [],
+    highlights: Array.isArray(raw?.highlights)
+      ? raw.highlights.map((x: any) => String(x).trim()).filter(Boolean)
+      : [],
     outcome: asStringOrNull(raw?.outcome),
     cta: asStringOrNull(raw?.cta),
     is_active: !!raw?.is_active,
     sort_order: Number(raw?.sort_order ?? 100)
   }
 
-  if (!body.title) throw createError({ statusCode: 400, statusMessage: 'Title required' })
-  if (!body.category) throw createError({ statusCode: 400, statusMessage: 'Category required' })
-  if (!body.draftId) throw createError({ statusCode: 400, statusMessage: 'draftId required' })
+  if (!body.title) {
+    throw createError({ statusCode: 400, statusMessage: 'Title required' })
+  }
 
-  // Storage finalize uses service role (copy/delete reliably)
-  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-  const bucket = 'works'
+  if (!body.category) {
+    throw createError({ statusCode: 400, statusMessage: 'Category required' })
+  }
 
-  async function copyThenDelete(from: string, to: string) {
-    // Try native copy
-    const { error: copyErr } = await admin.storage.from(bucket).copy(from, to)
-    if (copyErr) {
-      // Fallback: download + upload
-      const dl = await admin.storage.from(bucket).download(from)
-      if (dl.error) throw dl.error
-      const buf = await dl.data.arrayBuffer()
-      const up = await admin.storage.from(bucket).upload(to, new Uint8Array(buf), { upsert: true })
-      if (up.error) throw up.error
+  if (!body.draftId) {
+    throw createError({ statusCode: 400, statusMessage: 'draftId required' })
+  }
+
+  if (body.year !== null && !Number.isFinite(body.year)) {
+    throw createError({ statusCode: 400, statusMessage: 'year must be a number' })
+  }
+
+  if (!Number.isFinite(body.sort_order)) {
+    body.sort_order = 100
+  }
+
+  // Important safety guard:
+  // pending files should stay inside this draft folder.
+  const draftPrefix = `_tmp/${body.draftId}/`
+
+  if (body.pendingHeroPath && !body.pendingHeroPath.startsWith(draftPrefix)) {
+    throw createError({ statusCode: 400, statusMessage: 'pendingHeroPath is outside draft folder' })
+  }
+
+  for (const p of body.pendingGalleryPaths) {
+    if (!p.startsWith(draftPrefix)) {
+      throw createError({ statusCode: 400, statusMessage: 'A gallery file is outside draft folder' })
     }
-    await admin.storage.from(bucket).remove([from])
   }
 
   // --- determine final slug ---
-  // IMPORTANT: keep slug stable on edits to avoid breaking URLs + existing media.
-  // New works: generate slug from title. Edits: keep existing slug.
   let workId = body.id
   let finalSlug: string
 
   if (workId) {
-    const { data: existing, error } = await db.from('works').select('slug').eq('id', workId).single()
-    if (error) throw createError({ statusCode: 403, statusMessage: error.message })
+    const { data: existing, error } = await db
+      .from('works')
+      .select('slug')
+      .eq('id', workId)
+      .single()
+
+    if (error) {
+      throw createError({ statusCode: 403, statusMessage: error.message })
+    }
+
     finalSlug = String(existing.slug)
   } else {
     finalSlug = await generateUniqueSlug(db, body.title)
@@ -197,7 +281,7 @@ export default defineEventHandler(async (event) => {
     title: body.title,
     category: body.category,
     short_description: body.short_description,
-    year: Number.isFinite(body.year as any) ? body.year : null,
+    year: body.year,
     role: body.role,
     tools: body.tools,
     tags: body.tags,
@@ -205,18 +289,34 @@ export default defineEventHandler(async (event) => {
     outcome: body.outcome,
     cta: body.cta,
     is_active: body.is_active,
-    sort_order: Number.isFinite(body.sort_order) ? body.sort_order : 100,
+    sort_order: body.sort_order,
     updated_at: new Date().toISOString()
   }
 
   if (workId) {
-    const { error } = await db.from('works').update(payload as any).eq('id', workId)
-    if (error) throw createError({ statusCode: 403, statusMessage: error.message })
+    const { error } = await db
+      .from('works')
+      .update(payload)
+      .eq('id', workId)
+
+    if (error) {
+      throw createError({ statusCode: 403, statusMessage: error.message })
+    }
   } else {
-    const { data, error } = await db.from('works').insert(payload as any).select('id').single()
-    if (error) throw createError({ statusCode: 403, statusMessage: error.message })
+    const { data, error } = await db
+      .from('works')
+      .insert(payload)
+      .select('id')
+      .single()
+
+    if (error) {
+      throw createError({ statusCode: 403, statusMessage: error.message })
+    }
+
     workId = asUuidOrNull(data?.id)
-    if (!workId) throw createError({ statusCode: 500, statusMessage: 'Insert returned invalid id' })
+    if (!workId) {
+      throw createError({ statusCode: 500, statusMessage: 'Insert returned invalid id' })
+    }
   }
 
   // --- finalize hero ---
@@ -224,47 +324,64 @@ export default defineEventHandler(async (event) => {
     const ext = extFromPath(body.pendingHeroPath)
     const finalPath = `${finalSlug}/hero.${ext}`
 
-    const { data: oldHero } = await db
+    const { data: oldHero, error: oldHeroErr } = await db
       .from('work_media')
       .select('id, path')
       .eq('work_id', workId)
       .eq('kind', 'hero')
       .maybeSingle()
 
-    // remove old hero object if different path
-    if (oldHero?.path && oldHero.path !== finalPath) {
-      try {
-        await admin.storage.from(bucket).remove([oldHero.path])
-      } catch {}
+    if (oldHeroErr) {
+      throw createError({ statusCode: 403, statusMessage: oldHeroErr.message })
     }
 
-    await copyThenDelete(body.pendingHeroPath, finalPath)
+    if (oldHero?.path && oldHero.path !== finalPath) {
+      await removeObjectIfExists(db, bucket, oldHero.path)
+    }
+
+    await moveObjectOrThrow(db, bucket, body.pendingHeroPath, finalPath)
 
     if (oldHero?.id) {
       const { error } = await db
         .from('work_media')
-        .update({ path: finalPath, alt: body.heroAlt || null, sort_order: 0 } as any)
+        .update({
+          path: finalPath,
+          alt: body.heroAlt || null,
+          sort_order: 0
+        })
         .eq('id', oldHero.id)
-      if (error) throw createError({ statusCode: 403, statusMessage: error.message })
+
+      if (error) {
+        throw createError({ statusCode: 403, statusMessage: error.message })
+      }
     } else {
-      const { error } = await db.from('work_media').insert({
-        work_id: workId,
-        kind: 'hero',
-        path: finalPath,
-        alt: body.heroAlt || null,
-        sort_order: 0
-      } as any)
-      if (error) throw createError({ statusCode: 403, statusMessage: error.message })
+      const { error } = await db
+        .from('work_media')
+        .insert({
+          work_id: workId,
+          kind: 'hero',
+          path: finalPath,
+          alt: body.heroAlt || null,
+          sort_order: 0
+        })
+
+      if (error) {
+        throw createError({ statusCode: 403, statusMessage: error.message })
+      }
     }
   }
 
   // --- finalize gallery (append after existing max) ---
   if (body.pendingGalleryPaths.length) {
-    const { data: existingGallery } = await db
+    const { data: existingGallery, error: existingGalleryErr } = await db
       .from('work_media')
       .select('path')
       .eq('work_id', workId)
       .eq('kind', 'gallery')
+
+    if (existingGalleryErr) {
+      throw createError({ statusCode: 403, statusMessage: existingGalleryErr.message })
+    }
 
     const existingPaths = (existingGallery || []).map((r: any) => String(r.path))
     let idx = nextGalleryIndexFromExisting(existingPaths)
@@ -275,46 +392,72 @@ export default defineEventHandler(async (event) => {
       const sortOrder = idx * 10
       idx += 1
 
-      await copyThenDelete(tmpPath, finalPath)
+      await moveObjectOrThrow(db, bucket, tmpPath, finalPath)
 
-      const { error } = await db.from('work_media').insert({
-        work_id: workId,
-        kind: 'gallery',
-        path: finalPath,
-        alt: null,
-        sort_order: sortOrder
-      } as any)
-      if (error) throw createError({ statusCode: 403, statusMessage: error.message })
+      const { error } = await db
+        .from('work_media')
+        .insert({
+          work_id: workId,
+          kind: 'gallery',
+          path: finalPath,
+          alt: null,
+          sort_order: sortOrder
+        })
+
+      if (error) {
+        throw createError({ statusCode: 403, statusMessage: error.message })
+      }
     }
   }
 
-  // --- cleanup tmp folder ---
+  // --- cleanup tmp folder best-effort ---
   try {
     const prefix = `_tmp/${body.draftId}`
-    const { data: objects } = await admin.storage.from(bucket).list(prefix, { limit: 200 })
+    const { data: objects } = await db.storage.from(bucket).list(prefix, { limit: 200 })
+
     if (objects?.length) {
       const paths = objects.map((o: any) => `${prefix}/${o.name}`)
-      await admin.storage.from(bucket).remove(paths)
+      await db.storage.from(bucket).remove(paths)
     }
-  } catch {}
+  } catch {
+    // ignore cleanup errors
+  }
 
   // --- return saved work + media ---
   const { data: work, error: wErr } = await db
     .from('works')
-    .select(
-      `
-      id, title, slug, category,
-      short_description, year, role,
-      tools, tags, highlights,
-      outcome, cta,
-      is_active, sort_order,
-      created_at, updated_at,
-      work_media ( id, kind, path, alt, sort_order, created_at )
-    `
-    )
+    .select(`
+      id,
+      title,
+      slug,
+      category,
+      short_description,
+      year,
+      role,
+      tools,
+      tags,
+      highlights,
+      outcome,
+      cta,
+      is_active,
+      sort_order,
+      created_at,
+      updated_at,
+      work_media (
+        id,
+        kind,
+        path,
+        alt,
+        sort_order,
+        created_at
+      )
+    `)
     .eq('id', workId)
     .single()
 
-  if (wErr) throw createError({ statusCode: 403, statusMessage: wErr.message })
+  if (wErr) {
+    throw createError({ statusCode: 403, statusMessage: wErr.message })
+  }
+
   return work
 })

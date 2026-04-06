@@ -27,7 +27,7 @@ export type ArcadeGame = {
 }
 
 export const GAMES: ArcadeGame[] = [
-  {
+  /* {
     name: 'সালামি রাশ',
     slug: 'salami-rush',
     thumbnail: '/img/salami-rush/salami-rush-thumbnail.jpg',
@@ -52,7 +52,7 @@ export const GAMES: ArcadeGame[] = [
     difficulty: 'Medium',
     estTime: '৬০ সেকেন্ড',
     pro: false
-  },
+  }, */
   {
     name: 'সালামি রাশ প্র্যাকটিস ভার্সন',
     slug: 'salami-rush-practice',
