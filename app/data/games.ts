@@ -232,5 +232,31 @@ export const GAMES: ArcadeGame[] = [
     difficulty: 'Easy',
     estTime: '2–5m',
     pro: false
+  },
+  {
+    name: 'Qurbani Run',
+    slug: 'qurbani-run',
+    thumbnail: '/img/qurbani-run/qurbani-run-thumbnail.png',
+    shortPitch: 'মিউজিকের তালে দ্রুত ডজ করে বসের আক্রমণ এড়িয়ে যতক্ষণ সম্ভব টিকে থাকার রিদম-ভিত্তিক অ্যাকশন গেম।',
+    description:
+      'Qurbani Run হলো একটি দ্রুতগতির রিদম-ভিত্তিক অ্যাকশন গেম, যেখানে আপনাকে মিউজিকের তালে তালে একের পর এক शक्तिशाली बसेर मुखोमुखी हते होবे। नियन आलोर युद्धक्षेत्रे बसेर छोड़ा बुलेट ओ आक्रमण एड़िये यतक्षण सम्भव टिके थाकाइ आपनार मूल लक्ष्य। खेलार माझे Slow Mo, Shield ओ Magnet-এর मতो पাওয়ার-আপ संग्रह करे सामयिक सुविधা निते पारবेन। पाशापाशि यत कয়েन संग्रह करे निजेर स्कोर आरও बढ़िये निते हबे। लाइभ टुर्नामेन्ट चलाकालीन सर्वोच्च स्कोर करेइ लिडारबोर्डे उपरेर दिके उठे आसते हबे।',
+    controls: [
+      'মোবাইল/ট্যাব: স্ক্রিনের বাম বা ডান পাশে টাচ করে দ্রুত ডজ করুন।',
+      'কিবোর্ড: Left Arrow / Right Arrow চেপে ডানে-বামে সরুন।',
+      'বসের বুলেট ও আক্রমণ এড়িয়ে যতক্ষণ সম্ভব টিকে থাকুন।',
+      'পাওয়ার-আপ সংগ্রহ করুন: Slow Mo, Shield, Magnet।',
+      'যত বেশি সম্ভব কয়েন সংগ্রহ করুন।'
+    ],
+    buildType: 'iframe',
+    sourceUrl: '/games/qurbani-run/index.html',
+    embedAllowed: true,
+    embed: { aspectRatio: '16/9', minHeight: 520, orientation: 'portrait' },
+    leaderboard: true,
+    rating: { value: 4.6, count: 1280 },
+    featured: false,
+    genre: 'Shooter',
+    difficulty: 'Medium',
+    estTime: '৬০ সেকেন্ড',
+    pro: false
   }
 ]
