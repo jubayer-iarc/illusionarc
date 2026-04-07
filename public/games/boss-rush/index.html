@@ -1,176 +1,309 @@
 <!DOCTYPE html>
 <html lang="en-us">
-<head>
+  <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, shrink-to-fit=yes"
+    />
     <title>Unity Web Player | Boss Rush</title>
 
-    <meta name="viewport"
-          content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
-
     <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: #000;
-        }
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
 
-        /* iframe-safe sizing */
-        #unity-container {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            background: #000;
-        }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #000;
+      }
 
-        #unity-canvas {
-            width: 100% !important;
-            height: 100% !important;
-            display: block;
-            background: url('Build/boss2.jpg') center / cover no-repeat;
+      body {
+        position: fixed;
+        inset: 0;
+        text-align: left;
+        font-family: Arial, Helvetica, sans-serif;
+        touch-action: none;
+      }
 
-            touch-action: none;
-            -webkit-user-select: none;
-            user-select: none;
+      #unity-container {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        background: #000;
+      }
 
-            opacity: 0;
-            transition: opacity 0.18s ease;
-        }
+      #unity-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        outline: none;
+        background: url("Build/boss2.jpg") center center / cover no-repeat #000;
+      }
 
-        #unity-canvas.ready {
-            opacity: 1;
-        }
+      #unity-loading {
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.78);
+      }
 
-        /* Round loader overlay */
-        #loading-overlay {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(
-                to bottom,
-                rgba(0, 0, 0, 0.20),
-                rgba(0, 0, 0, 0.45)
-            );
-            z-index: 5;
-            transition: opacity 0.18s ease;
-        }
+      #loading-card {
+        width: min(320px, 88vw);
+        padding: 18px;
+        border-radius: 18px;
+        background: rgba(17, 24, 39, 0.84);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(10px);
+        color: #fff;
+        text-align: center;
+        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+      }
 
-        #loading-overlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
+      #loading-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 12px;
+      }
 
-        .loader-wrap {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 14px;
-            padding: 20px 24px;
-            border-radius: 20px;
-            background: rgba(0, 0, 0, 0.28);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-        }
+      #progress-track {
+        width: 100%;
+        height: 10px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.12);
+      }
 
-        .spinner {
-            width: 52px;
-            height: 52px;
-            border-radius: 50%;
-            border: 4px solid rgba(255, 255, 255, 0.18);
-            border-top-color: rgba(34, 211, 238, 0.95);
-            animation: spin 0.8s linear infinite;
-            box-sizing: border-box;
-        }
+      #progress-bar {
+        width: 0%;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #22c55e, #3b82f6);
+        transition: width 0.15s ease;
+      }
 
-        .loading-text {
-            color: rgba(255, 255, 255, 0.9);
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            letter-spacing: 0.3px;
-        }
+      #loading-subtitle {
+        margin-top: 10px;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.72);
+      }
 
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
+      #unity-error {
+        position: absolute;
+        left: max(12px, env(safe-area-inset-left));
+        right: max(12px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        z-index: 35;
+        display: none;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(127, 29, 29, 0.94);
+        color: #fff;
+        font-size: 13px;
+        line-height: 1.4;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
 
-        @media (prefers-reduced-motion: reduce) {
-            .spinner {
-                animation-duration: 1.6s;
-            }
-
-            #unity-canvas,
-            #loading-overlay {
-                transition: none;
-            }
-        }
+      .hidden {
+        display: none !important;
+      }
     </style>
-</head>
+  </head>
 
-<body>
-<div id="unity-container">
-    <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <body>
+    <div id="unity-container">
+      <canvas id="unity-canvas" width="960" height="600" tabindex="-1"></canvas>
 
-    <div id="loading-overlay">
-        <div class="loader-wrap">
-            <div class="spinner"></div>
-            <div class="loading-text">Loading game...</div>
+      <div id="unity-loading">
+        <div id="loading-card">
+          <div id="loading-title">Loading Boss Rush...</div>
+          <div id="progress-track">
+            <div id="progress-bar"></div>
+          </div>
+          <div id="loading-subtitle">Please wait while the game starts</div>
         </div>
+      </div>
+
+      <div id="unity-error"></div>
     </div>
-</div>
 
-<script src="Build/boss2.loader.js"></script>
-<script>
-    const canvas = document.querySelector("#unity-canvas");
-    const container = document.querySelector("#unity-container");
-    const loadingOverlay = document.querySelector("#loading-overlay");
+    <script src="Build/boss2.loader.js"></script>
+    <script>
+      (function () {
+        var canvas = document.getElementById("unity-canvas");
+        var loading = document.getElementById("unity-loading");
+        var progressBar = document.getElementById("progress-bar");
+        var errorBox = document.getElementById("unity-error");
+        var unityInstance = null;
 
-    function resize() {
-        const w = container.clientWidth;
-        const h = container.clientHeight;
-        canvas.style.width = w + "px";
-        canvas.style.height = h + "px";
-    }
+        function getSearchParams() {
+          try {
+            return new URLSearchParams(window.location.search || "");
+          } catch (e) {
+            return new URLSearchParams("");
+          }
+        }
 
-    function hideLoader() {
-        canvas.classList.add("ready");
-        loadingOverlay.classList.add("hidden");
+        var params = getSearchParams();
 
-        setTimeout(() => {
-            if (loadingOverlay) loadingOverlay.remove();
-        }, 220);
-    }
+        var sessionContext = {
+          gameSlug: String(params.get("gameSlug") || ""),
+          tournamentSlug: String(params.get("tournamentSlug") || ""),
+          sessionId: String(params.get("sessionId") || ""),
+          sessionNonce: String(params.get("sessionNonce") || ""),
+          deviceType: String(params.get("deviceType") || ""),
+          startedAt: String(params.get("startedAt") || ""),
+          expiresAt: String(params.get("expiresAt") || ""),
+          autostart: String(params.get("autostart") || "")
+        };
 
-    resize();
-    window.addEventListener("resize", resize);
-    window.addEventListener("orientationchange", () => setTimeout(resize, 200));
+        window.IA_SESSION_CONTEXT = sessionContext;
 
-    createUnityInstance(canvas, {
-        arguments: [],
-        dataUrl: "Build/boss2.data.unityweb",
-        frameworkUrl: "Build/boss2.framework.js.unityweb",
-        codeUrl: "Build/boss2.wasm.unityweb",
-        streamingAssetsUrl: "StreamingAssets",
-        companyName: "illusion Lab",
-        productName: "Boss Rush",
-        productVersion: "0.11",
-        devicePixelRatio: 1
-    }, () => {
-        /* no visible progress bar */
-    })
-    .then(() => {
-        hideLoader();
-    })
-    .catch((message) => {
-        alert(message);
-    });
-</script>
-</body>
+        function showError(message) {
+          errorBox.textContent = message || "Failed to load the game.";
+          errorBox.style.display = "block";
+        }
+
+        function hideError() {
+          errorBox.style.display = "none";
+          errorBox.textContent = "";
+        }
+
+        function hideLoading() {
+          loading.classList.add("hidden");
+        }
+
+        function updateProgress(progress) {
+          var pct = Math.max(0, Math.min(1, Number(progress) || 0)) * 100;
+          progressBar.style.width = pct + "%";
+        }
+
+        function requestFullscreen() {
+          var el = document.documentElement;
+
+          if (canvas && typeof canvas.requestFullscreen === "function") {
+            canvas.requestFullscreen().catch(function () {});
+            return;
+          }
+
+          if (el.requestFullscreen) {
+            el.requestFullscreen().catch(function () {});
+          } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+          } else if (el.msRequestFullscreen) {
+            el.msRequestFullscreen();
+          }
+        }
+
+        function tryLockOrientation() {
+          if (!screen.orientation || typeof screen.orientation.lock !== "function") return;
+          screen.orientation.lock("landscape").catch(function () {});
+        }
+
+        function applyCanvasFit() {
+          canvas.style.position = "absolute";
+          canvas.style.inset = "0";
+          canvas.style.width = "100%";
+          canvas.style.height = "100%";
+        }
+
+        document.addEventListener("fullscreenchange", function () {
+          if (document.fullscreenElement) {
+            tryLockOrientation();
+          }
+        });
+
+        window.addEventListener("resize", applyCanvasFit);
+        window.addEventListener("orientationchange", function () {
+          setTimeout(applyCanvasFit, 120);
+        });
+
+        hideError();
+        applyCanvasFit();
+
+        console.log("[Boss Rush] Session context:", sessionContext);
+
+        createUnityInstance(
+          canvas,
+          {
+            arguments: [],
+            dataUrl: "Build/boss2.data.unityweb",
+            frameworkUrl: "Build/boss2.framework.js.unityweb",
+            codeUrl: "Build/boss2.wasm.unityweb",
+            streamingAssetsUrl: "StreamingAssets",
+            companyName: "illusion Lab",
+            productName: "Boss Rush",
+            productVersion: "0.11"
+          },
+          function (progress) {
+            updateProgress(progress);
+          }
+        )
+          .then(function (instance) {
+            unityInstance = instance;
+            window.unityInstance = unityInstance;
+            hideLoading();
+
+            if (sessionContext.autostart === "1") {
+              setTimeout(function () {
+                tryLockOrientation();
+              }, 150);
+            }
+          })
+          .catch(function (message) {
+            var text = typeof message === "string" ? message : "Unable to start Unity.";
+            showError(text);
+            console.error("[Boss Rush] Unity start failed:", message);
+          });
+
+        window.IA_GetSessionContext = function () {
+          return {
+            gameSlug: sessionContext.gameSlug,
+            tournamentSlug: sessionContext.tournamentSlug,
+            sessionId: sessionContext.sessionId,
+            sessionNonce: sessionContext.sessionNonce,
+            deviceType: sessionContext.deviceType,
+            startedAt: sessionContext.startedAt,
+            expiresAt: sessionContext.expiresAt,
+            autostart: sessionContext.autostart
+          };
+        };
+
+        window.IA_HasSession = function () {
+          return !!(sessionContext.sessionId && sessionContext.sessionNonce);
+        };
+
+        window.IA_RequestFullscreen = function () {
+          requestFullscreen();
+        };
+
+        window.addEventListener("message", function (event) {
+          if (event.origin !== window.location.origin) return;
+          var data = event.data;
+          if (!data || typeof data !== "object") return;
+
+          if (data.type === "REQUEST_FULLSCREEN") {
+            requestFullscreen();
+            tryLockOrientation();
+          }
+        });
+      })();
+    </script>
+  </body>
 </html>

@@ -1,4 +1,3 @@
-<!-- app/pages/admin/tournaments.vue -->
 <script setup lang="ts">
 import { GAMES } from '@/data/games'
 
@@ -123,7 +122,6 @@ const filterGame = ref<string>('')
 
 const rows = ref<TournamentRow[]>([])
 const selectedId = ref<string | null>(null)
-const selected = computed(() => rows.value.find(r => r.id === selectedId.value) || null)
 const isEditing = computed(() => Boolean(form.id))
 
 const tab = ref<'details' | 'schedule' | 'ads' | 'winners'>('details')
@@ -145,6 +143,12 @@ const form = reactive({
   promo_video_path: '' as string,
   promo_video_youtube_id: '' as string,
   promo_video_title: '' as string
+})
+
+const tabLoaded = reactive({
+  detailsFor: '' as string,
+  adsFor: '' as string,
+  winnersFor: '' as string
 })
 
 async function getAccessToken() {
@@ -216,17 +220,30 @@ function ordinal(n: number) {
 }
 
 const now = ref(Date.now())
-let ticker: any = null
-onMounted(() => (ticker = setInterval(() => (now.value = Date.now()), 1000)))
+let ticker: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  ticker = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
+
 onBeforeUnmount(() => {
-  ticker && clearInterval(ticker)
+  if (ticker) clearInterval(ticker)
   revokeVideoPreviewIfBlob()
 })
 
 const startsIso = computed(() => toIsoFromLocal(form.starts_local))
 const endsIso = computed(() => toIsoFromLocal(form.ends_local))
-const startsIn = computed(() => (startsIso.value ? new Date(startsIso.value).getTime() - now.value : 0))
-const endsIn = computed(() => (endsIso.value ? new Date(endsIso.value).getTime() - now.value : 0))
+
+const startsIn = computed(() => (
+  startsIso.value ? new Date(startsIso.value).getTime() - now.value : 0
+))
+
+const endsIn = computed(() => (
+  endsIso.value ? new Date(endsIso.value).getTime() - now.value : 0
+))
+
 const timeError = computed(() => {
   if (!startsIso.value || !endsIso.value) return ''
   const s = new Date(startsIso.value).getTime()
@@ -421,8 +438,14 @@ const effectiveVideoUrl = computed(() => {
   if (form.promo_video_type === 'upload') return form.promo_video_url || ''
   return ''
 })
-const effectiveYoutubeId = computed(() => form.promo_video_type === 'youtube' ? form.promo_video_youtube_id || '' : '')
-const effectiveYoutubeEmbedUrl = computed(() => effectiveYoutubeId.value ? `https://www.youtube.com/embed/${effectiveYoutubeId.value}` : '')
+
+const effectiveYoutubeId = computed(() => (
+  form.promo_video_type === 'youtube' ? form.promo_video_youtube_id || '' : ''
+))
+
+const effectiveYoutubeEmbedUrl = computed(() => (
+  effectiveYoutubeId.value ? `https://www.youtube.com/embed/${effectiveYoutubeId.value}` : ''
+))
 
 function clearStoredVideoFields() {
   form.promo_video_url = ''
@@ -461,7 +484,11 @@ function onVideoTypeChange(nextType: PromoVideoType) {
 function applyYoutubeInput() {
   const id = extractYouTubeId(youtubeInput.value)
   if (!id) {
-    toast.add({ title: 'Invalid YouTube link', description: 'Paste a valid YouTube URL or 11-character video ID.', color: 'error' })
+    toast.add({
+      title: 'Invalid YouTube link',
+      description: 'Paste a valid YouTube URL or 11-character video ID.',
+      color: 'error'
+    })
     return
   }
 
@@ -651,7 +678,11 @@ async function savePrizeMaps(tournamentId: string) {
   })()
 
   if (duplicatePrize) {
-    toast.add({ title: 'Duplicate prize selected', description: 'A prize can be used only once in the same tournament.', color: 'error' })
+    toast.add({
+      title: 'Duplicate prize selected',
+      description: 'A prize can be used only once in the same tournament.',
+      color: 'error'
+    })
     return
   }
 
@@ -795,7 +826,11 @@ function pickAdForEdit(row: AdRow) {
 }
 
 async function loadActiveSlotUsage() {
-  const { data, error } = await supabase.from('tournament_ads').select('id, slot, tournament_id').eq('is_active', true)
+  const { data, error } = await supabase
+    .from('tournament_ads')
+    .select('id, slot, tournament_id')
+    .eq('is_active', true)
+
   if (error) throw error
 
   const map: Record<string, { adId: string; tournamentId: string }> = {}
@@ -812,6 +847,7 @@ async function loadAdsForTournament(tournamentId: string) {
   adLoading.value = true
   try {
     await loadActiveSlotUsage()
+
     const { data, error } = await supabase
       .from('tournament_ads')
       .select('id, tournament_id, slot, ratio, banner_url, banner_path, alt, is_active, starts_at, ends_at, created_at')
@@ -908,7 +944,7 @@ async function saveOneAd(tournamentId: string) {
   if (adForm.enabled && slotIsOccupiedByOtherActiveAd(slot)) {
     toast.add({
       title: 'Slot occupied',
-      description: 'That slot is already used by another ACTIVE ad. Choose another slot or deactivate the other one.',
+      description: 'That slot is already used by another ACTIVE ad.',
       color: 'error'
     })
     throw new Error('Slot occupied')
@@ -931,6 +967,7 @@ async function saveOneAd(tournamentId: string) {
 
   const starts_at = toIsoFromLocalOrNull(adForm.starts_local)
   const ends_at = toIsoFromLocalOrNull(adForm.ends_local)
+
   if (starts_at && ends_at) {
     const s = new Date(starts_at).getTime()
     const e = new Date(ends_at).getTime()
@@ -1047,7 +1084,11 @@ async function apiUpsert(opts: UpsertOpts = {}) {
     return null
   }
   if (form.promo_video_type === 'youtube' && !form.promo_video_youtube_id) {
-    toast.add({ title: 'YouTube video missing', description: 'Paste and apply a valid YouTube link or video ID.', color: 'error' })
+    toast.add({
+      title: 'YouTube video missing',
+      description: 'Paste and apply a valid YouTube link or video ID.',
+      color: 'error'
+    })
     return null
   }
 
@@ -1185,6 +1226,7 @@ async function loadWinners() {
       query: { tournamentId: form.id || undefined, tournamentSlug: form.slug || undefined }
     })
     winners.value = (res?.rows || []).map(normalizeRewardFields) as WinnerRow[]
+    tabLoaded.winnersFor = form.id || ''
   } catch (e: any) {
     winnersErr.value = e?.data?.message || e?.message || 'Failed to load winners'
   } finally {
@@ -1247,8 +1289,36 @@ async function updateWinnerReward(row: WinnerRow) {
   }
 }
 
+async function ensureTabData(currentTab = tab.value) {
+  if (!form.id) return
+
+  if (currentTab === 'details') {
+    if (!prizeCatalog.value.length) await loadPrizeCatalog()
+    if (tabLoaded.detailsFor !== form.id) {
+      await loadPrizeMapsForTournament(form.id)
+      tabLoaded.detailsFor = form.id
+    }
+    return
+  }
+
+  if (currentTab === 'ads') {
+    if (tabLoaded.adsFor !== form.id) {
+      await loadAdsForTournament(form.id)
+      tabLoaded.adsFor = form.id
+    }
+    return
+  }
+
+  if (currentTab === 'winners') {
+    if (tabLoaded.winnersFor !== form.id) {
+      await loadWinners()
+    }
+  }
+}
+
 function resetForm() {
   selectedId.value = null
+
   form.id = ''
   form.title = ''
   form.slug = ''
@@ -1263,8 +1333,10 @@ function resetForm() {
   form.promo_video_path = ''
   form.promo_video_youtube_id = ''
   form.promo_video_title = ''
+
   youtubeInput.value = ''
   clearVideoSelection()
+  setThumbFile(null)
 
   const d = new Date()
   d.setMinutes(0, 0, 0)
@@ -1275,11 +1347,15 @@ function resetForm() {
 
   winners.value = []
   winnersErr.value = null
-  setThumbFile(null)
   prizeMaps.value = []
   ads.value = []
   activeSlotUsage.value = {}
   resetAdForm()
+
+  tabLoaded.detailsFor = ''
+  tabLoaded.adsFor = ''
+  tabLoaded.winnersFor = ''
+  tab.value = 'details'
 }
 
 async function selectTournament(id: string) {
@@ -1308,18 +1384,26 @@ async function selectTournament(id: string) {
   setThumbFile(null)
   clearVideoSelection()
 
-  await Promise.allSettled([
-    loadWinners(),
-    loadPrizeCatalog(),
-    loadPrizeMapsForTournament(t.id),
-    loadAdsForTournament(t.id)
-  ])
-
+  winners.value = []
+  winnersErr.value = null
+  prizeMaps.value = []
+  ads.value = []
+  activeSlotUsage.value = {}
   resetAdForm()
+
+  tabLoaded.detailsFor = ''
+  tabLoaded.adsFor = ''
+  tabLoaded.winnersFor = ''
+
+  await ensureTabData(tab.value)
 }
 
+watch(tab, async (next) => {
+  await ensureTabData(next)
+})
+
 function debounce<T extends (...args: any[]) => void>(fn: T, ms: number) {
-  let t: any = null
+  let t: ReturnType<typeof setTimeout> | null = null
   return (...args: Parameters<T>) => {
     if (t) clearTimeout(t)
     t = setTimeout(() => fn(...args), ms)
@@ -1332,391 +1416,506 @@ watch([q, filterStatus, filterGame], () => reloadDebounced())
 function badgeClass(s: string) {
   if (s === 'live') return 'bg-emerald-500/15 border-emerald-400/20 text-emerald-300'
   if (s === 'scheduled') return 'bg-violet-500/15 border-violet-400/20 text-violet-300'
-  if (s === 'ended') return 'bg-white/10 border-white/10 text-white/70'
-  if (s === 'canceled') return 'bg-red-500/10 border-red-500/20 text-red-200'
-  return 'bg-white/10 border-white/10 text-white/70'
+  if (s === 'ended') return 'bg-black/5 dark:bg-white/10 border-black/10 dark:border-white/10 text-black/70 dark:text-white/70'
+  if (s === 'canceled') return 'bg-red-500/10 border-red-500/20 text-red-300'
+  return 'bg-black/5 dark:bg-white/10 border-black/10 dark:border-white/10 text-black/70 dark:text-white/70'
 }
+
+const stats = computed(() => {
+  const total = rows.value.length
+  const live = rows.value.filter(r => r.status === 'live').length
+  const scheduled = rows.value.filter(r => r.status === 'scheduled').length
+  const ended = rows.value.filter(r => r.status === 'ended').length
+  return { total, live, scheduled, ended }
+})
 
 onMounted(async () => {
   resetForm()
-  await Promise.allSettled([apiList(), loadPrizeCatalog()])
+  await apiList()
 })
 </script>
 
 <template>
-  <div class="grid gap-4 lg:grid-cols-[380px_1fr]">
-    <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur overflow-hidden">
-      <div class="p-4 border-b border-black/10 dark:border-white/10">
-        <div class="flex items-center justify-between">
-          <div>
-            <div class="text-xs opacity-70">Admin</div>
-            <div class="text-lg font-extrabold tracking-tight">Tournaments</div>
-          </div>
-          <div class="flex gap-2">
-            <UButton size="xs" variant="soft" class="!rounded-full" :loading="loading" @click="apiList()">Refresh</UButton>
-            <UButton size="xs" class="!rounded-full" @click="resetForm()">New</UButton>
-          </div>
-        </div>
-
-        <div class="mt-3 space-y-2">
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2">
-            <input v-model="q" class="w-full bg-transparent text-sm outline-none" placeholder="Search title / slug…" />
-          </div>
-
-          <div class="grid grid-cols-2 gap-2">
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2">
-              <div class="text-[11px] opacity-70">Status</div>
-              <select v-model="filterStatus" class="w-full bg-transparent text-sm outline-none">
-                <option value="">All</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="live">Live</option>
-                <option value="ended">Ended</option>
-                <option value="canceled">Canceled</option>
-              </select>
-            </div>
-
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2">
-              <div class="text-[11px] opacity-70">Game</div>
-              <select v-model="filterGame" class="w-full bg-transparent text-sm outline-none">
-                <option value="">All</option>
-                <option v-for="g in GAMES" :key="g.slug" :value="g.slug">{{ g.name }}</option>
-              </select>
-            </div>
-          </div>
-
-          <div v-if="errorMsg" class="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm">
-            {{ errorMsg }}
-          </div>
-        </div>
-      </div>
-
-      <div class="max-h-[calc(100vh-220px)] overflow-auto divide-y divide-black/10 dark:divide-white/10">
-        <button
-          v-for="r in rows"
-          :key="r.id"
-          class="w-full text-left p-4 hover:bg-black/5 dark:hover:bg-white/5 transition"
-          :class="selectedId === r.id ? 'bg-black/5 dark:bg-white/5' : ''"
-          @click="selectTournament(r.id)"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="font-semibold truncate">{{ r.title }}</div>
-              <div class="mt-1 text-xs opacity-70 truncate">
-                <span class="font-mono">{{ r.slug }}</span> • {{ r.game_slug }}
-              </div>
-              <div class="mt-2 text-xs opacity-70">{{ fmt(r.starts_at) }} → {{ fmt(r.ends_at) }}</div>
-            </div>
-            <div class="shrink-0 flex flex-col items-end gap-2">
-              <span class="px-2 py-1 rounded-full border text-[11px]" :class="badgeClass(r.status)">
-                {{ String(r.status || 'scheduled').toUpperCase() }}
-              </span>
-              <span
-                v-if="r.finalized"
-                class="px-2 py-1 rounded-full border border-amber-400/20 bg-amber-500/10 text-amber-200 text-[11px]"
-              >
-                FINALIZED
-              </span>
-            </div>
-          </div>
-        </button>
-
-        <div v-if="!loading && rows.length === 0" class="p-6 text-sm opacity-70">No tournaments found.</div>
-      </div>
-    </div>
-
-    <div class="space-y-4">
-      <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div class="text-xs opacity-70">Editor</div>
-            <div class="text-2xl font-extrabold tracking-tight">
-              {{ isEditing ? 'Edit Tournament' : 'Create Tournament' }}
-            </div>
-            <div class="mt-1 text-sm opacity-70" v-if="form.slug">
-              Slug: <span class="font-mono opacity-100">{{ form.slug }}</span>
-              <span v-if="form.id" class="opacity-60"> • ID: <span class="font-mono">{{ form.id.slice(0, 8) }}…</span></span>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <span class="px-2 py-1 rounded-full border text-xs" :class="badgeClass(derivedStatus)">
-              {{ String(derivedStatus).toUpperCase() }}
-            </span>
-            <span
-              v-if="form.finalized"
-              class="px-2 py-1 rounded-full border border-amber-400/20 bg-amber-500/10 text-amber-200 text-xs"
-            >
-              FINALIZED
-            </span>
-          </div>
-        </div>
-
-        <div class="mt-4 flex flex-wrap gap-2">
-          <button
-            class="px-4 py-2 rounded-full border text-sm transition"
-            :class="tab === 'details' ? 'bg-black text-white dark:bg-white dark:text-black border-transparent' : 'bg-white/5 border-white/10 hover:bg-white/10'"
-            @click="tab = 'details'"
-          >
-            Details
-          </button>
-          <button
-            class="px-4 py-2 rounded-full border text-sm transition"
-            :class="tab === 'schedule' ? 'bg-black text-white dark:bg-white dark:text-black border-transparent' : 'bg-white/5 border-white/10 hover:bg-white/10'"
-            @click="tab = 'schedule'"
-          >
-            Schedule
-          </button>
-          <button
-            class="px-4 py-2 rounded-full border text-sm transition"
-            :class="tab === 'ads' ? 'bg-black text-white dark:bg-white dark:text-black border-transparent' : 'bg-white/5 border-white/10 hover:bg-white/10'"
-            @click="tab = 'ads'"
-          >
-            Ads
-          </button>
-          <button
-            class="px-4 py-2 rounded-full border text-sm transition"
-            :class="tab === 'winners' ? 'bg-black text-white dark:bg-white dark:text-black border-transparent' : 'bg-white/5 border-white/10 hover:bg-white/10'"
-            @click="tab = 'winners'"
-          >
-            Winners
-          </button>
-
-          <div class="flex-1" />
-
-          <UButton class="!rounded-full" :loading="loading || thumbUploading || adUploading || prizeMapSaving || videoUploading" @click="apiUpsert()">
-            {{ isEditing ? 'Save' : 'Create' }}
-          </UButton>
-
-          <UButton v-if="form.slug" variant="soft" class="!rounded-full" :to="`/tournaments/${form.slug}`">
-            Open
-          </UButton>
-
-          <UButton v-if="form.id && !isCanceled" color="error" variant="soft" class="!rounded-full" :loading="loading" @click="cancelTournament">
-            Cancel
-          </UButton>
-          <UButton v-if="form.id && isCanceled" variant="soft" class="!rounded-full" :loading="loading" @click="uncancelTournament">
-            Uncancel
-          </UButton>
-
-          <UButton v-if="form.id" color="error" variant="soft" class="!rounded-full" :loading="loading" @click="apiDelete(form.id)">
-            Delete
-          </UButton>
-        </div>
-      </div>
-
-      <div v-if="tab === 'details'" class="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-          <div class="font-semibold">Tournament Details</div>
-
-          <div class="mt-4 grid gap-3">
-            <div class="grid gap-2">
-              <label class="text-xs opacity-70">Title</label>
-              <input
-                v-model="form.title"
-                class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-              />
-              <div class="text-xs opacity-60">Slug auto-generates from title (new tournaments only).</div>
-            </div>
-
-            <div class="grid gap-2">
-              <label class="text-xs opacity-70">Game</label>
-              <select
-                v-model="form.game_slug"
-                class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-              >
-                <option v-for="g in GAMES" :key="g.slug" :value="g.slug">{{ g.name }}</option>
-              </select>
-            </div>
-
-            <div class="grid gap-2">
-              <label class="text-xs opacity-70">Description</label>
-              <textarea
-                v-model="form.description"
-                rows="4"
-                class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-              />
-            </div>
-
-            <div class="mt-2 rounded-3xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+  <div class="h-[calc(100vh-110px)] overflow-hidden">
+    <div class="grid h-full min-h-0 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <!-- LEFT SIDEBAR -->
+      <aside class="min-h-0">
+        <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-black/10 bg-white/80 backdrop-blur dark:border-white/10 dark:bg-white/5">
+          <div class="border-b border-black/10 p-4 dark:border-white/10">
+            <div class="flex items-start justify-between gap-3">
               <div>
-                <div class="font-semibold">Promo Video</div>
-                <div class="text-xs opacity-70">Upload a hosted video or attach a YouTube video.</div>
+                <div class="text-xs opacity-70">Admin</div>
+                <div class="text-xl font-extrabold tracking-tight">Tournaments</div>
               </div>
 
-              <div class="mt-4 space-y-4">
-                <div class="grid gap-2">
-                  <label class="text-xs opacity-70">Video type</label>
-                  <select
-                    :value="form.promo_video_type"
-                    class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-                    @change="onVideoTypeChange(($event.target as HTMLSelectElement).value as PromoVideoType)"
-                  >
-                    <option value="">None</option>
-                    <option value="upload">Upload video</option>
-                    <option value="youtube">YouTube</option>
+              <div class="flex gap-2">
+                <UButton size="xs" variant="soft" class="!rounded-full" :loading="loading" @click="apiList()">
+                  Refresh
+                </UButton>
+                <UButton size="xs" class="!rounded-full" @click="resetForm()">
+                  New
+                </UButton>
+              </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-4 gap-2">
+              <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 text-center dark:border-white/10 dark:bg-white/[0.04]">
+                <div class="text-[11px] opacity-60">Total</div>
+                <div class="mt-1 text-lg font-bold">{{ stats.total }}</div>
+              </div>
+              <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 text-center dark:border-white/10 dark:bg-white/[0.04]">
+                <div class="text-[11px] opacity-60">Live</div>
+                <div class="mt-1 text-lg font-bold">{{ stats.live }}</div>
+              </div>
+              <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 text-center dark:border-white/10 dark:bg-white/[0.04]">
+                <div class="text-[11px] opacity-60">Sched.</div>
+                <div class="mt-1 text-lg font-bold">{{ stats.scheduled }}</div>
+              </div>
+              <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-3 text-center dark:border-white/10 dark:bg-white/[0.04]">
+                <div class="text-[11px] opacity-60">Ended</div>
+                <div class="mt-1 text-lg font-bold">{{ stats.ended }}</div>
+              </div>
+            </div>
+
+            <div class="mt-4 space-y-2">
+              <div class="rounded-2xl border border-black/10 bg-white px-3 py-2 dark:border-white/10 dark:bg-black/20">
+                <input
+                  v-model="q"
+                  class="w-full bg-transparent text-sm outline-none"
+                  placeholder="Search title / slug…"
+                />
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div class="rounded-2xl border border-black/10 bg-white px-3 py-2 dark:border-white/10 dark:bg-black/20">
+                  <div class="text-[11px] opacity-60">Status</div>
+                  <select v-model="filterStatus" class="mt-1 w-full bg-transparent text-sm outline-none">
+                    <option value="">All</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="live">Live</option>
+                    <option value="ended">Ended</option>
+                    <option value="canceled">Canceled</option>
                   </select>
                 </div>
 
-                <div class="grid gap-2">
-                  <label class="text-xs opacity-70">Video title (optional)</label>
-                  <input
-                    v-model="form.promo_video_title"
-                    class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-                    placeholder="e.g. Tournament trailer"
-                  />
+                <div class="rounded-2xl border border-black/10 bg-white px-3 py-2 dark:border-white/10 dark:bg-black/20">
+                  <div class="text-[11px] opacity-60">Game</div>
+                  <select v-model="filterGame" class="mt-1 w-full bg-transparent text-sm outline-none">
+                    <option value="">All</option>
+                    <option v-for="g in GAMES" :key="g.slug" :value="g.slug">
+                      {{ g.name }}
+                    </option>
+                  </select>
                 </div>
+              </div>
 
-                <div v-if="form.promo_video_type === 'upload'" class="space-y-3">
-                  <div class="rounded-2xl overflow-hidden border border-white/10 bg-white/5">
-                    <div class="aspect-video bg-black grid place-items-center">
-                      <video
-                        v-if="effectiveVideoUrl"
-                        :src="effectiveVideoUrl"
-                        controls
-                        playsinline
-                        preload="metadata"
-                        class="h-full w-full"
-                      />
-                      <div v-else class="text-xs opacity-60">No video selected</div>
+              <div v-if="errorMsg" class="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+                {{ errorMsg }}
+              </div>
+            </div>
+          </div>
+
+          <div class="min-h-0 flex-1 overflow-y-auto">
+            <div class="divide-y divide-black/10 dark:divide-white/10">
+              <button
+                v-for="r in rows"
+                :key="r.id"
+                class="block w-full px-4 py-4 text-left transition hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+                :class="selectedId === r.id ? 'bg-black/[0.05] dark:bg-white/[0.06]' : ''"
+                @click="selectTournament(r.id)"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="truncate font-semibold">{{ r.title }}</div>
+                    <div class="mt-1 truncate text-xs opacity-70">
+                      <span class="font-mono">{{ r.slug }}</span> • {{ r.game_slug }}
+                    </div>
+                    <div class="mt-2 text-xs opacity-60">
+                      {{ fmt(r.starts_at) }}
                     </div>
                   </div>
 
-                  <div v-if="videoFile" class="text-xs opacity-70">Selected: <span class="font-mono">{{ videoFile.name }}</span></div>
+                  <div class="flex shrink-0 flex-col items-end gap-2">
+                    <span class="rounded-full border px-2 py-1 text-[11px]" :class="badgeClass(r.status)">
+                      {{ String(r.status || 'scheduled').toUpperCase() }}
+                    </span>
 
-                  <input ref="videoInputEl" type="file" accept="video/*" @change="onVideoPick" />
-
-                  <div class="flex flex-wrap gap-2">
-                    <UButton class="!rounded-full" :disabled="!form.id || !videoFile" :loading="videoUploading" @click="uploadVideoAndPersist(form.id)">
-                      Upload Video
-                    </UButton>
-
-                    <UButton variant="soft" class="!rounded-full" :disabled="!videoFile" @click="clearVideoSelection">
-                      Clear Selection
-                    </UButton>
-
-                    <UButton v-if="form.promo_video_url" color="error" variant="soft" class="!rounded-full" @click="clearStoredVideo">
-                      Remove Stored Video
-                    </UButton>
-                  </div>
-
-                  <div v-if="form.promo_video_url" class="text-xs opacity-60 break-all">{{ form.promo_video_url }}</div>
-                </div>
-
-                <div v-if="form.promo_video_type === 'youtube'" class="space-y-3">
-                  <div class="grid gap-2">
-                    <label class="text-xs opacity-70">YouTube URL or Video ID</label>
-                    <div class="flex gap-2">
-                      <input
-                        v-model="youtubeInput"
-                        class="flex-1 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-                        placeholder="https://www.youtube.com/watch?v=..."
-                      />
-                      <UButton class="!rounded-full" @click="applyYoutubeInput">Apply</UButton>
-                    </div>
-                    <div class="text-xs opacity-60">Paste a full YouTube link or 11-character video ID.</div>
-                  </div>
-
-                  <div class="rounded-2xl overflow-hidden border border-white/10 bg-white/5">
-                    <div class="aspect-video bg-black grid place-items-center">
-                      <iframe
-                        v-if="effectiveYoutubeEmbedUrl"
-                        :src="effectiveYoutubeEmbedUrl"
-                        title="YouTube preview"
-                        class="h-full w-full"
-                        frameborder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowfullscreen
-                      />
-                      <div v-else class="text-xs opacity-60">No YouTube video selected</div>
-                    </div>
-                  </div>
-
-                  <div class="flex flex-wrap gap-2">
-                    <UButton v-if="form.promo_video_youtube_id" color="error" variant="soft" class="!rounded-full" @click="clearStoredVideo">
-                      Clear YouTube Video
-                    </UButton>
+                    <span
+                      v-if="r.finalized"
+                      class="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300"
+                    >
+                      FINALIZED
+                    </span>
                   </div>
                 </div>
+              </button>
+
+              <div v-if="!loading && rows.length === 0" class="p-6 text-sm opacity-70">
+                No tournaments found.
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- RIGHT CONTENT -->
+      <main class="min-w-0 min-h-0">
+        <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-black/10 bg-white/80 backdrop-blur dark:border-white/10 dark:bg-white/5">
+          <!-- STICKY TOP HEADER -->
+          <div class="shrink-0 border-b border-black/10 p-5 dark:border-white/10">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div class="min-w-0">
+                <div class="text-xs opacity-70">Editor</div>
+                <div class="truncate text-2xl font-extrabold tracking-tight">
+                  {{ isEditing ? form.title || 'Edit Tournament' : 'Create Tournament' }}
+                </div>
+                <div class="mt-1 text-sm opacity-70">
+                  <span v-if="form.slug">Slug: <span class="font-mono opacity-100">{{ form.slug }}</span></span>
+                  <span v-if="form.id" class="opacity-60"> • ID: <span class="font-mono">{{ form.id.slice(0, 8) }}…</span></span>
+                </div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-full border px-3 py-1.5 text-xs" :class="badgeClass(derivedStatus)">
+                  {{ String(derivedStatus).toUpperCase() }}
+                </span>
+
+                <span
+                  v-if="form.finalized"
+                  class="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300"
+                >
+                  FINALIZED
+                </span>
+
+                <UButton
+                  class="!rounded-full"
+                  :loading="loading || thumbUploading || adUploading || prizeMapSaving || videoUploading"
+                  @click="apiUpsert()"
+                >
+                  {{ isEditing ? 'Save' : 'Create' }}
+                </UButton>
+
+                <UButton v-if="form.slug" variant="soft" class="!rounded-full" :to="`/tournaments/${form.slug}`">
+                  Open
+                </UButton>
+
+                <UButton
+                  v-if="form.id && !isCanceled"
+                  color="error"
+                  variant="soft"
+                  class="!rounded-full"
+                  :loading="loading"
+                  @click="cancelTournament"
+                >
+                  Cancel
+                </UButton>
+
+                <UButton
+                  v-if="form.id && isCanceled"
+                  variant="soft"
+                  class="!rounded-full"
+                  :loading="loading"
+                  @click="uncancelTournament"
+                >
+                  Uncancel
+                </UButton>
+
+                <UButton
+                  v-if="form.id"
+                  color="error"
+                  variant="soft"
+                  class="!rounded-full"
+                  :loading="loading"
+                  @click="apiDelete(form.id)"
+                >
+                  Delete
+                </UButton>
               </div>
             </div>
 
-            <div class="mt-2 rounded-3xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div class="font-semibold">Tournament Prizes</div>
-                  <div class="text-xs opacity-70">Select prizes from the global prize catalog.</div>
-                </div>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <button
+                class="rounded-full border px-4 py-2 text-sm transition"
+                :class="tab === 'details'
+                  ? 'border-transparent bg-black text-white dark:bg-white dark:text-black'
+                  : 'border-black/10 bg-white hover:bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'"
+                @click="tab = 'details'"
+              >
+                Details
+              </button>
 
-                <div class="flex gap-2">
-                  <UButton variant="soft" class="!rounded-full" :disabled="!form.id" @click="addPrizeMap()">
-                    Add Prize Slot
-                  </UButton>
-                  <UButton variant="soft" class="!rounded-full" :loading="prizeCatalogLoading" @click="loadPrizeCatalog()">
-                    Refresh Catalog
-                  </UButton>
-                  <UButton class="!rounded-full" :disabled="!form.id" :loading="prizeMapSaving" @click="savePrizeMaps(form.id)">
-                    Save Prize Selection
-                  </UButton>
-                </div>
-              </div>
+              <button
+                class="rounded-full border px-4 py-2 text-sm transition"
+                :class="tab === 'schedule'
+                  ? 'border-transparent bg-black text-white dark:bg-white dark:text-black'
+                  : 'border-black/10 bg-white hover:bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'"
+                @click="tab = 'schedule'"
+              >
+                Schedule
+              </button>
 
-              <div v-if="!form.id" class="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm">
-                Create/save the tournament first to assign prizes.
-              </div>
+              <button
+                class="rounded-full border px-4 py-2 text-sm transition"
+                :class="tab === 'ads'
+                  ? 'border-transparent bg-black text-white dark:bg-white dark:text-black'
+                  : 'border-black/10 bg-white hover:bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'"
+                @click="tab = 'ads'"
+              >
+                Ads
+              </button>
 
-              <div v-else class="mt-4">
-                <div v-if="prizeCatalogLoading || prizeMapLoading" class="text-sm opacity-70">Loading prize data…</div>
+              <button
+                class="rounded-full border px-4 py-2 text-sm transition"
+                :class="tab === 'winners'
+                  ? 'border-transparent bg-black text-white dark:bg-white dark:text-black'
+                  : 'border-black/10 bg-white hover:bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]'"
+                @click="tab = 'winners'"
+              >
+                Winners
+              </button>
+            </div>
+          </div>
 
-                <div v-else-if="selectablePrizeOptions.length === 0" class="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm">
-                  No prize catalog items found. Create prizes from the separate admin prize page first.
-                </div>
+          <!-- THIS IS THE FIX: ONLY THIS AREA SCROLLS -->
+          <div class="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
+            <!-- DETAILS -->
+            <div v-if="tab === 'details'" class="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div class="min-w-0 space-y-4">
+                <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                  <div class="mb-4 font-semibold">Tournament Details</div>
 
-                <div v-else-if="prizeMaps.length === 0" class="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm opacity-80">
-                  No prizes selected for this tournament yet.
-                </div>
+                  <div class="grid gap-4">
+                    <div class="grid gap-2">
+                      <label class="text-xs opacity-70">Title</label>
+                      <input
+                        v-model="form.title"
+                        class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                      />
+                      <div class="text-xs opacity-60">Slug auto-generates from title for new tournaments.</div>
+                    </div>
 
-                <div v-else class="space-y-4">
-                  <div
-                    v-for="(row, i) in prizeMaps"
-                    :key="row.id || `map-${i}`"
-                    class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 p-4"
-                  >
-                    <div class="flex flex-wrap items-center justify-between gap-3">
-                      <div class="font-semibold">{{ ordinal(row.rank) }} Prize</div>
+                    <div class="grid gap-2 md:max-w-sm">
+                      <label class="text-xs opacity-70">Game</label>
+                      <select
+                        v-model="form.game_slug"
+                        class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                      >
+                        <option v-for="g in GAMES" :key="g.slug" :value="g.slug">
+                          {{ g.name }}
+                        </option>
+                      </select>
+                    </div>
 
-                      <div class="flex gap-2">
-                        <UButton size="xs" variant="soft" class="!rounded-full" :disabled="i === 0" @click="movePrizeMapUp(i)">Up</UButton>
-                        <UButton size="xs" variant="soft" class="!rounded-full" :disabled="i === prizeMaps.length - 1" @click="movePrizeMapDown(i)">Down</UButton>
-                        <UButton size="xs" color="error" variant="soft" class="!rounded-full" @click="removePrizeMap(i)">Remove</UButton>
+                    <div class="grid gap-2">
+                      <label class="text-xs opacity-70">Description</label>
+                      <textarea
+                        v-model="form.description"
+                        rows="5"
+                        class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                  <div class="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <div class="font-semibold">Promo Video</div>
+                      <div class="text-xs opacity-70">Upload a hosted video or attach a YouTube video.</div>
+                    </div>
+                  </div>
+
+                  <div class="grid gap-4">
+                    <div class="grid gap-2 md:max-w-sm">
+                      <label class="text-xs opacity-70">Video type</label>
+                      <select
+                        :value="form.promo_video_type"
+                        class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                        @change="onVideoTypeChange(($event.target as HTMLSelectElement).value as PromoVideoType)"
+                      >
+                        <option value="">None</option>
+                        <option value="upload">Upload video</option>
+                        <option value="youtube">YouTube</option>
+                      </select>
+                    </div>
+
+                    <div class="grid gap-2">
+                      <label class="text-xs opacity-70">Video title (optional)</label>
+                      <input
+                        v-model="form.promo_video_title"
+                        class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                        placeholder="e.g. Tournament trailer"
+                      />
+                    </div>
+
+                    <div v-if="form.promo_video_type === 'upload'" class="space-y-4">
+                      <div class="overflow-hidden rounded-2xl border border-black/10 bg-black dark:border-white/10">
+                        <div class="aspect-video grid place-items-center">
+                          <video
+                            v-if="effectiveVideoUrl"
+                            :src="effectiveVideoUrl"
+                            controls
+                            playsinline
+                            preload="metadata"
+                            class="h-full w-full"
+                          />
+                          <div v-else class="text-xs text-white/60">No video selected</div>
+                        </div>
+                      </div>
+
+                      <div v-if="videoFile" class="text-xs opacity-70">
+                        Selected: <span class="font-mono">{{ videoFile.name }}</span>
+                      </div>
+
+                      <input ref="videoInputEl" type="file" accept="video/*" @change="onVideoPick" />
+
+                      <div class="flex flex-wrap gap-2">
+                        <UButton
+                          class="!rounded-full"
+                          :disabled="!form.id || !videoFile"
+                          :loading="videoUploading"
+                          @click="uploadVideoAndPersist(form.id)"
+                        >
+                          Upload Video
+                        </UButton>
+
+                        <UButton variant="soft" class="!rounded-full" :disabled="!videoFile" @click="clearVideoSelection">
+                          Clear Selection
+                        </UButton>
+
+                        <UButton
+                          v-if="form.promo_video_url"
+                          color="error"
+                          variant="soft"
+                          class="!rounded-full"
+                          @click="clearStoredVideo"
+                        >
+                          Remove Stored Video
+                        </UButton>
+                      </div>
+
+                      <div v-if="form.promo_video_url" class="break-all text-xs opacity-60">
+                        {{ form.promo_video_url }}
                       </div>
                     </div>
 
-                    <div class="mt-4 grid gap-4 lg:grid-cols-[1fr_220px]">
-                      <div class="space-y-3">
-                        <div class="grid gap-2">
-                          <label class="text-xs opacity-70">Select prize</label>
-                          <select
-                            v-model="row.prize_id"
-                            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-                          >
-                            <option value="">(choose prize)</option>
-                            <option v-for="p in selectablePrizeOptions" :key="p.id" :value="p.id">
-                              {{ p.title }}
-                            </option>
-                          </select>
-                        </div>
-
-                        <div v-if="prizeById(row.prize_id)" class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
-                          <div class="text-sm font-semibold">{{ prizeById(row.prize_id)?.title }}</div>
-                          <div v-if="prizeById(row.prize_id)?.description" class="mt-1 text-xs opacity-70">
-                            {{ prizeById(row.prize_id)?.description }}
-                          </div>
+                    <div v-if="form.promo_video_type === 'youtube'" class="space-y-4">
+                      <div class="grid gap-2">
+                        <label class="text-xs opacity-70">YouTube URL or Video ID</label>
+                        <div class="flex gap-2">
+                          <input
+                            v-model="youtubeInput"
+                            class="flex-1 rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                            placeholder="https://www.youtube.com/watch?v=..."
+                          />
+                          <UButton class="!rounded-full" @click="applyYoutubeInput">Apply</UButton>
                         </div>
                       </div>
 
-                      <div class="space-y-3">
-                        <div class="rounded-2xl overflow-hidden border border-white/10 bg-white/5">
-                          <div class="aspect-square bg-black/20 grid place-items-center">
+                      <div class="overflow-hidden rounded-2xl border border-black/10 bg-black dark:border-white/10">
+                        <div class="aspect-video grid place-items-center">
+                          <iframe
+                            v-if="effectiveYoutubeEmbedUrl"
+                            :src="effectiveYoutubeEmbedUrl"
+                            title="YouTube preview"
+                            class="h-full w-full"
+                            frameborder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowfullscreen
+                          />
+                          <div v-else class="text-xs text-white/60">No YouTube video selected</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div class="font-semibold">Tournament Prizes</div>
+                      <div class="text-xs opacity-70">Select prizes from the global prize catalog.</div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                      <UButton variant="soft" class="!rounded-full" :disabled="!form.id" @click="addPrizeMap()">
+                        Add Prize Slot
+                      </UButton>
+                      <UButton variant="soft" class="!rounded-full" :loading="prizeCatalogLoading" @click="loadPrizeCatalog()">
+                        Refresh Catalog
+                      </UButton>
+                      <UButton class="!rounded-full" :disabled="!form.id" :loading="prizeMapSaving" @click="savePrizeMaps(form.id)">
+                        Save Prize Selection
+                      </UButton>
+                    </div>
+                  </div>
+
+                  <div v-if="!form.id" class="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm">
+                    Create or save the tournament first to assign prizes.
+                  </div>
+
+                  <div v-else-if="prizeCatalogLoading || prizeMapLoading" class="text-sm opacity-70">
+                    Loading prize data…
+                  </div>
+
+                  <div
+                    v-else-if="selectablePrizeOptions.length === 0"
+                    class="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm"
+                  >
+                    No prize catalog items found.
+                  </div>
+
+                  <div
+                    v-else-if="prizeMaps.length === 0"
+                    class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 text-sm dark:border-white/10 dark:bg-white/[0.04]"
+                  >
+                    No prizes selected for this tournament yet.
+                  </div>
+
+                  <div v-else class="space-y-4">
+                    <div
+                      v-for="(row, i) in prizeMaps"
+                      :key="row.id || `map-${i}`"
+                      class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
+                    >
+                      <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div class="font-semibold">{{ ordinal(row.rank) }} Prize</div>
+
+                        <div class="flex gap-2">
+                          <UButton size="xs" variant="soft" class="!rounded-full" :disabled="i === 0" @click="movePrizeMapUp(i)">Up</UButton>
+                          <UButton size="xs" variant="soft" class="!rounded-full" :disabled="i === prizeMaps.length - 1" @click="movePrizeMapDown(i)">Down</UButton>
+                          <UButton size="xs" color="error" variant="soft" class="!rounded-full" @click="removePrizeMap(i)">Remove</UButton>
+                        </div>
+                      </div>
+
+                      <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px]">
+                        <div class="space-y-3">
+                          <div class="grid gap-2">
+                            <label class="text-xs opacity-70">Select prize</label>
+                            <select
+                              v-model="row.prize_id"
+                              class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                            >
+                              <option value="">(choose prize)</option>
+                              <option v-for="p in selectablePrizeOptions" :key="p.id" :value="p.id">
+                                {{ p.title }}
+                              </option>
+                            </select>
+                          </div>
+
+                          <div
+                            v-if="prizeById(row.prize_id)"
+                            class="rounded-2xl border border-black/10 bg-white p-4 dark:border-white/10 dark:bg-black/20"
+                          >
+                            <div class="text-sm font-semibold">{{ prizeById(row.prize_id)?.title }}</div>
+                            <div v-if="prizeById(row.prize_id)?.description" class="mt-1 text-xs opacity-70">
+                              {{ prizeById(row.prize_id)?.description }}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="overflow-hidden rounded-2xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
+                          <div class="aspect-square grid place-items-center bg-black/[0.03] dark:bg-white/[0.04]">
                             <img
                               v-if="prizeById(row.prize_id)?.image_url"
                               :src="prizeById(row.prize_id)?.image_url || ''"
@@ -1729,434 +1928,474 @@ onMounted(async () => {
                       </div>
                     </div>
                   </div>
+                </section>
+              </div>
 
-                  <div class="flex justify-end">
-                    <UButton class="!rounded-full" :loading="prizeMapSaving" @click="savePrizeMaps(form.id)">
-                      Save Prize Selection
+              <aside class="space-y-4">
+                <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                  <div class="flex items-start justify-between">
+                    <div>
+                      <div class="font-semibold">Thumbnail</div>
+                      <div class="text-xs opacity-70">Upload on Save/Create</div>
+                    </div>
+                    <div v-if="thumbUploading" class="text-xs opacity-70">Uploading…</div>
+                  </div>
+
+                  <div class="mt-4 overflow-hidden rounded-2xl border border-black/10 bg-black/[0.03] dark:border-white/10 dark:bg-white/[0.04]">
+                    <div class="aspect-[16/10] grid place-items-center">
+                      <img
+                        v-if="effectiveThumbUrl"
+                        :key="effectiveThumbUrl"
+                        :src="effectiveThumbUrl"
+                        class="h-full w-full object-cover"
+                        alt="Tournament thumbnail preview"
+                      />
+                      <div v-else class="text-xs opacity-60">No image</div>
+                    </div>
+                  </div>
+
+                  <div v-if="thumbFile" class="mt-2 text-xs opacity-70">
+                    Selected: <span class="font-mono">{{ thumbFile.name }}</span>
+                  </div>
+
+                  <div class="mt-4 space-y-3">
+                    <input ref="thumbInputEl" type="file" accept="image/*" @change="onThumbPick" />
+                    <div class="flex flex-wrap gap-2">
+                      <UButton variant="soft" class="!rounded-full" :disabled="!thumbFile" @click="clearThumbSelection">
+                        Clear
+                      </UButton>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                  <div class="font-semibold">Quick Summary</div>
+
+                  <div class="mt-4 grid gap-3">
+                    <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]">
+                      <div class="text-xs opacity-70">Game</div>
+                      <div class="mt-1 font-medium">{{ form.game_slug || '—' }}</div>
+                    </div>
+
+                    <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]">
+                      <div class="text-xs opacity-70">Promo Video</div>
+                      <div class="mt-1 font-medium">{{ form.promo_video_type || 'None' }}</div>
+                    </div>
+
+                    <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]">
+                      <div class="text-xs opacity-70">Prize Slots</div>
+                      <div class="mt-1 font-medium">{{ prizeMaps.length }}</div>
+                    </div>
+                  </div>
+                </section>
+              </aside>
+            </div>
+
+            <!-- SCHEDULE -->
+            <div v-else-if="tab === 'schedule'" class="mx-auto max-w-5xl space-y-4">
+              <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="font-semibold">Schedule</div>
+                    <div class="text-xs opacity-70">
+                      Status is derived from time. Only canceled is manual.
+                    </div>
+                  </div>
+
+                  <span class="rounded-full border px-3 py-1.5 text-xs" :class="badgeClass(derivedStatus)">
+                    {{ String(derivedStatus).toUpperCase() }}
+                  </span>
+                </div>
+
+                <div class="mt-5 grid gap-4 md:grid-cols-2">
+                  <div class="grid gap-2">
+                    <label class="text-xs opacity-70">Starts (Dhaka)</label>
+                    <input
+                      v-model="form.starts_local"
+                      type="datetime-local"
+                      class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                    />
+                    <div class="text-xs opacity-60">UTC: <span class="font-mono">{{ startsIso }}</span></div>
+                  </div>
+
+                  <div class="grid gap-2">
+                    <label class="text-xs opacity-70">Ends (Dhaka)</label>
+                    <input
+                      v-model="form.ends_local"
+                      type="datetime-local"
+                      class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                    />
+                    <div class="text-xs opacity-60">UTC: <span class="font-mono">{{ endsIso }}</span></div>
+                  </div>
+                </div>
+
+                <div v-if="timeError" class="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+                  {{ timeError }}
+                </div>
+
+                <div class="mt-4 grid gap-4 md:grid-cols-2">
+                  <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]">
+                    <div class="text-xs opacity-70">Starts in</div>
+                    <div class="mt-1 font-mono text-xl">{{ msToClock(startsIn) }}</div>
+                  </div>
+                  <div class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]">
+                    <div class="text-xs opacity-70">Ends in</div>
+                    <div class="mt-1 font-mono text-xl">{{ msToClock(endsIn) }}</div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <!-- ADS -->
+            <div v-else-if="tab === 'ads'" class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div class="space-y-4">
+                <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div class="font-semibold">Tournament Ads</div>
+                      <div class="text-xs opacity-70">Only one active ad per slot globally.</div>
+                    </div>
+
+                    <div v-if="adLoading" class="text-xs opacity-70">Loading…</div>
+                  </div>
+
+                  <div v-if="!form.id" class="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm">
+                    Create or save the tournament first to add ads.
+                  </div>
+
+                  <template v-else>
+                    <div class="mt-4 flex flex-wrap gap-2">
+                      <UButton variant="soft" class="!rounded-full" :loading="adLoading" @click="loadAdsForTournament(form.id)">
+                        Refresh
+                      </UButton>
+                      <UButton class="!rounded-full" @click="(async () => { resetAdForm(); await loadActiveSlotUsage() })()">
+                        New Ad
+                      </UButton>
+                    </div>
+
+                    <div class="mt-4 space-y-3">
+                      <div
+                        v-if="ads.length === 0"
+                        class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 text-sm dark:border-white/10 dark:bg-white/[0.04]"
+                      >
+                        No ads for this tournament yet.
+                      </div>
+
+                      <button
+                        v-for="a in ads"
+                        :key="a.id"
+                        class="block w-full rounded-2xl border border-black/10 bg-black/[0.03] p-4 text-left transition hover:bg-black/[0.05] dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.07]"
+                        :class="adForm.id === a.id ? 'ring-2 ring-emerald-400/30' : ''"
+                        @click="pickAdForEdit(a)"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <div class="truncate font-semibold">
+                              {{ AD_SLOTS.find(s => s.key === a.slot)?.label || a.slot }}
+                            </div>
+                            <div class="mt-1 text-xs opacity-70">
+                              Ratio: <span class="font-mono">{{ (a as any).ratio || '16/9' }}</span>
+                            </div>
+                            <div class="mt-1 text-xs opacity-70">
+                              {{ a.starts_at ? fmt(a.starts_at) : 'No start' }} → {{ a.ends_at ? fmt(a.ends_at) : 'No end' }}
+                            </div>
+                          </div>
+
+                          <div class="flex shrink-0 flex-col items-end gap-2">
+                            <span
+                              class="rounded-full border px-2 py-1 text-[11px]"
+                              :class="a.is_active
+                                ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-300'
+                                : 'border-black/10 bg-black/[0.03] text-black/70 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70'"
+                            >
+                              {{ a.is_active ? 'ACTIVE' : 'INACTIVE' }}
+                            </span>
+                            <span class="text-[11px] opacity-60">{{ a.id.slice(0, 8) }}…</span>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </template>
+                </section>
+
+                <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="font-semibold">{{ adForm.id ? 'Edit Ad' : 'Create New Ad' }}</div>
+                    <div class="flex gap-2">
+                      <UButton
+                        variant="soft"
+                        class="!rounded-full"
+                        :disabled="!adForm.id"
+                        @click="(async () => { const row = ads.find(x => x.id === adForm.id); if (!row) return; await deactivateAd(row.id) })()"
+                      >
+                        Deactivate
+                      </UButton>
+
+                      <UButton
+                        color="error"
+                        variant="soft"
+                        class="!rounded-full"
+                        :disabled="!adForm.id"
+                        @click="(async () => { const row = ads.find(x => x.id === adForm.id); if (!row) return; await deleteAd(row) })()"
+                      >
+                        Delete
+                      </UButton>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 space-y-4">
+                    <label class="flex items-center gap-3">
+                      <input type="checkbox" v-model="adForm.enabled" :disabled="!form.id" />
+                      <span class="text-sm font-semibold">Active</span>
+                    </label>
+
+                    <div v-if="noVacantSlotsForNewAd" class="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm">
+                      No slots available.
+                    </div>
+
+                    <div class="grid gap-4 md:grid-cols-2">
+                      <div class="grid gap-2">
+                        <label class="text-xs opacity-70">Slot</label>
+                        <select
+                          v-model="adForm.slot"
+                          class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                          :disabled="!form.id"
+                        >
+                          <option value="">(choose)</option>
+                          <option v-for="s in selectableSlots" :key="s.key" :value="s.key">
+                            {{ s.label }}
+                          </option>
+                        </select>
+                      </div>
+
+                      <div class="grid gap-2">
+                        <label class="text-xs opacity-70">Banner ratio</label>
+                        <select
+                          v-model="adForm.ratio"
+                          class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                          :disabled="!form.id"
+                        >
+                          <option v-for="r in AD_RATIOS" :key="r.key" :value="r.key">
+                            {{ r.label }}
+                          </option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div class="grid gap-2">
+                      <label class="text-xs opacity-70">Alt text (optional)</label>
+                      <input
+                        v-model="adForm.alt"
+                        class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                        placeholder="Tournament banner"
+                      />
+                    </div>
+
+                    <div class="grid gap-4 md:grid-cols-2">
+                      <div class="grid gap-2">
+                        <label class="text-xs opacity-70">Ad starts (optional)</label>
+                        <input
+                          v-model="adForm.starts_local"
+                          type="datetime-local"
+                          class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                        />
+                      </div>
+                      <div class="grid gap-2">
+                        <label class="text-xs opacity-70">Ad ends (optional)</label>
+                        <input
+                          v-model="adForm.ends_local"
+                          type="datetime-local"
+                          class="rounded-2xl border border-black/10 bg-white px-3 py-2 outline-none dark:border-white/10 dark:bg-black/20"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                      <UButton
+                        class="!rounded-full"
+                        :disabled="!form.id || (!adForm.id && noVacantSlotsForNewAd)"
+                        :loading="adUploading"
+                        @click="(async () => { if (!form.id) return; await saveOneAd(form.id) })()"
+                      >
+                        {{ adForm.id ? 'Save Changes' : 'Create Ad' }}
+                      </UButton>
+
+                      <UButton variant="soft" class="!rounded-full" @click="resetAdForm()">Clear Form</UButton>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <aside>
+                <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                  <div class="flex items-start justify-between">
+                    <div>
+                      <div class="font-semibold">Banner Preview</div>
+                      <div class="text-xs opacity-70">Upload & preview</div>
+                    </div>
+                    <div v-if="adUploading" class="text-xs opacity-70">Uploading…</div>
+                  </div>
+
+                  <div class="mt-4 overflow-hidden rounded-2xl border border-black/10 bg-black/[0.03] dark:border-white/10 dark:bg-white/[0.04]">
+                    <div class="grid place-items-center" :class="previewRatioClass">
+                      <img
+                        v-if="effectiveAdImg"
+                        :key="effectiveAdImg"
+                        :src="effectiveAdImg"
+                        class="h-full w-full object-cover"
+                        alt="Ad banner preview"
+                      />
+                      <div v-else class="text-xs opacity-60">No banner</div>
+                    </div>
+                  </div>
+
+                  <div v-if="adFile" class="mt-2 text-xs opacity-70">
+                    Selected: <span class="font-mono">{{ adFile.name }}</span>
+                  </div>
+
+                  <div class="mt-4 space-y-3">
+                    <input ref="adInputEl" type="file" accept="image/*" @change="onAdPick" :disabled="!form.id" />
+                    <div class="flex flex-wrap gap-2">
+                      <UButton variant="soft" class="!rounded-full" :disabled="!adFile" @click="clearAdSelection">
+                        Clear
+                      </UButton>
+                    </div>
+                  </div>
+                </section>
+              </aside>
+            </div>
+
+            <!-- WINNERS -->
+            <div v-else class="space-y-4">
+              <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="font-semibold">Winners & Rewards</div>
+                    <div class="text-xs opacity-70">
+                      Finalize after end. Online + GIVEN requires transaction ID.
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2">
+                    <UButton
+                      variant="soft"
+                      size="xs"
+                      class="!rounded-full"
+                      :loading="winnersLoading"
+                      :disabled="!form.id && !form.slug"
+                      @click="loadWinners()"
+                    >
+                      Refresh
+                    </UButton>
+                    <UButton size="xs" class="!rounded-full" :disabled="!form.id" :loading="winnersLoading" @click="finalize(false)">
+                      Finalize
+                    </UButton>
+                    <UButton variant="soft" size="xs" class="!rounded-full" :disabled="!form.id" :loading="winnersLoading" @click="finalize(true)">
+                      Re-Finalize
                     </UButton>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <div class="space-y-4">
-          <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <div class="flex items-start justify-between">
-              <div>
-                <div class="font-semibold">Thumbnail</div>
-                <div class="text-xs opacity-70">Upload on Save/Create</div>
-              </div>
-              <div class="text-xs opacity-70" v-if="thumbUploading">Uploading…</div>
-            </div>
+                <div v-if="!form.id" class="mt-4 text-sm opacity-70">
+                  Select a tournament first.
+                </div>
 
-            <div class="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-white/5">
-              <div class="aspect-[16/10] bg-black/20 grid place-items-center">
-                <img
-                  v-if="effectiveThumbUrl"
-                  :key="effectiveThumbUrl"
-                  :src="effectiveThumbUrl"
-                  class="h-full w-full object-cover"
-                  alt="Tournament thumbnail preview"
-                />
-                <div v-else class="text-xs opacity-60">No image</div>
-              </div>
-            </div>
-
-            <div v-if="thumbFile" class="mt-2 text-xs opacity-70">
-              Selected: <span class="font-mono">{{ thumbFile.name }}</span>
-            </div>
-
-            <div class="mt-4 space-y-3">
-              <input ref="thumbInputEl" type="file" accept="image/*" @change="onThumbPick" />
-              <div class="flex flex-wrap gap-2">
-                <UButton variant="soft" class="!rounded-full" :disabled="!thumbFile" @click="clearThumbSelection">Clear</UButton>
-              </div>
-            </div>
-          </div>
-
-          <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <div class="font-semibold">Video Summary</div>
-            <div class="mt-1 text-xs opacity-70">Current selected video source.</div>
-
-            <div class="mt-4 grid gap-3">
-              <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
-                <div class="text-xs opacity-70">Type</div>
-                <div class="mt-1 font-medium">{{ form.promo_video_type || 'None' }}</div>
-              </div>
-
-              <div v-if="form.promo_video_type === 'youtube' && form.promo_video_youtube_id" class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
-                <div class="text-xs opacity-70">YouTube ID</div>
-                <div class="mt-1 font-mono text-sm break-all">{{ form.promo_video_youtube_id }}</div>
-              </div>
-
-              <div v-if="form.promo_video_type === 'upload' && form.promo_video_url" class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
-                <div class="text-xs opacity-70">Hosted URL</div>
-                <div class="mt-1 font-mono text-xs break-all">{{ form.promo_video_url }}</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <div class="font-semibold">Prize Summary</div>
-            <div class="mt-1 text-xs opacity-70">Selected rewards for this tournament.</div>
-
-            <div class="mt-4 space-y-3">
-              <div
-                v-for="row in prizeMaps"
-                :key="row.id || `summary-${row.rank}`"
-                class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-3"
-              >
-                <div class="text-xs opacity-70">{{ ordinal(row.rank) }} Prize</div>
-                <div class="mt-1 text-sm font-semibold">{{ prizeById(row.prize_id)?.title || 'Not selected' }}</div>
-              </div>
-
-              <div v-if="!prizeMaps.length" class="text-sm opacity-70">No prize selected.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div
-        v-else-if="tab === 'schedule'"
-        class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="font-semibold">Schedule</div>
-            <div class="text-xs opacity-70">Status is derived from time (scheduled → live → ended). Only canceled is manual.</div>
-          </div>
-
-          <span class="px-3 py-1.5 rounded-full border text-xs" :class="badgeClass(derivedStatus)">
-            {{ String(derivedStatus).toUpperCase() }}
-          </span>
-        </div>
-
-        <div class="mt-4 grid gap-3 md:grid-cols-2">
-          <div class="grid gap-2">
-            <label class="text-xs opacity-70">Starts (Dhaka)</label>
-            <input
-              v-model="form.starts_local"
-              type="datetime-local"
-              class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-            />
-            <div class="text-xs opacity-60">UTC: <span class="font-mono">{{ startsIso }}</span></div>
-          </div>
-
-          <div class="grid gap-2">
-            <label class="text-xs opacity-70">Ends (Dhaka)</label>
-            <input
-              v-model="form.ends_local"
-              type="datetime-local"
-              class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-            />
-            <div class="text-xs opacity-60">UTC: <span class="font-mono">{{ endsIso }}</span></div>
-          </div>
-        </div>
-
-        <div v-if="timeError" class="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm">
-          {{ timeError }}
-        </div>
-
-        <div class="mt-4 grid gap-3 md:grid-cols-2">
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
-            <div class="text-xs opacity-70">Starts in</div>
-            <div class="mt-1 font-mono text-lg">{{ msToClock(startsIn) }}</div>
-          </div>
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
-            <div class="text-xs opacity-70">Ends in</div>
-            <div class="mt-1 font-mono text-lg">{{ msToClock(endsIn) }}</div>
-          </div>
-        </div>
-      </div>
-
-      <div v-else-if="tab === 'ads'" class="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="font-semibold">Tournament Ads</div>
-              <div class="text-xs opacity-70">Multiple ads per tournament (different slots). Only one ACTIVE ad per slot globally.</div>
-            </div>
-            <div class="text-xs opacity-70" v-if="adLoading">Loading…</div>
-          </div>
-
-          <div v-if="!form.id" class="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm">
-            Create/save the tournament first to add ads.
-          </div>
-
-          <div v-else class="mt-4">
-            <div class="flex flex-wrap gap-2">
-              <UButton variant="soft" class="!rounded-full" :loading="adLoading" @click="loadAdsForTournament(form.id)">Refresh</UButton>
-              <UButton class="!rounded-full" @click="(async () => { resetAdForm(); await loadActiveSlotUsage() })()">New Ad</UButton>
-            </div>
-
-            <div class="mt-4 space-y-3">
-              <div v-if="ads.length === 0" class="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm opacity-80">
-                No ads for this tournament yet.
-              </div>
-
-              <button
-                v-for="a in ads"
-                :key="a.id"
-                class="w-full text-left rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition"
-                :class="adForm.id === a.id ? 'ring-2 ring-emerald-400/30' : ''"
-                @click="pickAdForEdit(a)"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <div class="font-semibold truncate">{{ AD_SLOTS.find(s => s.key === a.slot)?.label || a.slot }}</div>
-                    <div class="mt-1 text-xs opacity-70">Ratio: <span class="font-mono opacity-100">{{ (a as any).ratio || '16/9' }}</span></div>
-                    <div class="mt-1 text-xs opacity-70">{{ a.starts_at ? fmt(a.starts_at) : 'No start' }} → {{ a.ends_at ? fmt(a.ends_at) : 'No end' }}</div>
-                    <div class="mt-1 text-xs opacity-60 truncate" v-if="a.alt">Alt: {{ a.alt }}</div>
+                <template v-else>
+                  <div v-if="winnersErr" class="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+                    {{ winnersErr }}
                   </div>
 
-                  <div class="shrink-0 flex flex-col items-end gap-2">
-                    <span
-                      class="px-2 py-1 rounded-full border text-[11px]"
-                      :class="a.is_active ? 'bg-emerald-500/15 border-emerald-400/20 text-emerald-300' : 'bg-white/10 border-white/10 text-white/70'"
+                  <div v-if="winnersLoading" class="mt-4 text-sm opacity-70">
+                    Loading…
+                  </div>
+
+                  <div
+                    v-else-if="winners.length === 0"
+                    class="mt-4 rounded-2xl border border-black/10 bg-black/[0.03] p-4 text-sm dark:border-white/10 dark:bg-white/[0.04]"
+                  >
+                    No winners yet.
+                  </div>
+
+                  <div v-else class="mt-4 space-y-3">
+                    <div
+                      v-for="w in winners"
+                      :key="w.id"
+                      class="rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]"
                     >
-                      {{ a.is_active ? 'ACTIVE' : 'INACTIVE' }}
-                    </span>
-                    <span class="text-[11px] opacity-60">{{ a.id.slice(0, 8) }}…</span>
+                      <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div class="font-semibold">#{{ w.rank }} — {{ w.player_name || 'Unknown' }}</div>
+                          <div class="mt-1 text-xs opacity-70">
+                            Score: <b class="opacity-100">{{ w.score }}</b>
+                            <span class="px-1 opacity-40">•</span>
+                            Prize: <b class="opacity-100">{{ w.prize || w.prize_label || '—' }}</b>
+                          </div>
+                        </div>
+
+                        <span
+                          class="rounded-full border px-2 py-1 text-[11px]"
+                          :class="(w.reward_status || 'pending') === 'given'
+                            ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-300'
+                            : 'border-black/10 bg-white text-black/70 dark:border-white/10 dark:bg-black/20 dark:text-white/70'"
+                        >
+                          {{ String(w.reward_status || 'pending').toUpperCase() }}
+                        </span>
+                      </div>
+
+                      <div class="mt-4 grid gap-3 lg:grid-cols-[180px_180px_minmax(0,1fr)_100px]">
+                        <div class="grid gap-1">
+                          <label class="text-[11px] opacity-70">Reward Status</label>
+                          <select
+                            v-model="w.reward_status"
+                            class="rounded-xl border border-black/10 bg-white px-2 py-2 text-sm outline-none dark:border-white/10 dark:bg-black/20"
+                          >
+                            <option value="pending">pending</option>
+                            <option value="given">given</option>
+                          </select>
+                        </div>
+
+                        <div class="grid gap-1">
+                          <label class="text-[11px] opacity-70">Method</label>
+                          <select
+                            v-model="w.reward_method"
+                            class="rounded-xl border border-black/10 bg-white px-2 py-2 text-sm outline-none dark:border-white/10 dark:bg-black/20"
+                          >
+                            <option value="">(select)</option>
+                            <option value="online">online</option>
+                            <option value="offline">offline</option>
+                          </select>
+                        </div>
+
+                        <div class="grid gap-1">
+                          <label class="text-[11px] opacity-70">Transaction ID</label>
+                          <input
+                            v-model="w.reward_txn_id"
+                            class="rounded-xl border border-black/10 bg-white px-2 py-2 text-sm outline-none dark:border-white/10 dark:bg-black/20"
+                            :placeholder="requiresTxnId(w) ? 'Required' : 'Optional'"
+                          />
+                          <div v-if="requiresTxnId(w) && !(w.reward_txn_id || '').trim()" class="text-[11px] text-red-300">
+                            Required for online rewards marked as GIVEN.
+                          </div>
+                        </div>
+
+                        <div class="flex items-end">
+                          <UButton size="xs" class="!rounded-full w-full" @click="updateWinnerReward(w)">
+                            Save
+                          </UButton>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </button>
-            </div>
 
-            <div class="mt-6 rounded-2xl border border-white/10 bg-black/5 dark:bg-white/5 p-4">
-              <div class="flex items-center justify-between gap-3">
-                <div class="font-semibold">{{ adForm.id ? 'Edit Ad' : 'Create New Ad' }}</div>
-                <div class="flex gap-2">
-                  <UButton
-                    variant="soft"
-                    class="!rounded-full"
-                    :disabled="!adForm.id"
-                    @click="(async () => { const row = ads.find(x => x.id === adForm.id); if (!row) return; await deactivateAd(row.id) })()"
-                  >
-                    Deactivate
-                  </UButton>
-
-                  <UButton
-                    color="error"
-                    variant="soft"
-                    class="!rounded-full"
-                    :disabled="!adForm.id"
-                    @click="(async () => { const row = ads.find(x => x.id === adForm.id); if (!row) return; await deleteAd(row) })()"
-                  >
-                    Delete
-                  </UButton>
-                </div>
-              </div>
-
-              <div class="mt-4 space-y-4">
-                <label class="flex items-center gap-3">
-                  <input type="checkbox" v-model="adForm.enabled" :disabled="!form.id" />
-                  <span class="text-sm font-semibold">Active</span>
-                </label>
-
-                <div v-if="noVacantSlotsForNewAd" class="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm">
-                  No slots available. (All are occupied globally or already used in this tournament.)
-                </div>
-
-                <div class="grid gap-2">
-                  <label class="text-xs opacity-70">Slot</label>
-                  <select
-                    v-model="adForm.slot"
-                    class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-                    :disabled="!form.id"
-                  >
-                    <option value="">(choose)</option>
-                    <option v-for="s in selectableSlots" :key="s.key" :value="s.key">{{ s.label }}</option>
-                  </select>
-                </div>
-
-                <div class="grid gap-2">
-                  <label class="text-xs opacity-70">Banner ratio</label>
-                  <select
-                    v-model="adForm.ratio"
-                    class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-                    :disabled="!form.id"
-                  >
-                    <option v-for="r in AD_RATIOS" :key="r.key" :value="r.key">{{ r.label }}</option>
-                  </select>
-                </div>
-
-                <div class="grid gap-2">
-                  <label class="text-xs opacity-70">Alt text (optional)</label>
-                  <input
-                    v-model="adForm.alt"
-                    class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-                    placeholder="Tournament banner"
-                  />
-                </div>
-
-                <div class="grid gap-3 md:grid-cols-2">
-                  <div class="grid gap-2">
-                    <label class="text-xs opacity-70">Ad starts (optional)</label>
-                    <input
-                      v-model="adForm.starts_local"
-                      type="datetime-local"
-                      class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-                    />
+                  <div v-if="form.id && !isEnded" class="mt-4 text-xs opacity-60">
+                    Tip: This tournament is not ended yet ({{ String(derivedStatus).toUpperCase() }}).
                   </div>
-                  <div class="grid gap-2">
-                    <label class="text-xs opacity-70">Ad ends (optional)</label>
-                    <input
-                      v-model="adForm.ends_local"
-                      type="datetime-local"
-                      class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 px-3 py-2 outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div class="flex flex-wrap gap-2">
-                  <UButton
-                    class="!rounded-full"
-                    :disabled="!form.id || (!adForm.id && noVacantSlotsForNewAd)"
-                    :loading="adUploading"
-                    @click="(async () => { if (!form.id) return; await saveOneAd(form.id) })()"
-                  >
-                    {{ adForm.id ? 'Save Changes' : 'Create Ad' }}
-                  </UButton>
-
-                  <UButton variant="soft" class="!rounded-full" @click="resetAdForm()">Clear Form</UButton>
-                </div>
-              </div>
+                </template>
+              </section>
             </div>
           </div>
         </div>
-
-        <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-          <div class="flex items-start justify-between">
-            <div>
-              <div class="font-semibold">Banner</div>
-              <div class="text-xs opacity-70">Upload & preview</div>
-            </div>
-            <div class="text-xs opacity-70" v-if="adUploading">Uploading…</div>
-          </div>
-
-          <div class="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-white/5">
-            <div class="bg-black/20 grid place-items-center" :class="previewRatioClass">
-              <img
-                v-if="effectiveAdImg"
-                :key="effectiveAdImg"
-                :src="effectiveAdImg"
-                class="h-full w-full object-cover"
-                alt="Ad banner preview"
-              />
-              <div v-else class="text-xs opacity-60">No banner</div>
-            </div>
-          </div>
-
-          <div v-if="adFile" class="mt-2 text-xs opacity-70">Selected: <span class="font-mono">{{ adFile.name }}</span></div>
-
-          <div class="mt-4 space-y-3">
-            <input ref="adInputEl" type="file" accept="image/*" @change="onAdPick" :disabled="!form.id" />
-            <div class="flex flex-wrap gap-2">
-              <UButton variant="soft" class="!rounded-full" :disabled="!adFile" @click="clearAdSelection">Clear</UButton>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-else class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div class="font-semibold">Winners & Rewards</div>
-            <div class="text-xs opacity-70">Finalize winners after end. Online + GIVEN requires transaction id.</div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <UButton variant="soft" size="xs" class="!rounded-full" :loading="winnersLoading" :disabled="!form.id && !form.slug" @click="loadWinners()">
-              Refresh
-            </UButton>
-            <UButton size="xs" class="!rounded-full" :disabled="!form.id" :loading="winnersLoading" @click="finalize(false)">
-              Finalize
-            </UButton>
-            <UButton variant="soft" size="xs" class="!rounded-full" :disabled="!form.id" :loading="winnersLoading" @click="finalize(true)">
-              Re-Finalize
-            </UButton>
-          </div>
-        </div>
-
-        <div v-if="!form.id" class="mt-4 text-sm opacity-70">Select a tournament first.</div>
-
-        <div v-else>
-          <div v-if="winnersErr" class="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm">
-            {{ winnersErr }}
-          </div>
-
-          <div v-if="winnersLoading" class="mt-4 text-sm opacity-70">Loading…</div>
-
-          <div v-else-if="winners.length === 0" class="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm opacity-80">
-            No winners yet. Finalize after the tournament is ended.
-          </div>
-
-          <div v-else class="mt-4 space-y-3">
-            <div v-for="w in winners" :key="w.id" class="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div class="font-semibold">#{{ w.rank }} — {{ w.player_name || 'Unknown' }}</div>
-                  <div class="mt-1 text-xs opacity-70">
-                    Score: <b class="opacity-100">{{ w.score }}</b>
-                    <span class="opacity-40">•</span>
-                    Prize: <b class="opacity-100">{{ w.prize || w.prize_label || '—' }}</b>
-                  </div>
-                </div>
-
-                <span
-                  class="px-2 py-1 rounded-full border text-[11px]"
-                  :class="(w.reward_status || 'pending') === 'given'
-                    ? 'bg-emerald-500/15 border-emerald-400/20 text-emerald-300'
-                    : 'bg-white/10 border-white/10 text-white/70'"
-                >
-                  {{ String(w.reward_status || 'pending').toUpperCase() }}
-                </span>
-              </div>
-
-              <div class="mt-4 grid gap-2 md:grid-cols-3 items-end">
-                <div class="grid gap-1">
-                  <label class="text-[11px] opacity-70">Reward Status</label>
-                  <select v-model="w.reward_status" class="rounded-xl border border-white/10 bg-black/20 px-2 py-2 text-sm outline-none">
-                    <option value="pending">pending</option>
-                    <option value="given">given</option>
-                  </select>
-                </div>
-
-                <div class="grid gap-1">
-                  <label class="text-[11px] opacity-70">Method</label>
-                  <select v-model="w.reward_method" class="rounded-xl border border-white/10 bg-black/20 px-2 py-2 text-sm outline-none">
-                    <option value="">(select)</option>
-                    <option value="online">online</option>
-                    <option value="offline">offline</option>
-                  </select>
-                </div>
-
-                <div class="grid gap-1">
-                  <label class="text-[11px] opacity-70">Transaction ID (online + given)</label>
-                  <input
-                    v-model="w.reward_txn_id"
-                    class="rounded-xl border border-white/10 bg-black/20 px-2 py-2 text-sm outline-none"
-                    :placeholder="requiresTxnId(w) ? 'Required' : 'Optional'"
-                  />
-                  <div v-if="requiresTxnId(w) && !(w.reward_txn_id || '').trim()" class="text-[11px] text-red-300">
-                    Required for online rewards marked as GIVEN.
-                  </div>
-                </div>
-              </div>
-
-              <div class="mt-3 flex justify-end">
-                <UButton size="xs" class="!rounded-full" @click="updateWinnerReward(w)">Save</UButton>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="form.id && !isEnded" class="mt-4 text-xs opacity-60">
-          Tip: This tournament is not ended yet ({{ String(derivedStatus).toUpperCase() }}). Finalize works after end.
-        </div>
-      </div>
+      </main>
     </div>
   </div>
 </template>

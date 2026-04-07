@@ -2,18 +2,18 @@
 import type { ArcadeGame } from '@/data/games'
 
 const props = withDefaults(
-    defineProps<{
-      game: ArcadeGame
-      defer?: boolean
-      fullscreen?: boolean
-      /** change this to force iframe src + remount */
-      cacheKey?: string
-    }>(),
-    {
-      defer: false,
-      fullscreen: false,
-      cacheKey: ''
-    }
+  defineProps<{
+    game: ArcadeGame
+    defer?: boolean
+    fullscreen?: boolean
+    /** change this to force iframe src + remount */
+    cacheKey?: string
+  }>(),
+  {
+    defer: false,
+    fullscreen: false,
+    cacheKey: ''
+  }
 )
 
 const route = useRoute()
@@ -49,7 +49,7 @@ function reload() {
   resetScoreBridge()
 }
 
-// Auto-start rules
+/* ---------------- auto-start rules ---------------- */
 const shouldAutoStart = computed(() => {
   if (!props.defer) return true
   if (props.fullscreen) return true
@@ -59,14 +59,14 @@ const shouldAutoStart = computed(() => {
 })
 
 watch(
-    shouldAutoStart,
-    (v) => {
-      if (v) {
-        started.value = true
-        resetScoreBridge()
-      }
-    },
-    { immediate: true }
+  shouldAutoStart,
+  (v) => {
+    if (v) {
+      started.value = true
+      resetScoreBridge()
+    }
+  },
+  { immediate: true }
 )
 
 function send(payload: any) {
@@ -80,8 +80,29 @@ function requestFullscreen() {
   else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen()
 }
 
+/* ---------------- iframe src ---------------- */
+const src = computed(() => {
+  const autostart =
+    route.query.autostart != null
+      ? String(route.query.autostart)
+      : props.fullscreen
+        ? '1'
+        : '0'
+
+  const qs = new URLSearchParams()
+  qs.set('autostart', autostart)
+
+  // IMPORTANT: make src unique per navigation / click
+  const v = props.cacheKey || `${Date.now()}-${frameKey.value}`
+  qs.set('v', v)
+
+  const base = props.game.sourceUrl
+  return `${base}${base.includes('?') ? '&' : '?'}${qs.toString()}`
+})
+
 /* ---------------- expected session from iframe url ---------------- */
 const expectedSessionId = computed(() => {
+  if (!import.meta.client) return ''
   try {
     const value = new URL(src.value, window.location.origin).searchParams.get('sessionId')
     return String(value || '').trim()
@@ -91,6 +112,7 @@ const expectedSessionId = computed(() => {
 })
 
 const expectedSessionNonce = computed(() => {
+  if (!import.meta.client) return ''
   try {
     const value = new URL(src.value, window.location.origin).searchParams.get('sessionNonce')
     return String(value || '').trim()
@@ -99,11 +121,16 @@ const expectedSessionNonce = computed(() => {
   }
 })
 
+const hasExpectedSession = computed(() => {
+  return !!(expectedSessionId.value && expectedSessionNonce.value)
+})
+
 function hasValidSessionPayload(data: any) {
   const incomingSessionId = String(data?.sessionId || '').trim()
   const incomingSessionNonce = String(data?.sessionNonce || '').trim()
 
-  if (!expectedSessionId.value || !expectedSessionNonce.value) return false
+  // Both arcade and tournament now require sessions.
+  if (!hasExpectedSession.value) return false
   if (!incomingSessionId || !incomingSessionNonce) return false
   if (incomingSessionId !== expectedSessionId.value) return false
   if (incomingSessionNonce !== expectedSessionNonce.value) return false
@@ -121,6 +148,8 @@ const emit = defineEmits<{
 function onMessage(e: MessageEvent) {
   if (typeof window === 'undefined') return
   if (e.origin !== window.location.origin) return
+  if (!iframeRef.value?.contentWindow) return
+  if (e.source !== iframeRef.value.contentWindow) return
 
   const data = e.data
   if (!data || typeof data !== 'object') return
@@ -140,7 +169,7 @@ function onMessage(e: MessageEvent) {
     // stop canvas recording inside iframe when game ends
     send({ type: 'STOP_CANVAS_RECORDING' })
 
-    // Emit only when score improves
+    // emit only when score improves
     if (score <= bestEmittedScore.value) return
 
     bestEmittedScore.value = score
@@ -164,42 +193,27 @@ function onMessage(e: MessageEvent) {
   }
 }
 
-onMounted(() => window.addEventListener('message', onMessage))
-onBeforeUnmount(() => window.removeEventListener('message', onMessage))
-
-watch(
-    () => props.game?.sourceUrl,
-    () => {
-      resetScoreBridge()
-    }
-)
-
-watch(
-    () => props.cacheKey,
-    () => {
-      resetScoreBridge()
-    }
-)
-
-// iframe src with cache-bust that changes when cacheKey changes
-const src = computed(() => {
-  const autostart =
-      route.query.autostart != null
-          ? String(route.query.autostart)
-          : props.fullscreen
-              ? '1'
-              : '0'
-
-  const qs = new URLSearchParams()
-  qs.set('autostart', autostart)
-
-  // IMPORTANT: make src unique per navigation / click
-  const v = props.cacheKey || `${Date.now()}-${frameKey.value}`
-  qs.set('v', v)
-
-  const base = props.game.sourceUrl
-  return `${base}${base.includes('?') ? '&' : '?'}${qs.toString()}`
+onMounted(() => {
+  window.addEventListener('message', onMessage)
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener('message', onMessage)
+})
+
+watch(
+  () => props.game?.sourceUrl,
+  () => {
+    resetScoreBridge()
+  }
+)
+
+watch(
+  () => props.cacheKey,
+  () => {
+    resetScoreBridge()
+  }
+)
 
 defineExpose({ start, stop, reload, send, requestFullscreen })
 </script>
@@ -207,23 +221,26 @@ defineExpose({ start, stop, reload, send, requestFullscreen })
 <template>
   <div class="relative" :class="props.fullscreen ? 'h-full' : ''">
     <div
-        ref="wrapRef"
-        class="w-full overflow-hidden rounded-2xl border border-white/10 bg-black/30 shadow-2xl"
-        :class="props.fullscreen ? 'h-full' : ''"
-        :style="props.fullscreen ? { height: '100%', minHeight: '100%' } : { minHeight: minHeight + 'px' }"
+      ref="wrapRef"
+      class="w-full overflow-hidden rounded-2xl border border-white/10 bg-black/30 shadow-2xl"
+      :class="props.fullscreen ? 'h-full' : ''"
+      :style="props.fullscreen ? { height: '100%', minHeight: '100%' } : { minHeight: minHeight + 'px' }"
     >
-      <div class="relative w-full" :style="props.fullscreen ? { height: '100%' } : { aspectRatio: aspect }">
+      <div
+        class="relative w-full"
+        :style="props.fullscreen ? { height: '100%' } : { aspectRatio: aspect }"
+      >
         <iframe
-            v-if="started"
-            :key="frameKey"
-            ref="iframeRef"
-            class="absolute inset-0 h-full w-full"
-            :src="src"
-            title="Game"
-            allow="autoplay; fullscreen; gamepad"
-            allowfullscreen
-            loading="eager"
-            sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms allow-downloads"
+          v-if="started"
+          :key="frameKey"
+          ref="iframeRef"
+          class="absolute inset-0 h-full w-full"
+          :src="src"
+          title="Game"
+          allow="autoplay; fullscreen; gamepad"
+          allowfullscreen
+          loading="eager"
+          sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms allow-downloads"
         />
 
         <div v-else class="absolute inset-0 grid place-items-center text-sm opacity-70">

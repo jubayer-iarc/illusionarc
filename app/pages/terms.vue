@@ -5,12 +5,12 @@ useHead({
     {
       name: 'description',
       content:
-          'Read Illusion Arc. Terms & Conditions: usage rules, IP rights, prohibited activities, liability, and contact details.'
+        'Read Illusion Arc. Terms & Conditions: usage rules, tournament rules, IP rights, prohibited activities, liability, and contact details.'
     }
   ]
 })
 
-const lastUpdated = 'January 10, 2026'
+const lastUpdated = 'April 7, 2026'
 const companyName = 'Illusion Arc.'
 const siteUrl = 'https://www.illusionarc.com'
 const phoneDisplay = '+8801329662037'
@@ -29,13 +29,14 @@ const emailHref = `mailto:${email}`
               Terms &amp; Conditions
             </h1>
             <p class="mt-2 text-black/70 dark:text-white/70">
-              Last updated: <span class="font-medium text-black dark:text-white">{{ lastUpdated }}</span>
+              Last updated:
+              <span class="font-medium text-black dark:text-white">{{ lastUpdated }}</span>
             </p>
           </div>
         </header>
 
         <div
-            class="mt-8 space-y-6 leading-relaxed
+          class="mt-8 space-y-6 leading-relaxed
                  text-black/75 dark:text-white/75
                  break-words [overflow-wrap:anywhere]
                  text-left md:text-justify"
@@ -265,7 +266,7 @@ const emailHref = `mailto:${email}`
             <p class="mt-3">All sales are final and no refund will be issued.</p>
           </section>
 
-          <!-- 8 (shortened bullets but faithful) -->
+          <!-- 8 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
             <h2 class="text-xl font-semibold text-black dark:text-white">8. PROHIBITED ACTIVITIES</h2>
             <p class="mt-3">
@@ -286,9 +287,47 @@ const emailHref = `mailto:${email}`
             </ul>
           </section>
 
-          <!-- 9 -->
+          <!-- 9 Tournament Terms -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">9. USER GENERATED CONTRIBUTIONS</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">9. TOURNAMENT TERMS</h2>
+
+            <p class="mt-3">
+              Additional rules may apply to tournaments, leaderboard events, special campaigns, prize-based gameplay,
+              and other competitive activities offered through the Services. By participating in any tournament or
+              competitive event, you agree to follow all event-specific rules, eligibility requirements, prize conditions,
+              and verification procedures announced by {{ companyName }}.
+            </p>
+
+            <p class="mt-3">
+              We actively monitor gameplay and account activity for unusual or suspicious behavior. Any exploit attempt,
+              device manipulation, score manipulation, unauthorized method of play, account sharing, use of another
+              person's ID, or allowing another person to use your ID may result in immediate action at our sole
+              discretion.
+            </p>
+
+            <p class="mt-3">
+              Such action may include score reset, score disqualification, removal from a tournament, cancellation of
+              participation, withholding of rewards pending review, temporary suspension, or permanent ban from the
+              Services.
+            </p>
+
+            <p class="mt-3">
+              If required for prize verification or claim review, participants must be able to provide reasonable proof
+              of valid gameplay. We strongly advise all tournament participants to keep their payment invoice, highest
+              score gameplay screenshot, and full screen recording of the relevant gameplay session until prize
+              distribution or claim verification is fully completed.
+            </p>
+
+            <p class="mt-3">
+              Failure to provide requested verification materials within the required time may affect prize eligibility,
+              reward processing, or final tournament standing. {{ companyName }} reserves the right to make the final
+              decision on tournament integrity, verification, disqualification, and reward eligibility.
+            </p>
+          </section>
+
+          <!-- 10 -->
+          <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
+            <h2 class="text-xl font-semibold text-black dark:text-white">10. USER GENERATED CONTRIBUTIONS</h2>
             <p class="mt-3">
               The Services may invite you to create, submit, post, display, transmit, publish, distribute, or broadcast
               content and materials ("Contributions"). Contributions may be viewable by other users and through
@@ -296,9 +335,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 10 -->
+          <!-- 11 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">10. CONTRIBUTION LICENSE</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">11. CONTRIBUTION LICENSE</h2>
             <p class="mt-3">
               By posting your Contributions, you grant us an unrestricted, unlimited, irrevocable, perpetual,
               non-exclusive, transferable, royalty-free, fully-paid, worldwide right and license to use, host, copy,
@@ -307,9 +346,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 11 -->
+          <!-- 12 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">11. GUIDELINES FOR REVIEWS</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">12. GUIDELINES FOR REVIEWS</h2>
             <p class="mt-3">
               If we provide areas to leave reviews, you must comply with rules such as: having firsthand experience,
               avoiding offensive/hate language, avoiding discriminatory references, avoiding illegal references, and not
@@ -317,18 +356,18 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 12 -->
+          <!-- 13 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">12. SOCIAL MEDIA</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">13. SOCIAL MEDIA</h2>
             <p class="mt-3">
               You may link your account with third-party accounts. You represent that you are entitled to provide login
               information and grant access under applicable terms.
             </p>
           </section>
 
-          <!-- 13 -->
+          <!-- 14 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">13. SERVICES MANAGEMENT</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">14. SERVICES MANAGEMENT</h2>
             <p class="mt-3">
               We reserve the right (but not the obligation) to monitor the Services for violations, take legal action,
               restrict access, remove excessive/burdensome content, and manage the Services to protect our rights and
@@ -336,9 +375,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 14 -->
+          <!-- 15 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">14. PRIVACY POLICY</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">15. PRIVACY POLICY</h2>
             <p class="mt-3">
               We care about data privacy and security. Please review our Privacy Policy:
               <span class="font-medium">https://www.illusionarc.com/privacy-policy</span>. By using the Services, you agree to be
@@ -348,18 +387,18 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 15 -->
+          <!-- 16 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">15. COPYRIGHT INFRINGEMENTS</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">16. COPYRIGHT INFRINGEMENTS</h2>
             <p class="mt-3">
               We respect the intellectual property rights of others. If you believe material on or through the Services
               infringes a copyright you own or control, please notify us using the contact information below.
             </p>
           </section>
 
-          <!-- 16 -->
+          <!-- 17 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">16. TERM AND TERMINATION</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">17. TERM AND TERMINATION</h2>
             <p class="mt-3">
               These Legal Terms remain in effect while you use the Services. We reserve the right to deny access to and
               use of the Services (including blocking certain IP addresses) for any reason, including breach of these
@@ -367,9 +406,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 17 -->
+          <!-- 18 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">17. MODIFICATIONS AND INTERRUPTIONS</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">18. MODIFICATIONS AND INTERRUPTIONS</h2>
             <p class="mt-3">
               We reserve the right to change, modify, or remove content at any time. We may modify or discontinue all or
               part of the Services without notice. We will not be liable for any modification, price change, suspension,
@@ -377,9 +416,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 18 -->
+          <!-- 19 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">18. GOVERNING LAW</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">19. GOVERNING LAW</h2>
             <p class="mt-3">
               These Legal Terms shall be governed by the laws of Bangladesh. {{ companyName }} and you irrevocably consent
               that the courts of Bangladesh shall have exclusive jurisdiction to resolve any dispute which may arise in
@@ -387,9 +426,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 19 -->
+          <!-- 20 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">19. DISPUTE RESOLUTION</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">20. DISPUTE RESOLUTION</h2>
             <p class="mt-3 font-semibold text-black dark:text-white">Binding Arbitration</p>
             <p class="mt-2">
               Any dispute arising out of or in connection with this contract shall be referred to and finally resolved by
@@ -405,18 +444,18 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 20 -->
+          <!-- 21 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">20. CORRECTIONS</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">21. CORRECTIONS</h2>
             <p class="mt-3">
               There may be information on the Services that contains errors or omissions. We reserve the right to correct
               any errors and update the information at any time without prior notice.
             </p>
           </section>
 
-          <!-- 21 -->
+          <!-- 22 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">21. DISCLAIMER</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">22. DISCLAIMER</h2>
             <p class="mt-3">
               THE SERVICES ARE PROVIDED ON AN AS-IS AND AS-AVAILABLE BASIS. YOU AGREE THAT YOUR USE OF THE SERVICES WILL
               BE AT YOUR SOLE RISK. TO THE FULLEST EXTENT PERMITTED BY LAW, WE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED,
@@ -424,9 +463,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 22 -->
+          <!-- 23 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">22. LIMITATIONS OF LIABILITY</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">23. LIMITATIONS OF LIABILITY</h2>
             <p class="mt-3">
               IN NO EVENT WILL WE OR OUR DIRECTORS, EMPLOYEES, OR AGENTS BE LIABLE FOR ANY DIRECT, INDIRECT,
               CONSEQUENTIAL, EXEMPLARY, INCIDENTAL, SPECIAL, OR PUNITIVE DAMAGES, INCLUDING LOST PROFIT, LOST REVENUE,
@@ -434,9 +473,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 23 -->
+          <!-- 24 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">23. INDEMNIFICATION</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">24. INDEMNIFICATION</h2>
             <p class="mt-3">
               You agree to defend, indemnify, and hold us harmless, including our subsidiaries, affiliates, and officers,
               agents, partners, and employees, from losses, damages, liabilities, claims, and expenses arising from your
@@ -445,9 +484,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 24 -->
+          <!-- 25 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">24. USER DATA</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">25. USER DATA</h2>
             <p class="mt-3">
               We will maintain certain data you transmit to the Services to manage performance. You are solely
               responsible for data you transmit or related activity. We are not liable for loss or corruption of such
@@ -455,9 +494,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 25 -->
+          <!-- 26 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">25. ELECTRONIC COMMUNICATIONS</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">26. ELECTRONIC COMMUNICATIONS</h2>
             <p class="mt-3">
               Visiting the Services, sending emails, and completing online forms constitute electronic communications.
               You consent to receive electronic communications and agree electronic communications satisfy legal
@@ -465,9 +504,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 26 -->
+          <!-- 27 -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">26. MISCELLANEOUS</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">27. MISCELLANEOUS</h2>
             <p class="mt-3">
               These Legal Terms and any policies posted constitute the entire agreement. Failure to enforce any right is
               not a waiver. We may assign rights/obligations. If any provision is unlawful or unenforceable, it is
@@ -475,9 +514,9 @@ const emailHref = `mailto:${email}`
             </p>
           </section>
 
-          <!-- 27 Contact -->
+          <!-- 28 Contact -->
           <section class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/80 dark:bg-white/5 backdrop-blur p-5">
-            <h2 class="text-xl font-semibold text-black dark:text-white">27. CONTACT US</h2>
+            <h2 class="text-xl font-semibold text-black dark:text-white">28. CONTACT US</h2>
 
             <p class="mt-3">
               In order to resolve a complaint regarding the Services or to receive further information regarding use of
