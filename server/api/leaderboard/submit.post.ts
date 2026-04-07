@@ -1,4 +1,3 @@
-// server/api/leaderboard/submit.post.ts
 import { readBody, createError, getHeader, getRequestIP } from 'h3'
 import { serverSupabaseClient } from '#supabase/server'
 
@@ -224,9 +223,6 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Arcade scoring must keep score history.
-  // Insert a fresh row for each accepted run so daily/weekly leaderboards
-  // can compute the best score within the requested period.
   const { error: insertErr } = await client
     .from('leaderboard_scores')
     .insert({
@@ -238,21 +234,6 @@ export default defineEventHandler(async (event) => {
 
   if (insertErr) {
     throw createError({ statusCode: 500, statusMessage: insertErr.message })
-  }
-
-  const { error: finishErr } = await client
-    .from('leaderboard_run_sessions')
-    .update({
-      status: 'finished',
-      used_at: nowIso,
-      updated_at: nowIso
-    })
-    .eq('id', session.id)
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-
-  if (finishErr) {
-    throw createError({ statusCode: 500, statusMessage: finishErr.message })
   }
 
   await logSubmission({
