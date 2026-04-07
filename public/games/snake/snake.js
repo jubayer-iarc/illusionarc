@@ -1,4 +1,45 @@
 window.onload = function () {
+  // Session context
+  function getParams() {
+    try {
+      return new URLSearchParams(window.location.search || "");
+    } catch (e) {
+      return new URLSearchParams("");
+    }
+  }
+
+  var params = getParams();
+
+  var sessionContext = {
+    gameSlug: String(params.get("gameSlug") || ""),
+    tournamentSlug: String(params.get("tournamentSlug") || ""),
+    sessionId: String(params.get("sessionId") || ""),
+    sessionNonce: String(params.get("sessionNonce") || ""),
+    deviceType: String(params.get("deviceType") || ""),
+    startedAt: String(params.get("startedAt") || ""),
+    expiresAt: String(params.get("expiresAt") || ""),
+    autostart: String(params.get("autostart") || "")
+  };
+
+  window.IA_SESSION_CONTEXT = sessionContext;
+
+  window.IA_GetSessionContext = function () {
+    return {
+      gameSlug: sessionContext.gameSlug,
+      tournamentSlug: sessionContext.tournamentSlug,
+      sessionId: sessionContext.sessionId,
+      sessionNonce: sessionContext.sessionNonce,
+      deviceType: sessionContext.deviceType,
+      startedAt: sessionContext.startedAt,
+      expiresAt: sessionContext.expiresAt,
+      autostart: sessionContext.autostart
+    };
+  };
+
+  window.IA_HasSession = function () {
+    return !!(sessionContext.sessionId && sessionContext.sessionNonce);
+  };
+
   // Canvas + context
   var canvas = document.getElementById("viewport");
   var context = canvas.getContext("2d");
@@ -58,7 +99,7 @@ window.onload = function () {
     for (var i = 0; i < this.columns; i++) {
       for (var j = 0; j < this.rows; j++) {
         if (i === 0 || i === this.columns - 1 || j === 0 || j === this.rows - 1) {
-          this.tiles[i][j] = 1; // wall border
+          this.tiles[i][j] = 1;
         } else {
           this.tiles[i][j] = 0;
         }
@@ -68,7 +109,7 @@ window.onload = function () {
 
   // Snake
   var Snake = function () {
-    this.directions = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // Up, Right, Down, Left
+    this.directions = [[0, -1], [1, 0], [0, 1], [-1, 0]];
     this.init(0, 0, 1, 9, 4);
   };
 
@@ -76,7 +117,7 @@ window.onload = function () {
     this.x = x;
     this.y = y;
     this.direction = direction;
-    this.speed = speed; // blocks per second
+    this.speed = speed;
 
     this.movedelay = 0;
     this.growsegments = 0;
@@ -89,7 +130,6 @@ window.onload = function () {
       });
     }
 
-    // ✅ For smooth rendering (interpolation)
     this.prevSegments = this._cloneSegments(this.segments);
   };
 
@@ -111,39 +151,31 @@ window.onload = function () {
   };
 
   Snake.prototype.stepMove = function () {
-    // Save previous for interpolation
     this.prevSegments = this._cloneSegments(this.segments);
 
-    // Compute next head cell
     var nextmove = this.nextMove();
     this.x = nextmove.x;
     this.y = nextmove.y;
 
-    // Tail position (used if we grow)
     var lastseg = this.segments[this.segments.length - 1];
     var growx = lastseg.x;
     var growy = lastseg.y;
 
-    // Shift segments
     for (var i = this.segments.length - 1; i >= 1; i--) {
       this.segments[i].x = this.segments[i - 1].x;
       this.segments[i].y = this.segments[i - 1].y;
     }
 
-    // Grow if needed
     if (this.growsegments > 0) {
       this.segments.push({ x: growx, y: growy });
       this.growsegments--;
-      // Ensure prevSegments length matches for smooth render
       this.prevSegments.push({ x: growx, y: growy });
     }
 
-    // Head segment
     this.segments[0].x = this.x;
     this.segments[0].y = this.y;
   };
 
-  // Objects (will be set in resize)
   var snake = new Snake();
   var level = null;
 
@@ -153,16 +185,36 @@ window.onload = function () {
   var gameovertime = 1;
   var gameoverdelay = 0.5;
 
-  // Leaderboard messaging (same-origin)
+  // Messaging
   var sentFinal = false;
+  var lastProgressSentScore = -1;
+
+  function canSendSessionScore() {
+    return !!(sessionContext.sessionId && sessionContext.sessionNonce);
+  }
+
   function sendScore(final) {
     try {
       if (!window.parent || window.parent === window) return;
+      if (!canSendSessionScore()) {
+        console.warn("[Snake] Missing sessionId/sessionNonce; score not posted.");
+        return;
+      }
+
       window.parent.postMessage(
-        { type: "SCORE", score: score, final: !!final, game: "snake" },
+        {
+          type: "SCORE",
+          score: score,
+          final: !!final,
+          game: sessionContext.gameSlug || "snake",
+          sessionId: sessionContext.sessionId,
+          sessionNonce: sessionContext.sessionNonce
+        },
         window.location.origin
       );
-    } catch (e) {}
+    } catch (e) {
+      console.error("[Snake] SCORE postMessage failed", e);
+    }
   }
 
   // Responsive sizing
@@ -172,41 +224,34 @@ window.onload = function () {
     var vw = Math.max(1, window.innerWidth);
     var vh = Math.max(1, window.innerHeight);
 
-    // Fullscreen canvas in CSS pixels
     canvas.style.width = vw + "px";
     canvas.style.height = vh + "px";
     canvas.width = Math.floor(vw * dpr);
     canvas.height = Math.floor(vh * dpr);
 
-    // Draw in CSS pixel coordinate space
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     context.imageSmoothingEnabled = false;
 
-    // Choose tile size based on viewport (mobile-friendly)
     var tile = Math.floor(Math.min(vw / 22, vh / 16));
-    tile = Math.max(18, Math.min(tile, 40)); // clamp
+    tile = Math.max(18, Math.min(tile, 40));
 
-    // Fit grid to screen
     var cols = Math.floor(vw / tile);
     var rows = Math.floor(vh / tile);
 
-    // Minimum playable size
     cols = Math.max(cols, 14);
     rows = Math.max(rows, 12);
 
-    // Recreate level
     level = new Level(cols, rows, tile, tile);
     level.generate();
 
-    // Start snake near center
     var sx = Math.floor(cols / 2);
     var sy = Math.floor(rows / 2);
 
     snake.init(sx, sy, 1, 9, 4);
 
-    // Reset game
     score = 0;
     sentFinal = false;
+    lastProgressSentScore = -1;
     addApple();
     gameover = true;
     gameovertime = 1;
@@ -216,7 +261,6 @@ window.onload = function () {
     setupCanvasAndLevel();
   });
 
-  // Apple
   function addApple() {
     var valid = false;
     while (!valid) {
@@ -238,24 +282,15 @@ window.onload = function () {
     }
   }
 
-  // Init
   function init() {
     images = loadImages(["snake-graphics.png"]);
     tileimage = images[0];
 
-    // Mouse/touch start
     canvas.addEventListener("mousedown", onMouseDown);
-
-    // Touch controls (tap to start + swipe to steer)
     installTouchControls();
-
-    // Keyboard
     document.addEventListener("keydown", onKeyDown, { passive: false });
 
-    // Setup fullscreen
     setupCanvasAndLevel();
-
-    // Enter loop
     main(0);
   }
 
@@ -270,8 +305,8 @@ window.onload = function () {
     level.generate();
     score = 0;
     sentFinal = false;
+    lastProgressSentScore = -1;
 
-    // Reset snake center
     var sx = Math.floor(level.columns / 2);
     var sy = Math.floor(level.rows / 2);
     snake.init(sx, sy, 1, 9, 4);
@@ -280,11 +315,9 @@ window.onload = function () {
     gameover = false;
   }
 
-  // Main loop
   function main(tframe) {
     window.requestAnimationFrame(main);
 
-    // Preloader
     if (!initialized) {
       context.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -315,7 +348,6 @@ window.onload = function () {
     var dt = (tframe - lastframe) / 1000;
     lastframe = tframe;
 
-    // ✅ Clamp dt to avoid big jumps when tab is inactive
     if (dt > 0.08) dt = 0.08;
     if (dt < 0) dt = 0;
 
@@ -329,14 +361,11 @@ window.onload = function () {
     var maxmovedelay = 1 / snake.speed;
     snake.movedelay += dt;
 
-    // Allow multiple steps if needed (rare)
     while (snake.movedelay >= maxmovedelay) {
-      // Check next cell collisions BEFORE stepping
       var next = snake.nextMove();
       var nx = next.x;
       var ny = next.y;
 
-      // Bounds / walls
       if (nx < 0 || nx >= level.columns || ny < 0 || ny >= level.rows || level.tiles[nx][ny] === 1) {
         gameover = true;
         gameovertime = 0;
@@ -347,7 +376,6 @@ window.onload = function () {
         break;
       }
 
-      // Self collision
       for (var i = 0; i < snake.segments.length; i++) {
         if (nx === snake.segments[i].x && ny === snake.segments[i].y) {
           gameover = true;
@@ -361,16 +389,13 @@ window.onload = function () {
       }
       if (gameover) break;
 
-      // Step move
       snake.stepMove();
 
-      // Apple collision
       if (level.tiles[nx][ny] === 2) {
         level.tiles[nx][ny] = 0;
         addApple();
         snake.grow();
         score++;
-        sendScore(false);
       }
 
       snake.movedelay -= maxmovedelay;
@@ -388,7 +413,6 @@ window.onload = function () {
   }
 
   function render() {
-    // Background
     var vw = window.innerWidth;
     var vh = window.innerHeight;
     context.fillStyle = "#577ddb";
@@ -397,7 +421,6 @@ window.onload = function () {
     drawLevel();
     drawSnake();
 
-    // HUD (score)
     context.fillStyle = "rgba(0,0,0,0.35)";
     context.fillRect(12, 12, 140, 34);
     context.fillStyle = "#fff";
@@ -434,7 +457,6 @@ window.onload = function () {
           context.fillStyle = "#f7e697";
           context.fillRect(tilex, tiley, level.tilewidth, level.tileheight);
 
-          // Apple sprite
           var tx = 0, ty = 3, tilew = 64, tileh = 64;
           context.drawImage(
             tileimage,
@@ -447,62 +469,54 @@ window.onload = function () {
   }
 
   function drawSnake() {
-  // Loop over every snake segment
-  for (var i = 0; i < snake.segments.length; i++) {
-    var segment = snake.segments[i];
-    var segx = segment.x;
-    var segy = segment.y;
+    for (var i = 0; i < snake.segments.length; i++) {
+      var segment = snake.segments[i];
+      var segx = segment.x;
+      var segy = segment.y;
 
-    // Grid-snapped pixel position (NO floats)
-    var tilex = segx * level.tilewidth;
-    var tiley = segy * level.tileheight;
+      var tilex = segx * level.tilewidth;
+      var tiley = segy * level.tileheight;
 
-    // Sprite column and row
-    var tx = 0;
-    var ty = 0;
+      var tx = 0;
+      var ty = 0;
 
-    if (i === 0) {
-      // Head
-      var nseg = snake.segments[i + 1]; // Next segment
-      if (nseg) {
-        if (segy < nseg.y) { tx = 3; ty = 0; }       // Up
-        else if (segx > nseg.x) { tx = 4; ty = 0; }  // Right
-        else if (segy > nseg.y) { tx = 4; ty = 1; }  // Down
-        else if (segx < nseg.x) { tx = 3; ty = 1; }  // Left
+      if (i === 0) {
+        var nseg = snake.segments[i + 1];
+        if (nseg) {
+          if (segy < nseg.y) { tx = 3; ty = 0; }
+          else if (segx > nseg.x) { tx = 4; ty = 0; }
+          else if (segy > nseg.y) { tx = 4; ty = 1; }
+          else if (segx < nseg.x) { tx = 3; ty = 1; }
+        }
+      } else if (i === snake.segments.length - 1) {
+        var pseg = snake.segments[i - 1];
+        if (pseg) {
+          if (pseg.y < segy) { tx = 3; ty = 2; }
+          else if (pseg.x > segx) { tx = 4; ty = 2; }
+          else if (pseg.y > segy) { tx = 4; ty = 3; }
+          else if (pseg.x < segx) { tx = 3; ty = 3; }
+        }
+      } else {
+        var p = snake.segments[i - 1];
+        var n = snake.segments[i + 1];
+        if (p && n) {
+          if ((p.x < segx && n.x > segx) || (n.x < segx && p.x > segx)) { tx = 1; ty = 0; }
+          else if ((p.x < segx && n.y > segy) || (n.x < segx && p.y > segy)) { tx = 2; ty = 0; }
+          else if ((p.y < segy && n.y > segy) || (n.y < segy && p.y > segy)) { tx = 2; ty = 1; }
+          else if ((p.y < segy && n.x < segx) || (n.y < segy && p.x < segx)) { tx = 2; ty = 2; }
+          else if ((p.x > segx && n.y < segy) || (n.x > segx && p.y < segy)) { tx = 0; ty = 1; }
+          else if ((p.y > segy && n.x > segx) || (n.y > segy && p.x > segx)) { tx = 0; ty = 0; }
+        }
       }
-    } else if (i === snake.segments.length - 1) {
-      // Tail
-      var pseg = snake.segments[i - 1]; // Prev segment
-      if (pseg) {
-        if (pseg.y < segy) { tx = 3; ty = 2; }       // Up
-        else if (pseg.x > segx) { tx = 4; ty = 2; }  // Right
-        else if (pseg.y > segy) { tx = 4; ty = 3; }  // Down
-        else if (pseg.x < segx) { tx = 3; ty = 3; }  // Left
-      }
-    } else {
-      // Body
-      var p = snake.segments[i - 1];
-      var n = snake.segments[i + 1];
-      if (p && n) {
-        if ((p.x < segx && n.x > segx) || (n.x < segx && p.x > segx)) { tx = 1; ty = 0; }
-        else if ((p.x < segx && n.y > segy) || (n.x < segx && p.y > segy)) { tx = 2; ty = 0; }
-        else if ((p.y < segy && n.y > segy) || (n.y < segy && p.y > segy)) { tx = 2; ty = 1; }
-        else if ((p.y < segy && n.x < segx) || (n.y < segy && p.x < segx)) { tx = 2; ty = 2; }
-        else if ((p.x > segx && n.y < segy) || (n.x > segx && p.y < segy)) { tx = 0; ty = 1; }
-        else if ((p.y > segy && n.x > segx) || (n.y > segy && p.x > segx)) { tx = 0; ty = 0; }
-      }
+
+      context.drawImage(
+        tileimage,
+        tx * 64, ty * 64, 64, 64,
+        tilex, tiley,
+        level.tilewidth, level.tileheight
+      );
     }
-
-    context.drawImage(
-      tileimage,
-      tx * 64, ty * 64, 64, 64,
-      tilex, tiley,
-      level.tilewidth, level.tileheight
-    );
   }
-}
-
-
 
   function drawCenterText(text, x, y, width) {
     var textdim = context.measureText(text);
@@ -517,13 +531,11 @@ window.onload = function () {
     if (gameover) {
       tryNewGame();
     } else {
-      // Keep your old behavior: click/tap cycles direction (optional)
       snake.direction = (snake.direction + 1) % snake.directions.length;
     }
   }
 
   function onKeyDown(e) {
-    // Prevent arrow keys scrolling the page
     if ([37, 38, 39, 40].indexOf(e.keyCode) !== -1) e.preventDefault();
 
     if (gameover) {
@@ -531,21 +543,19 @@ window.onload = function () {
       return;
     }
 
-    if (e.keyCode === 37 || e.keyCode === 65) { // Left/A
+    if (e.keyCode === 37 || e.keyCode === 65) {
       if (snake.direction !== 1) snake.direction = 3;
-    } else if (e.keyCode === 38 || e.keyCode === 87) { // Up/W
+    } else if (e.keyCode === 38 || e.keyCode === 87) {
       if (snake.direction !== 2) snake.direction = 0;
-    } else if (e.keyCode === 39 || e.keyCode === 68) { // Right/D
+    } else if (e.keyCode === 39 || e.keyCode === 68) {
       if (snake.direction !== 3) snake.direction = 1;
-    } else if (e.keyCode === 40 || e.keyCode === 83) { // Down/S
+    } else if (e.keyCode === 40 || e.keyCode === 83) {
       if (snake.direction !== 0) snake.direction = 2;
     }
 
-    // Space to grow (dev)
     if (e.keyCode === 32) snake.grow();
   }
 
-  // ✅ Mobile swipe controls
   function installTouchControls() {
     var startX = 0, startY = 0;
     var active = false;
@@ -576,13 +586,12 @@ window.onload = function () {
         return;
       }
 
-      // Decide direction
       if (Math.abs(dx) > Math.abs(dy)) {
-        if (dx > 0 && snake.direction !== 3) snake.direction = 1; // right
-        else if (dx < 0 && snake.direction !== 1) snake.direction = 3; // left
+        if (dx > 0 && snake.direction !== 3) snake.direction = 1;
+        else if (dx < 0 && snake.direction !== 1) snake.direction = 3;
       } else {
-        if (dy > 0 && snake.direction !== 0) snake.direction = 2; // down
-        else if (dy < 0 && snake.direction !== 2) snake.direction = 0; // up
+        if (dy > 0 && snake.direction !== 0) snake.direction = 2;
+        else if (dy < 0 && snake.direction !== 2) snake.direction = 0;
       }
 
       e.preventDefault();
@@ -595,6 +604,6 @@ window.onload = function () {
     canvas.addEventListener("touchend", onEnd, { passive: true });
   }
 
-  // Start
+  console.log("[Snake] Session context:", sessionContext);
   init();
 };

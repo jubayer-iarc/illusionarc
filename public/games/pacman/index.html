@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8" />
   <title>PAC-MAN</title>
-  
+
   <link rel="stylesheet" type="text/css" href="css/Pacman.css" />
-  
+
   <script type="text/javascript" src="lib/AStar.js"></script>
-  
+
   <script type="text/javascript" src="src/Keyboard.js"></script>
   <script type="text/javascript" src="src/Game.js"></script>
   <script type="text/javascript" src="src/StartupScene.js"></script>
@@ -31,26 +32,316 @@
   <script type="text/javascript" src="src/PacmanDiesPause.js"></script>
   <script type="text/javascript" src="src/PacmanDiesStrategy.js"></script>
   <script type="text/javascript" src="src/Cherry.js"></script>
-  
+
   <script type="text/javascript" src="lib/jquery-1.7.2.js"></script>
   <script type="text/javascript" src="lib/Stats.js"></script>
-  
+
   <script type="text/javascript" src="src/FPSCounter.js"></script>
   <script type="text/javascript" src="src/GameRunner.js"></script>
   <script type="text/javascript" src="src/ImageManager.js"></script>
   <script type="text/javascript" src="src/SoundManager.js"></script>
-  
+
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    body {
+      display: block;
+    }
+
+    #main {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+
   <script type="text/javascript">
-    $(function () {
-      var gameRunner = new GameRunner();
-      gameRunner.run();
-    });
+    (function () {
+      function getParams() {
+        try {
+          return new URLSearchParams(window.location.search || "");
+        } catch (e) {
+          return new URLSearchParams("");
+        }
+      }
+
+      var params = getParams();
+
+      var sessionContext = {
+        gameSlug: String(params.get("gameSlug") || ""),
+        tournamentSlug: String(params.get("tournamentSlug") || ""),
+        sessionId: String(params.get("sessionId") || ""),
+        sessionNonce: String(params.get("sessionNonce") || ""),
+        deviceType: String(params.get("deviceType") || ""),
+        startedAt: String(params.get("startedAt") || ""),
+        expiresAt: String(params.get("expiresAt") || ""),
+        autostart: String(params.get("autostart") || "")
+      };
+
+      window.IA_SESSION_CONTEXT = sessionContext;
+
+      var scoreSubmitted = false;
+      var lastSubmittedScore = -1;
+      var lastObservedScore = 0;
+      var runnerRef = null;
+
+      function safeNumber(value) {
+        var n = Number(value);
+        return isFinite(n) ? n : 0;
+      }
+
+      function getScoreFromRunner() {
+        try {
+          if (!runnerRef) return 0;
+
+          if (typeof runnerRef.score !== "undefined") {
+            return safeNumber(runnerRef.score);
+          }
+
+          if (runnerRef.game && typeof runnerRef.game.score !== "undefined") {
+            return safeNumber(runnerRef.game.score);
+          }
+
+          if (runnerRef.currentScene && typeof runnerRef.currentScene.score !== "undefined") {
+            return safeNumber(runnerRef.currentScene.score);
+          }
+
+          if (runnerRef.game && runnerRef.game.currentScene && typeof runnerRef.game.currentScene.score !== "undefined") {
+            return safeNumber(runnerRef.game.currentScene.score);
+          }
+        } catch (e) {}
+
+        return 0;
+      }
+
+      function getScoreFromWindow() {
+        var candidates = [
+          window.score,
+          window.currentScore,
+          window.gameScore
+        ];
+
+        for (var i = 0; i < candidates.length; i++) {
+          var n = Number(candidates[i]);
+          if (isFinite(n)) return n;
+        }
+
+        return 0;
+      }
+
+      function getScoreFromDom() {
+        var selectors = [
+          ".score",
+          ".score-value",
+          "#score",
+          "#scoreValue",
+          ".hud-score"
+        ];
+
+        for (var i = 0; i < selectors.length; i++) {
+          var el = document.querySelector(selectors[i]);
+          if (!el) continue;
+          var text = (el.textContent || "").replace(/[^\d]/g, "");
+          if (!text) continue;
+          var n = Number(text);
+          if (isFinite(n)) return n;
+        }
+
+        return 0;
+      }
+
+      function getCurrentScore() {
+        var a = getScoreFromRunner();
+        if (a > 0) return a;
+
+        var b = getScoreFromWindow();
+        if (b > 0) return b;
+
+        var c = getScoreFromDom();
+        if (c > 0) return c;
+
+        return 0;
+      }
+
+      function postScore(score) {
+        if (!sessionContext.sessionId || !sessionContext.sessionNonce) {
+          console.warn("[PAC-MAN] Missing session values; score not posted.");
+          return;
+        }
+
+        try {
+          window.parent.postMessage(
+            {
+              type: "SCORE",
+              score: score,
+              sessionId: sessionContext.sessionId,
+              sessionNonce: sessionContext.sessionNonce
+            },
+            window.location.origin
+          );
+          console.log("[PAC-MAN] SCORE posted:", score);
+        } catch (e) {
+          console.error("[PAC-MAN] SCORE postMessage failed", e);
+        }
+      }
+
+      function submitFinalScore() {
+        var score = getCurrentScore();
+
+        if (scoreSubmitted && score === lastSubmittedScore) return;
+
+        scoreSubmitted = true;
+        lastSubmittedScore = score;
+        postScore(score);
+      }
+
+      function resetRunSubmissionState() {
+        scoreSubmitted = false;
+        lastSubmittedScore = -1;
+        lastObservedScore = 0;
+      }
+
+      function patchGameRunner() {
+        if (typeof window.GameRunner !== "function") return;
+
+        var OriginalGameRunner = window.GameRunner;
+        if (OriginalGameRunner.__iaPatched) return;
+
+        function WrappedGameRunner() {
+          var instance = new OriginalGameRunner();
+          runnerRef = instance;
+          window.__IA_GAME_RUNNER__ = instance;
+          resetRunSubmissionState();
+          return instance;
+        }
+
+        WrappedGameRunner.prototype = OriginalGameRunner.prototype;
+        WrappedGameRunner.prototype.constructor = WrappedGameRunner;
+        WrappedGameRunner.__iaPatched = true;
+        WrappedGameRunner.__iaOriginal = OriginalGameRunner;
+
+        window.GameRunner = WrappedGameRunner;
+      }
+
+      function patchLikelyGameOverMethods() {
+        var targets = [
+          window.Game && window.Game.prototype,
+          window.PlayScene && window.PlayScene.prototype,
+          window.PacmanDiesStrategy && window.PacmanDiesStrategy.prototype,
+          window.PacmanDiesPause && window.PacmanDiesPause.prototype
+        ];
+
+        function wrapMethod(obj, methodName) {
+          if (!obj || typeof obj[methodName] !== "function") return;
+          if (obj[methodName].__iaWrapped) return;
+
+          var original = obj[methodName];
+          var wrapped = function () {
+            var result = original.apply(this, arguments);
+            setTimeout(function () {
+              submitFinalScore();
+            }, 50);
+            return result;
+          };
+          wrapped.__iaWrapped = true;
+          obj[methodName] = wrapped;
+        }
+
+        for (var i = 0; i < targets.length; i++) {
+          wrapMethod(targets[i], "gameOver");
+          wrapMethod(targets[i], "endGame");
+          wrapMethod(targets[i], "lose");
+          wrapMethod(targets[i], "die");
+          wrapMethod(targets[i], "finish");
+        }
+      }
+
+      function watchScoreChanges() {
+        setInterval(function () {
+          var score = getCurrentScore();
+          if (score > lastObservedScore) {
+            lastObservedScore = score;
+          }
+        }, 250);
+      }
+
+      function watchForRestartIntent() {
+        document.addEventListener("keydown", function (e) {
+          var key = e.key || "";
+          if (key === "Enter" || key === " " || key === "Spacebar") {
+            if (scoreSubmitted) {
+              resetRunSubmissionState();
+            }
+          }
+        });
+      }
+
+      function watchCanvasRemovalOrSceneReset() {
+        var main = document.getElementById("main");
+        if (!main || !("MutationObserver" in window)) return;
+
+        var observer = new MutationObserver(function () {
+          var score = getCurrentScore();
+          if (score > 0) {
+            lastObservedScore = Math.max(lastObservedScore, score);
+          }
+        });
+
+        observer.observe(main, {
+          childList: true,
+          subtree: true
+        });
+      }
+
+      window.IA_GetSessionContext = function () {
+        return {
+          gameSlug: sessionContext.gameSlug,
+          tournamentSlug: sessionContext.tournamentSlug,
+          sessionId: sessionContext.sessionId,
+          sessionNonce: sessionContext.sessionNonce,
+          deviceType: sessionContext.deviceType,
+          startedAt: sessionContext.startedAt,
+          expiresAt: sessionContext.expiresAt,
+          autostart: sessionContext.autostart
+        };
+      };
+
+      window.IA_HasSession = function () {
+        return !!(sessionContext.sessionId && sessionContext.sessionNonce);
+      };
+
+      window.__IA_SUBMIT_SCORE__ = submitFinalScore;
+      window.__IA_RESET_RUN_STATE__ = resetRunSubmissionState;
+
+      patchGameRunner();
+
+      window.addEventListener("load", function () {
+        patchLikelyGameOverMethods();
+        watchScoreChanges();
+        watchForRestartIntent();
+        watchCanvasRemovalOrSceneReset();
+
+        console.log("[PAC-MAN] Session context:", sessionContext);
+
+        $(function () {
+          var gameRunner = new GameRunner();
+          runnerRef = gameRunner;
+          window.__IA_GAME_RUNNER__ = gameRunner;
+          resetRunSubmissionState();
+          gameRunner.run();
+        });
+      });
+    })();
   </script>
 </head>
 
 <body>
-  <div id="main">
-    
-  </div>
+  <div id="main"></div>
 </body>
 </html>

@@ -2,32 +2,113 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Neon Polarity</title>
+  <meta
+    name="viewport"
+    content="width=device-width,initial-scale=1,viewport-fit=cover"
+  />
+  <title>Triangle Arena</title>
   <style>
-    html, body { width:100%; height:100%; margin:0; background:#000; overflow:hidden; }
-    iframe { width:100vw; height:100vh; border:0; display:block; background:#000; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #000;
+      overflow: hidden;
+    }
+
+    iframe {
+      width: 100vw;
+      height: 100vh;
+      border: 0;
+      display: block;
+      background: #000;
+    }
   </style>
 </head>
 <body>
   <iframe
     id="game"
-    src="https://triangle-arena.illusionarc.com"
     allow="autoplay; fullscreen"
     allowfullscreen
   ></iframe>
 
   <script>
-    // Only accept messages from the actual game origin
     const GAME_ORIGIN = "https://triangle-arena.illusionarc.com";
+    const GAME_BASE_URL = "https://triangle-arena.illusionarc.com";
+
+    const params = new URLSearchParams(window.location.search || "");
+
+    const sessionContext = {
+      gameSlug: String(params.get("gameSlug") || ""),
+      tournamentSlug: String(params.get("tournamentSlug") || ""),
+      sessionId: String(params.get("sessionId") || ""),
+      sessionNonce: String(params.get("sessionNonce") || ""),
+      deviceType: String(params.get("deviceType") || ""),
+      startedAt: String(params.get("startedAt") || ""),
+      expiresAt: String(params.get("expiresAt") || ""),
+      autostart: String(params.get("autostart") || "")
+    };
+
+    window.IA_SESSION_CONTEXT = sessionContext;
+
+    function buildGameUrl() {
+      const url = new URL(GAME_BASE_URL);
+
+      if (sessionContext.gameSlug) url.searchParams.set("gameSlug", sessionContext.gameSlug);
+      if (sessionContext.tournamentSlug) url.searchParams.set("tournamentSlug", sessionContext.tournamentSlug);
+      if (sessionContext.sessionId) url.searchParams.set("sessionId", sessionContext.sessionId);
+      if (sessionContext.sessionNonce) url.searchParams.set("sessionNonce", sessionContext.sessionNonce);
+      if (sessionContext.deviceType) url.searchParams.set("deviceType", sessionContext.deviceType);
+      if (sessionContext.startedAt) url.searchParams.set("startedAt", sessionContext.startedAt);
+      if (sessionContext.expiresAt) url.searchParams.set("expiresAt", sessionContext.expiresAt);
+      if (sessionContext.autostart) url.searchParams.set("autostart", sessionContext.autostart);
+
+      return url.toString();
+    }
+
+    const gameFrame = document.getElementById("game");
+    gameFrame.src = buildGameUrl();
+
+    function relayToParent(payload) {
+      window.parent.postMessage(payload, window.location.origin);
+    }
 
     window.addEventListener("message", (e) => {
       if (e.origin !== GAME_ORIGIN) return;
-      if (!e.data || typeof e.data !== "object") return;
+      if (e.source !== gameFrame.contentWindow) return;
 
-      // Relay to parent (IllusionArc) so parent sees origin === illusionarc.com
-      window.parent.postMessage(e.data, window.location.origin);
+      const data = e.data;
+      if (!data || typeof data !== "object") return;
+
+      const type = String(data.type || "").trim();
+      if (!type) return;
+
+      if (type === "SCORE" || type === "RESTART_REQUEST" || type === "RUN_EVENT") {
+        relayToParent({
+          ...data,
+          sessionId: sessionContext.sessionId,
+          sessionNonce: sessionContext.sessionNonce
+        });
+        return;
+      }
+
+      relayToParent(data);
     });
+
+    // Optional: parent -> game passthrough
+    window.addEventListener("message", (e) => {
+      if (e.origin !== window.location.origin) return;
+      if (!e.data || typeof e.data !== "object") return;
+      gameFrame.contentWindow?.postMessage(e.data, GAME_ORIGIN);
+    });
+
+    window.IA_GetSessionContext = function () {
+      return { ...sessionContext };
+    };
+
+    window.IA_HasSession = function () {
+      return !!(sessionContext.sessionId && sessionContext.sessionNonce);
+    };
   </script>
 </body>
 </html>
