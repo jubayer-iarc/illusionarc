@@ -210,17 +210,28 @@ Pacman.prototype._resetDeathFrame = function () {
 Pacman.prototype.diesAnimationCompleted = function () {
   if (this._livesCount == 0) {
 
-    // ✅ send final score to parent (Illusion Arc iframe host)
+    // send final score to parent with arcade/tournament session context
     try {
       var score = (typeof window.__PACMAN_SCORE__ === 'number') ? window.__PACMAN_SCORE__ : 0;
 
+      var session = window.IA_SESSION_CONTEXT || {};
+      var sessionId = String(session.sessionId || '');
+      var sessionNonce = String(session.sessionNonce || '');
+
       if (window.parent && window.parent !== window) {
         window.parent.postMessage(
-          { type: 'SCORE', score: Number(score) || 0 },
+          {
+            type: 'SCORE',
+            score: Number(score) || 0,
+            sessionId: sessionId,
+            sessionNonce: sessionNonce
+          },
           window.location.origin
         );
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('[PAC-MAN] SCORE postMessage failed', e);
+    }
 
     this._game.setScene(new StartupScene(this._game));
     return;
@@ -237,7 +248,6 @@ Pacman.prototype.diesAnimationCompleted = function () {
   this._resetDeathFrame();
   this._scene.placeGhostsToStartPositions();
 };
-
 
 
 /*--------------------------- Sprite delegation --------------------------------*/
