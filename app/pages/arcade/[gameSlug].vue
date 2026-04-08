@@ -4,10 +4,11 @@ import GamePlayer from '@/components/arcade/GamePlayer.vue'
 import TopScoresPanel from '@/components/arcade/TopScoresPanel.vue'
 
 definePageMeta({
-  middleware: ['require-play-auth'] // only blocks ?play=1
+  middleware: ['require-play-auth']
 })
 
 type LiveRow = { gameSlug: string; tournamentSlug: string }
+type DeviceType = 'Mobile' | 'PC' | 'Emulator'
 type ArcadeSessionStartResponse = {
   ok: boolean
   reused?: boolean
@@ -16,6 +17,8 @@ type ArcadeSessionStartResponse = {
   sessionNonce: string
   startedAt: string
   expiresAt: string
+  wsTicket?: string
+  wsTicketExp?: number
 }
 
 const route = useRoute()
@@ -23,11 +26,10 @@ const router = useRouter()
 const toast = useToast()
 const user = useSupabaseUser()
 
+const { startSession, submitScoreSecure } = useLeaderboard()
+
 const slug = computed(() => String(route.params.gameSlug || ''))
 
-/* ---------------- TOURNAMENT RULE ----------------
-   If a tournament is LIVE for this game, redirect to tournament page.
--------------------------------------------------- */
 async function redirectIfLiveTournament() {
   try {
     const res = await $fetch<{ rows?: LiveRow[] }>('/api/tournaments/live-games')
@@ -37,19 +39,19 @@ async function redirectIfLiveTournament() {
     }
   } catch {}
 }
+
 await redirectIfLiveTournament()
 
 const baseGame = computed(() => GAMES.find(g => g.slug === slug.value))
-if (!baseGame.value) throw createError({ statusCode: 404, statusMessage: 'Game not found' })
+if (!baseGame.value) {
+  throw createError({ statusCode: 404, statusMessage: 'Game not found' })
+}
 
 useHead(() => ({
   title: `${baseGame.value!.name} — Arcade`,
   meta: [{ name: 'description', content: baseGame.value!.shortPitch }]
 }))
 
-/* ---------------- PRO / Subscription Gate ----------------
-   Only allow Pro games if user has active subscription
----------------------------------------------------------- */
 async function checkProAccess() {
   if (!baseGame.value?.pro) return true
   if (!user.value) return false
@@ -64,7 +66,6 @@ async function checkProAccess() {
   }
 }
 
-/* ---------------- iOS + fullscreen ---------------- */
 const isIOS = computed(() => {
   if (import.meta.server) return false
   const ua = navigator.userAgent || ''
@@ -72,20 +73,23 @@ const isIOS = computed(() => {
   const iPadOS = navigator.platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1
   return iOS || iPadOS
 })
+
 const showFullscreen = computed(() => !isIOS.value)
 
-/* ---------------- Session state ---------------- */
 const arcadeSession = ref<ArcadeSessionStartResponse | null>(null)
 const startingSession = ref(false)
 
-function normalizeDeviceTypeFromBrowser(): 'Mobile' | 'PC' | 'Emulator' | null {
+function normalizeDeviceTypeFromBrowser(): DeviceType | null {
   if (!import.meta.client) return null
   const ua = navigator.userAgent || ''
   const isMobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
   return isMobileUa ? 'Mobile' : 'PC'
 }
 
-function buildGameUrlWithSession(sourceUrl: string, session: ArcadeSessionStartResponse | null) {
+function buildGameUrlWithSession(
+  sourceUrl: string,
+  session: ArcadeSessionStartResponse | null
+) {
   const value = String(sourceUrl || '').trim()
   if (!value || !session) return value
 
@@ -133,17 +137,15 @@ const game = computed(() => {
 
 async function startArcadeSession(forceNew = false) {
   startingSession.value = true
+
   try {
     const deviceType = normalizeDeviceTypeFromBrowser()
 
-    const res = await $fetch<ArcadeSessionStartResponse>('/api/leaderboard/session/start', {
-      method: 'POST',
-      credentials: 'include',
-      body: {
-        gameSlug: baseGame.value!.slug,
-        deviceType,
-        forceNew
-      }
+    const res = await startSession({
+      gameSlug: baseGame.value!.slug,
+      deviceType,
+      forceNew,
+      source: 'arcade'
     })
 
     arcadeSession.value = res
@@ -159,7 +161,6 @@ async function startArcadeSession(forceNew = false) {
   }
 }
 
-/* ---------------- Player state ---------------- */
 const playerName = useState<string>('playerName', () => 'Player')
 const lastScore = ref<number | null>(null)
 const saving = ref(false)
@@ -173,20 +174,17 @@ async function onScore(score: number) {
       throw new Error('Missing arcade session')
     }
 
-    await $fetch('/api/leaderboard/submit', {
-      method: 'POST',
-      credentials: 'include',
-      body: {
-        gameSlug: baseGame.value!.slug,
-        score,
-        sessionId: arcadeSession.value.sessionId,
-        sessionNonce: arcadeSession.value.sessionNonce,
-        deviceType: normalizeDeviceTypeFromBrowser(),
-        meta: {
-          source: 'arcade',
-          startedAt: arcadeSession.value.startedAt,
-          expiresAt: arcadeSession.value.expiresAt
-        }
+    await submitScoreSecure({
+      gameSlug: baseGame.value!.slug,
+      score,
+      sessionId: arcadeSession.value.sessionId,
+      sessionNonce: arcadeSession.value.sessionNonce,
+      deviceType: normalizeDeviceTypeFromBrowser(),
+      meta: {
+        source: 'arcade',
+        startedAt: arcadeSession.value.startedAt,
+        expiresAt: arcadeSession.value.expiresAt,
+        playerName: playerName.value
       }
     })
 
@@ -202,7 +200,6 @@ async function onScore(score: number) {
   }
 }
 
-/* ---------------- Lobby state ---------------- */
 const liked = ref(false)
 const fav = ref(false)
 const showControls = ref(false)
@@ -211,23 +208,38 @@ onMounted(() => {
   liked.value = localStorage.getItem(`like_${baseGame.value!.slug}`) === '1'
   fav.value = localStorage.getItem(`fav_${baseGame.value!.slug}`) === '1'
 })
-watch(liked, (v) => localStorage.setItem(`like_${baseGame.value!.slug}`, v ? '1' : '0'))
-watch(fav, (v) => localStorage.setItem(`fav_${baseGame.value!.slug}`, v ? '1' : '0'))
 
-/* ---------------- Play state ---------------- */
+watch(liked, (v) => {
+  localStorage.setItem(`like_${baseGame.value!.slug}`, v ? '1' : '0')
+})
+
+watch(fav, (v) => {
+  localStorage.setItem(`fav_${baseGame.value!.slug}`, v ? '1' : '0')
+})
+
 const playing = computed(() => route.query.play === '1')
 const playerKey = ref(0)
 const playerRef = ref<InstanceType<typeof GamePlayer> | null>(null)
 
 async function openPlay() {
   const hasAccess = await checkProAccess()
+
   if (!hasAccess) {
     return navigateTo(`/subscribe?redirect=${encodeURIComponent(route.fullPath)}`)
   }
 
   if (!user.value) {
-    const next = router.resolve({ path: route.path, query: { ...route.query, play: '1' } }).href
-    toast.add({ title: 'Login required', description: 'Please login to play.', color: 'info' })
+    const next = router.resolve({
+      path: route.path,
+      query: { ...route.query, play: '1' }
+    }).href
+
+    toast.add({
+      title: 'Login required',
+      description: 'Please login to play.',
+      color: 'info'
+    })
+
     return navigateTo({ path: '/login', query: { next } })
   }
 
@@ -295,26 +307,29 @@ watch(
 
 function onVisibilityChange() {
   if (!playing.value) return
-  if (document.visibilityState === 'visible') playerRef.value?.start?.()
+  if (document.visibilityState === 'visible') {
+    playerRef.value?.start?.()
+  }
 }
+
 function onPageHide() {
   hardStop()
 }
+
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('pagehide', onPageHide)
 })
+
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('pagehide', onPageHide)
 })
 
-/* ---------------- Rating ---------------- */
 const ratingValue = computed(() => baseGame.value?.rating?.value ?? 0)
 const ratingCount = computed(() => baseGame.value?.rating?.count ?? 0)
 const fullStars = computed(() => Math.floor(ratingValue.value))
 
-/* ---------------- Share / Embed ---------------- */
 const origin = computed(() => (import.meta.client ? window.location.origin : ''))
 const shareUrl = computed(() => `${origin.value}/arcade/${baseGame.value!.slug}`)
 const embedUrl = computed(() => `${origin.value}/arcade/${baseGame.value!.slug}?embed=1`)
@@ -325,9 +340,14 @@ const embedCode = computed(() => {
 
 async function copy(text: string) {
   if (!import.meta.client) return
+
   try {
     await navigator.clipboard.writeText(text)
-    toast.add({ title: 'Copied!', description: 'Copied to clipboard.', color: 'success' })
+    toast.add({
+      title: 'Copied!',
+      description: 'Copied to clipboard.',
+      color: 'success'
+    })
   } catch {
     prompt('Copy this:', text)
   }
@@ -335,9 +355,15 @@ async function copy(text: string) {
 
 async function nativeShare() {
   if (!import.meta.client) return
+
   const url = shareUrl.value
+
   if (navigator.share) {
-    await navigator.share({ title: baseGame.value!.name, text: baseGame.value!.shortPitch, url })
+    await navigator.share({
+      title: baseGame.value!.name,
+      text: baseGame.value!.shortPitch,
+      url
+    })
   } else {
     await copy(url)
   }
@@ -351,12 +377,42 @@ async function nativeShare() {
       <p class="opacity-80 max-w-2xl">{{ baseGame!.shortPitch }}</p>
 
       <div class="mt-2 flex flex-wrap gap-2 text-xs">
-        <span v-if="baseGame!.genre" class="px-2 py-1 rounded-full bg-black/30 border border-white/10">{{ baseGame!.genre }}</span>
-        <span v-if="baseGame!.difficulty" class="px-2 py-1 rounded-full bg-black/30 border border-white/10">{{ baseGame!.difficulty }}</span>
-        <span v-if="baseGame!.leaderboard" class="px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/20">Leaderboard</span>
-        <span v-if="baseGame!.embedAllowed" class="px-2 py-1 rounded-full bg-white/5 border border-white/10">Embeddable</span>
-        <span v-if="baseGame!.estTime" class="px-2 py-1 rounded-full bg-white/5 border border-white/10">{{ baseGame!.estTime }}</span>
-        <span v-if="baseGame!.pro" class="px-2 py-1 rounded-full border border-amber-400/30 bg-amber-400/15 text-amber-600 dark:text-amber-300">PRO</span>
+        <span
+          v-if="baseGame!.genre"
+          class="px-2 py-1 rounded-full bg-black/30 border border-white/10"
+        >
+          {{ baseGame!.genre }}
+        </span>
+        <span
+          v-if="baseGame!.difficulty"
+          class="px-2 py-1 rounded-full bg-black/30 border border-white/10"
+        >
+          {{ baseGame!.difficulty }}
+        </span>
+        <span
+          v-if="baseGame!.leaderboard"
+          class="px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/20"
+        >
+          Leaderboard
+        </span>
+        <span
+          v-if="baseGame!.embedAllowed"
+          class="px-2 py-1 rounded-full bg-white/5 border border-white/10"
+        >
+          Embeddable
+        </span>
+        <span
+          v-if="baseGame!.estTime"
+          class="px-2 py-1 rounded-full bg-white/5 border border-white/10"
+        >
+          {{ baseGame!.estTime }}
+        </span>
+        <span
+          v-if="baseGame!.pro"
+          class="px-2 py-1 rounded-full border border-amber-400/30 bg-amber-400/15 text-amber-600 dark:text-amber-300"
+        >
+          PRO
+        </span>
       </div>
     </div>
 
@@ -386,6 +442,7 @@ async function nativeShare() {
                 class="w-5 h-5 opacity-90"
               />
             </div>
+
             <div class="flex-1">
               <div class="text-sm opacity-80">
                 <b class="opacity-100">{{ Number(ratingValue).toFixed(1) }}</b>
@@ -401,7 +458,13 @@ async function nativeShare() {
           </div>
 
           <div class="flex flex-wrap gap-2">
-            <UButton color="primary" variant="solid" size="lg" :loading="startingSession" @click="openPlay">
+            <UButton
+              color="primary"
+              variant="solid"
+              size="lg"
+              :loading="startingSession"
+              @click="openPlay"
+            >
               <UIcon
                 v-if="baseGame!.pro"
                 name="i-ph-crown-fill"
@@ -415,13 +478,19 @@ async function nativeShare() {
               Play
             </UButton>
 
-            <UButton variant="soft" size="lg" @click="liked = !liked" :aria-pressed="liked">
-              <UIcon :name="liked ? 'i-heroicons-heart-solid' : 'i-heroicons-heart'" class="w-5 h-5" />
+            <UButton variant="soft" size="lg" :aria-pressed="liked" @click="liked = !liked">
+              <UIcon
+                :name="liked ? 'i-heroicons-heart-solid' : 'i-heroicons-heart'"
+                class="w-5 h-5"
+              />
               Like
             </UButton>
 
-            <UButton variant="soft" size="lg" @click="fav = !fav" :aria-pressed="fav">
-              <UIcon :name="fav ? 'i-heroicons-bookmark-solid' : 'i-heroicons-bookmark'" class="w-5 h-5" />
+            <UButton variant="soft" size="lg" :aria-pressed="fav" @click="fav = !fav">
+              <UIcon
+                :name="fav ? 'i-heroicons-bookmark-solid' : 'i-heroicons-bookmark'"
+                class="w-5 h-5"
+              />
               Favourite
             </UButton>
 
@@ -431,7 +500,7 @@ async function nativeShare() {
             </UButton>
           </div>
 
-          <div class="text-sm opacity-70" v-if="lastScore !== null">
+          <div v-if="lastScore !== null" class="text-sm opacity-70">
             Last score: <b class="opacity-100">{{ lastScore }}</b>
             <span v-if="saving" class="ml-2 opacity-60">Saving…</span>
           </div>
@@ -443,18 +512,27 @@ async function nativeShare() {
       <template #header>
         <div class="text-lg font-semibold">Share & Embed</div>
       </template>
+
       <div class="grid gap-4 md:grid-cols-2">
         <div class="space-y-3">
-          <div class="text-sm opacity-80">Share this game link or embed it on your website.</div>
+          <div class="text-sm opacity-80">
+            Share this game link or embed it on your website.
+          </div>
+
           <div class="flex flex-wrap gap-2">
             <UButton color="primary" variant="solid" @click="nativeShare">
-              <UIcon name="i-heroicons-share" class="w-5 h-5" /> Share
+              <UIcon name="i-heroicons-share" class="w-5 h-5" />
+              Share
             </UButton>
+
             <UButton variant="soft" @click="copy(shareUrl)">
-              <UIcon name="i-heroicons-link" class="w-5 h-5" /> Copy Link
+              <UIcon name="i-heroicons-link" class="w-5 h-5" />
+              Copy Link
             </UButton>
+
             <UButton variant="soft" @click="copy(embedCode)">
-              <UIcon name="i-heroicons-clipboard-document" class="w-5 h-5" /> Copy Embed Code
+              <UIcon name="i-heroicons-clipboard-document" class="w-5 h-5" />
+              Copy Embed Code
             </UButton>
           </div>
         </div>
@@ -469,7 +547,10 @@ async function nativeShare() {
     <div class="mt-10 grid gap-6 md:grid-cols-3">
       <div class="md:col-span-2 grid gap-6">
         <UCard class="bg-white/5 border-white/10">
-          <template #header><div class="text-lg font-semibold">How to play</div></template>
+          <template #header>
+            <div class="text-lg font-semibold">How to play</div>
+          </template>
+
           <ul class="space-y-2 opacity-85">
             <li v-for="(c, i) in baseGame!.controls" :key="i">• {{ c }}</li>
           </ul>
@@ -477,7 +558,11 @@ async function nativeShare() {
       </div>
 
       <ClientOnly>
-        <TopScoresPanel v-if="baseGame!.leaderboard" :game-slug="baseGame!.slug" :limit="3" />
+        <TopScoresPanel
+          v-if="baseGame!.leaderboard"
+          :game-slug="baseGame!.slug"
+          :limit="3"
+        />
       </ClientOnly>
     </div>
 
@@ -486,6 +571,7 @@ async function nativeShare() {
         <template #header>
           <div class="text-lg font-semibold">Controls</div>
         </template>
+
         <ul class="space-y-2 opacity-85">
           <li v-for="(c, i) in baseGame!.controls" :key="i">• {{ c }}</li>
         </ul>
@@ -503,12 +589,16 @@ async function nativeShare() {
               <span class="font-semibold">{{ baseGame!.name }}</span>
               <span class="text-xs opacity-70">Play</span>
             </div>
+
             <div class="flex items-center gap-2">
               <UButton v-if="showFullscreen" variant="ghost" @click="requestFullscreen">
-                <UIcon name="i-heroicons-arrows-pointing-out" class="w-5 h-5" /> Fullscreen
+                <UIcon name="i-heroicons-arrows-pointing-out" class="w-5 h-5" />
+                Fullscreen
               </UButton>
+
               <UButton variant="ghost" @click="closePlay">
-                <UIcon name="i-heroicons-x-mark" class="w-5 h-5" /> Close
+                <UIcon name="i-heroicons-x-mark" class="w-5 h-5" />
+                Close
               </UButton>
             </div>
           </div>
@@ -516,7 +606,10 @@ async function nativeShare() {
 
         <div
           class="absolute inset-0 z-[210]"
-          :style="{ paddingTop: 'calc(env(safe-area-inset-top) + 56px)', paddingBottom: 'env(safe-area-inset-bottom)' }"
+          :style="{
+            paddingTop: 'calc(env(safe-area-inset-top) + 56px)',
+            paddingBottom: 'env(safe-area-inset-bottom)'
+          }"
         >
           <div class="h-full p-2">
             <GamePlayer
