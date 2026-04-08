@@ -1,721 +1,828 @@
 <!DOCTYPE html>
 <html lang="en-us">
 <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>Unity Web Player | Boss Rush</title>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <title>Unity Web Player | Boss Rush</title>
 
-    <meta
-        name="viewport"
-        content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
-    />
+  <meta
+    name="viewport"
+    content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
+  />
 
-    <style>
-        :root {
-            --game-aspect: 9 / 16;
-            --frame-gap: 12px;
-            --frame-radius: 18px;
-            --frame-max-width: 460px;
-        }
+  <style>
+    :root {
+      --game-aspect: 9 / 16;
+      --frame-gap: 12px;
+      --frame-radius: 18px;
+      --frame-max-width: 460px;
+    }
 
-        * {
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-        }
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
 
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: #000;
-        }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
 
-        body {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: Arial, sans-serif;
-            text-align: center;
-            background: #000;
-        }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #000;
+    }
 
-        #unity-shell {
-            width: 100vw;
-            height: 100dvh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: var(--frame-gap);
-            overflow: hidden;
-            background: #000;
-        }
+    #unity-shell {
+      width: 100vw;
+      height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--frame-gap);
+      overflow: hidden;
+      background: #000;
+    }
 
-        #unity-frame {
-            position: relative;
-            aspect-ratio: var(--game-aspect);
-            height: min(calc(100dvh - (var(--frame-gap) * 2)), 100%);
-            width: auto;
-            max-width: min(
-                calc((100dvh - (var(--frame-gap) * 2)) * 9 / 16),
-                calc(100vw - (var(--frame-gap) * 2)),
-                var(--frame-max-width)
-            );
-            max-height: calc(100dvh - (var(--frame-gap) * 2));
-            background: #000;
-            overflow: hidden;
-            border-radius: var(--frame-radius);
-        }
+    #unity-frame {
+      position: relative;
+      aspect-ratio: var(--game-aspect);
+      height: min(calc(100dvh - (var(--frame-gap) * 2)), 100%);
+      width: auto;
+      max-width: min(
+        calc((100dvh - (var(--frame-gap) * 2)) * 9 / 16),
+        calc(100vw - (var(--frame-gap) * 2)),
+        var(--frame-max-width)
+      );
+      max-height: calc(100dvh - (var(--frame-gap) * 2));
+      background: #000;
+      overflow: hidden;
+      border-radius: var(--frame-radius);
+    }
 
-        @media (max-aspect-ratio: 9/16) {
-            #unity-frame {
-                width: min(calc(100vw - (var(--frame-gap) * 2)), var(--frame-max-width));
-                height: auto;
-                max-height: calc(100dvh - (var(--frame-gap) * 2));
-            }
-        }
+    @media (max-aspect-ratio: 9/16) {
+      #unity-frame {
+        width: min(calc(100vw - (var(--frame-gap) * 2)), var(--frame-max-width));
+        height: auto;
+        max-height: calc(100dvh - (var(--frame-gap) * 2));
+      }
+    }
 
-        @media (min-width: 900px) {
-            #unity-frame {
-                box-shadow:
-                    0 0 0 1px rgba(255,255,255,0.06),
-                    0 24px 80px rgba(0,0,0,0.45);
-            }
-        }
+    @media (min-width: 900px) {
+      #unity-frame {
+        box-shadow:
+          0 0 0 1px rgba(255,255,255,0.06),
+          0 24px 80px rgba(0,0,0,0.45);
+      }
+    }
 
-        #unity-container {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            background: #000;
-        }
+    #unity-container {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
 
-        #unity-canvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-            background: #000 url("Build/boss2.jpg") center / cover no-repeat;
-            touch-action: none;
-            -webkit-user-select: none;
-            user-select: none;
-            opacity: 0;
-            transition: opacity 0.15s ease;
-        }
+    #unity-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #000 url("Build/boss2.jpg") center / cover no-repeat;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
 
-        #unity-canvas.ready {
-            opacity: 1;
-        }
+    #unity-canvas.ready {
+      opacity: 1;
+    }
 
-        #loading-overlay {
-            position: absolute;
-            inset: 0;
-            z-index: 10;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(0, 0, 0, 0.18);
-            transition: opacity 0.15s ease;
-        }
+    #loading-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.18);
+      transition: opacity 0.15s ease;
+    }
 
-        #loading-overlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
+    #loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
 
-        .loader-box {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 14px;
-            padding: 18px 20px;
-            text-align: center;
-        }
+    .loader-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 18px 20px;
+      text-align: center;
+    }
 
-        .spinner {
-            width: 46px;
-            height: 46px;
-            border-radius: 50%;
-            border: 4px solid rgba(255,255,255,0.14);
-            border-top-color: #22d3ee;
-            animation: spin 0.75s linear infinite;
-        }
+    .spinner {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      border: 4px solid rgba(255,255,255,0.14);
+      border-top-color: #22d3ee;
+      animation: spin 0.75s linear infinite;
+    }
 
-        .loading-text {
-            color: rgba(255,255,255,0.95);
-            font-size: 15px;
-            line-height: 1.5;
-            font-weight: 600;
-            letter-spacing: 0.1px;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.45);
-            max-width: 260px;
-        }
+    .loading-text {
+      color: rgba(255,255,255,0.95);
+      font-size: 15px;
+      line-height: 1.5;
+      font-weight: 600;
+      letter-spacing: 0.1px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+      max-width: 260px;
+    }
 
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
 
-        #recording-ui {
-            position: fixed;
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            touch-action: none;
-            user-select: none;
-            -webkit-user-select: none;
+    #recording-ui {
+      position: fixed;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+      -webkit-user-select: none;
+      visibility: hidden;
+      opacity: 0;
+      right: 12px;
+      top: 12px;
+    }
 
-            /* keep hidden until exact position is applied */
-            visibility: hidden;
-            opacity: 0;
+    #recording-ui.positioned {
+      visibility: visible;
+      opacity: 1;
+    }
 
-            /* safe default */
-            right: 12px;
-            top: 12px;
-        }
+    #record-btn,
+    #record-status,
+    #record-toast {
+      pointer-events: auto;
+    }
 
-        #recording-ui.positioned {
-            visibility: visible;
-            opacity: 1;
-        }
+    #record-btn {
+      width: 56px;
+      height: 56px;
+      border: none;
+      outline: none;
+      cursor: grab;
+      border-radius: 999px;
+      padding: 0;
+      background: rgba(12, 12, 12, 0.88);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow:
+        0 8px 24px rgba(0,0,0,0.35),
+        inset 0 0 0 1px rgba(255,255,255,0.12);
+      transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+      touch-action: none;
+    }
 
-        #record-btn,
-        #record-status {
-            pointer-events: auto;
-        }
+    #record-btn:hover {
+      transform: translateY(-1px);
+    }
 
-        #record-btn {
-            width: 56px;
-            height: 56px;
-            border: none;
-            outline: none;
-            cursor: grab;
-            border-radius: 999px;
-            padding: 0;
-            background: rgba(12, 12, 12, 0.88);
-            color: #fff;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            box-shadow:
-                0 8px 24px rgba(0,0,0,0.35),
-                inset 0 0 0 1px rgba(255,255,255,0.12);
-            transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
-        }
+    #record-btn:active {
+      transform: translateY(0) scale(0.98);
+    }
 
-        #record-btn:hover {
-            transform: translateY(-1px);
-        }
+    #record-btn.recording {
+      background: rgba(160, 20, 20, 0.92);
+    }
 
-        #record-btn:active {
-            transform: translateY(0) scale(0.98);
-        }
+    #record-btn.busy {
+      opacity: 0.82;
+    }
 
-        #record-btn.recording {
-            background: rgba(160, 20, 20, 0.92);
-        }
+    #recording-ui.dragging #record-btn {
+      cursor: grabbing;
+      transform: none;
+    }
 
-        #record-btn:disabled {
-            cursor: not-allowed;
-            opacity: 0.7;
-        }
+    .record-btn-icon {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      display: inline-block;
+    }
 
-        #recording-ui.dragging #record-btn {
-            cursor: grabbing;
-            transform: none;
-        }
+    .record-btn-icon::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: #ff3b30;
+      box-shadow: 0 0 14px rgba(255, 59, 48, 0.35);
+    }
 
-        .record-btn-icon {
-            position: relative;
-            width: 22px;
-            height: 22px;
-            display: inline-block;
-        }
+    #record-btn.recording .record-btn-icon::before {
+      inset: 3px;
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: none;
+    }
 
-        .record-btn-icon::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            border-radius: 999px;
-            background: #ff3b30;
-            box-shadow: 0 0 14px rgba(255, 59, 48, 0.35);
-        }
+    #record-status {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+      white-space: nowrap;
+    }
 
-        #record-btn.recording .record-btn-icon::before {
-            inset: 3px;
-            border-radius: 6px;
-            background: #fff;
-            box-shadow: none;
-        }
+    #record-status.visible {
+      display: inline-flex;
+    }
 
-        #record-status {
-            display: none;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            border-radius: 999px;
-            background: rgba(0, 0, 0, 0.7);
-            color: #fff;
-            font-size: 12px;
-            font-weight: 700;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
-            white-space: nowrap;
-        }
+    .record-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ff3b30;
+      box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7);
+      animation: pulse 1.2s infinite;
+    }
 
-        #record-status.visible {
-            display: inline-flex;
-        }
+    #record-toast {
+      position: fixed;
+      left: 50%;
+      bottom: max(16px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      max-width: min(88vw, 360px);
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(10,10,10,0.86);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1.45;
+      box-shadow:
+        0 10px 30px rgba(0,0,0,0.35),
+        inset 0 0 0 1px rgba(255,255,255,0.08);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      visibility: hidden;
+      opacity: 0;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      z-index: 10000;
+      text-align: center;
+      pointer-events: none;
+    }
 
-        .record-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #ff3b30;
-            box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7);
-            animation: pulse 1.2s infinite;
-        }
+    #record-toast.visible {
+      visibility: visible;
+      opacity: 1;
+    }
 
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(255, 59, 48, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
-        }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(255, 59, 48, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
+    }
 
-        @media (prefers-reduced-motion: reduce) {
-            .spinner,
-            .record-dot {
-                animation-duration: 1.4s;
-            }
+    @media (prefers-reduced-motion: reduce) {
+      .spinner,
+      .record-dot {
+        animation-duration: 1.4s;
+      }
 
-            #unity-canvas,
-            #loading-overlay,
-            #record-btn {
-                transition: none;
-            }
-        }
-    </style>
+      #unity-canvas,
+      #loading-overlay,
+      #record-btn,
+      #record-toast {
+        transition: none;
+      }
+    }
+  </style>
 </head>
 
 <body>
-<div id="unity-shell">
+  <div id="unity-shell">
     <div id="unity-frame">
-        <div id="unity-container">
-            <canvas id="unity-canvas" tabindex="-1"></canvas>
+      <div id="unity-container">
+        <canvas id="unity-canvas" tabindex="-1"></canvas>
 
-            <div id="loading-overlay">
-                <div class="loader-box">
-                    <div class="spinner"></div>
-                    <div class="loading-text">অনুগ্রহ করে সময় দিয়ে সহযোগিতা করবেন, গেমটি লোড হচ্ছে</div>
-                </div>
-            </div>
+        <div id="loading-overlay">
+          <div class="loader-box">
+            <div class="spinner"></div>
+            <div class="loading-text">অনুগ্রহ করে সময় দিয়ে সহযোগিতা করবেন, গেমটি লোড হচ্ছে</div>
+          </div>
         </div>
+      </div>
     </div>
-</div>
+  </div>
 
-<div id="recording-ui">
-    <button id="record-btn" type="button" aria-label="Toggle recording" title="Recording">
-        <span class="record-btn-icon"></span>
+  <div id="recording-ui">
+    <button id="record-btn" type="button" aria-label="Start recording" title="Start recording">
+      <span class="record-btn-icon"></span>
     </button>
     <div id="record-status">
-        <span class="record-dot"></span>
-        <span id="record-status-text">REC 00:00</span>
+      <span class="record-dot"></span>
+      <span id="record-status-text">REC 00:00</span>
     </div>
-</div>
+  </div>
 
-<script src="Build/boss2.loader.js"></script>
-<script>
-(function () {
-    var canvas = document.querySelector("#unity-canvas");
-    var loadingOverlay = document.querySelector("#loading-overlay");
-    var unityFrame = document.querySelector("#unity-frame");
-    var unityContainer = document.querySelector("#unity-container");
+  <div id="record-toast" aria-live="polite"></div>
 
-    var recordingUI = document.querySelector("#recording-ui");
-    var recordBtn = document.querySelector("#record-btn");
-    var recordStatus = document.querySelector("#record-status");
-    var recordStatusText = document.querySelector("#record-status-text");
+  <script src="Build/boss2.loader.js"></script>
+  <script>
+    (function () {
+      var canvas = document.querySelector("#unity-canvas");
+      var loadingOverlay = document.querySelector("#loading-overlay");
+      var unityFrame = document.querySelector("#unity-frame");
+      var unityContainer = document.querySelector("#unity-container");
 
-    var runStartedAt = 0;
-    var auditSeq = 0;
-    var auditIntervalMs = 30000;
-    var auditTimer = null;
+      var recordingUI = document.querySelector("#recording-ui");
+      var recordBtn = document.querySelector("#record-btn");
+      var recordStatus = document.querySelector("#record-status");
+      var recordStatusText = document.querySelector("#record-status-text");
+      var recordToast = document.querySelector("#record-toast");
 
-    var canvasAudit = {
+      var runStartedAt = 0;
+      var auditSeq = 0;
+      var auditIntervalMs = 30000;
+      var auditTimer = null;
+
+      var canvasAudit = {
         startedAt: null,
         samples: [],
         latest: null,
         gameOver: null
-    };
+      };
 
-    var mediaRecorder = null;
-    var recordedChunks = [];
-    var canvasStream = null;
-    var currentRecordedMimeType = "";
-    var recordStartedAt = 0;
-    var recordTimer = null;
-    var autoStopTriggered = false;
-    var dragState = {
-        isPointerDown: false,
-        isDragging: false,
+      var mediaRecorder = null;
+      var recordedChunks = [];
+      var activeStream = null;
+      var activeMimeType = "";
+      var recordStartedAt = 0;
+      var recordTimer = null;
+      var autoStopTriggered = false;
+      var isStartingRecorder = false;
+      var mirrorCanvas = null;
+      var mirrorCtx = null;
+      var mirrorRafId = 0;
+
+      var dragState = {
+        active: false,
+        dragging: false,
+        moved: false,
         pointerId: null,
         startX: 0,
         startY: 0,
         startLeft: 0,
         startTop: 0,
-        moved: false,
-        threshold: 6
-    };
+        threshold: 8
+      };
 
-    function hideLoader() {
+      function hideLoader() {
         canvas.classList.add("ready");
         loadingOverlay.classList.add("hidden");
 
         setTimeout(function () {
-            if (loadingOverlay && loadingOverlay.parentNode) {
-                loadingOverlay.remove();
-            }
+          if (loadingOverlay && loadingOverlay.parentNode) {
+            loadingOverlay.remove();
+          }
         }, 180);
-    }
+      }
 
-    function nowIso() {
+      function nowIso() {
         try {
-            return new Date().toISOString();
+          return new Date().toISOString();
         } catch (e) {
-            return null;
+          return null;
         }
-    }
+      }
 
-    function getOrientationByRect(rect) {
+      function getOrientationByRect(rect) {
         if (!rect) return null;
         return rect.width > rect.height ? "landscape" : "portrait";
-    }
+      }
 
-    function rectData(el) {
+      function rectData(el) {
         if (!el || typeof el.getBoundingClientRect !== "function") return null;
         var rect = el.getBoundingClientRect();
 
         return {
-            width: Math.round(rect.width || 0),
-            height: Math.round(rect.height || 0)
+          width: Math.round(rect.width || 0),
+          height: Math.round(rect.height || 0)
         };
-    }
+      }
 
-    function ratioOf(rect) {
+      function ratioOf(rect) {
         if (!rect || !rect.width || !rect.height) return null;
         return Number((rect.width / rect.height).toFixed(6));
-    }
+      }
 
-    function buildCanvasAuditSample(phase) {
+      function buildCanvasAuditSample(phase) {
         var frameRect = rectData(unityFrame);
         var canvasRect = rectData(canvas);
         var containerRect = rectData(unityContainer);
         var now = Date.now();
 
         return {
-            seq: ++auditSeq,
-            phase: phase || "periodic",
-            capturedAt: nowIso(),
-            elapsedMs: runStartedAt > 0 ? Math.max(0, now - runStartedAt) : 0,
-            canvas: canvasRect,
-            frame: frameRect,
-            container: containerRect,
-            canvasRatio: ratioOf(canvasRect),
-            frameRatio: ratioOf(frameRect),
-            orientation: getOrientationByRect(canvasRect)
+          seq: ++auditSeq,
+          phase: phase || "periodic",
+          capturedAt: nowIso(),
+          elapsedMs: runStartedAt > 0 ? Math.max(0, now - runStartedAt) : 0,
+          canvas: canvasRect,
+          frame: frameRect,
+          container: containerRect,
+          canvasRatio: ratioOf(canvasRect),
+          frameRatio: ratioOf(frameRect),
+          orientation: getOrientationByRect(canvasRect)
         };
-    }
+      }
 
-    function postAuditToParent(sample) {
+      function postAuditToParent(sample) {
         try {
-            if (window.parent && window.parent !== window) {
-                window.parent.postMessage(
-                    {
-                        type: "IA_CANVAS_AUDIT",
-                        payload: sample
-                    },
-                    "*"
-                );
-            }
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage(
+              {
+                type: "IA_CANVAS_AUDIT",
+                payload: sample
+              },
+              "*"
+            );
+          }
         } catch (e) {}
-    }
+      }
 
-    function recordAuditSample(phase) {
+      function recordAuditSample(phase) {
         var sample = buildCanvasAuditSample(phase);
 
         canvasAudit.latest = sample;
         canvasAudit.samples.push(sample);
 
         if (phase === "game_over") {
-            canvasAudit.gameOver = sample;
+          canvasAudit.gameOver = sample;
         }
 
         postAuditToParent(sample);
         return sample;
-    }
+      }
 
-    function startCanvasAudit() {
-        if (auditTimer) {
-            clearInterval(auditTimer);
-            auditTimer = null;
-        }
-
+      function startCanvasAudit() {
+        stopCanvasAudit();
         auditTimer = setInterval(function () {
-            recordAuditSample("periodic");
+          recordAuditSample("periodic");
         }, auditIntervalMs);
-    }
+      }
 
-    function stopCanvasAudit() {
+      function stopCanvasAudit() {
         if (auditTimer) {
-            clearInterval(auditTimer);
-            auditTimer = null;
+          clearInterval(auditTimer);
+          auditTimer = null;
         }
-    }
+      }
 
-    function supportsCanvasRecording() {
-        return !!(
-            canvas &&
-            typeof canvas.captureStream === "function" &&
-            window.MediaRecorder
-        );
-    }
+      function showToast(message, duration) {
+        if (!recordToast) return;
+        recordToast.textContent = message || "";
+        recordToast.classList.add("visible");
 
-    function showRecordingStatus() {
-        if (recordStatus) {
-            recordStatus.classList.add("visible");
-        }
-    }
+        clearTimeout(showToast._timer);
+        showToast._timer = setTimeout(function () {
+          recordToast.classList.remove("visible");
+        }, typeof duration === "number" ? duration : 2600);
+      }
 
-    function hideRecordingStatus() {
-        if (recordStatus) {
-            recordStatus.classList.remove("visible");
-        }
-    }
-
-    function formatDuration(ms) {
+      function formatDuration(ms) {
         var totalSec = Math.max(0, Math.floor(ms / 1000));
         var min = Math.floor(totalSec / 60);
         var sec = totalSec % 60;
         return String(min).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
-    }
+      }
 
-    function startRecordClock() {
+      function showRecordingStatus() {
+        recordStatus.classList.add("visible");
+      }
+
+      function hideRecordingStatus() {
+        recordStatus.classList.remove("visible");
+      }
+
+      function startRecordClock() {
         stopRecordClock();
         recordStartedAt = Date.now();
-        if (recordStatusText) {
-            recordStatusText.textContent = "REC 00:00";
-        }
+        recordStatusText.textContent = "REC 00:00";
         showRecordingStatus();
 
         recordTimer = setInterval(function () {
-            if (recordStatusText) {
-                recordStatusText.textContent = "REC " + formatDuration(Date.now() - recordStartedAt);
-            }
+          recordStatusText.textContent = "REC " + formatDuration(Date.now() - recordStartedAt);
         }, 500);
-    }
+      }
 
-    function stopRecordClock() {
+      function stopRecordClock() {
         if (recordTimer) {
-            clearInterval(recordTimer);
-            recordTimer = null;
+          clearInterval(recordTimer);
+          recordTimer = null;
         }
-    }
+      }
 
-    function setRecordButtonIdle() {
-        if (!recordBtn) return;
-        recordBtn.disabled = false;
-        recordBtn.classList.remove("recording");
+      function setRecordButtonIdle() {
+        recordBtn.classList.remove("recording", "busy");
         recordBtn.setAttribute("aria-label", "Start recording");
         recordBtn.setAttribute("title", "Start recording");
-    }
+      }
 
-    function setRecordButtonRecording() {
-        if (!recordBtn) return;
-        recordBtn.disabled = false;
+      function setRecordButtonBusy() {
+        recordBtn.classList.add("busy");
+        recordBtn.classList.remove("recording");
+        recordBtn.setAttribute("aria-label", "Starting recording");
+        recordBtn.setAttribute("title", "Starting recording");
+      }
+
+      function setRecordButtonRecording() {
+        recordBtn.classList.remove("busy");
         recordBtn.classList.add("recording");
         recordBtn.setAttribute("aria-label", "Stop recording");
         recordBtn.setAttribute("title", "Stop recording");
-    }
+      }
 
-    function setRecordButtonUnsupported() {
-        if (!recordBtn) return;
-        recordBtn.disabled = true;
-        recordBtn.classList.remove("recording");
-        recordBtn.setAttribute("aria-label", "Recording unsupported");
-        recordBtn.setAttribute("title", "Recording unsupported");
-    }
-
-    function stopTracks(stream) {
+      function stopTracks(stream) {
         if (!stream) return;
         try {
-            stream.getTracks().forEach(function (track) {
-                try {
-                    track.stop();
-                } catch (e) {}
-            });
+          stream.getTracks().forEach(function (track) {
+            try { track.stop(); } catch (e) {}
+          });
         } catch (e) {}
-    }
+      }
 
-    function pickSupportedMimeType() {
+      function stopMirrorCanvasLoop() {
+        if (mirrorRafId) {
+          cancelAnimationFrame(mirrorRafId);
+          mirrorRafId = 0;
+        }
+        mirrorCtx = null;
+        mirrorCanvas = null;
+      }
+
+      function startMirrorCanvasLoop(sourceCanvas) {
+        stopMirrorCanvasLoop();
+
+        mirrorCanvas = document.createElement("canvas");
+        mirrorCanvas.width = Math.max(1, sourceCanvas.width || sourceCanvas.clientWidth || 720);
+        mirrorCanvas.height = Math.max(1, sourceCanvas.height || sourceCanvas.clientHeight || 1280);
+        mirrorCtx = mirrorCanvas.getContext("2d", { alpha: false });
+
+        function tick() {
+          if (!mirrorCanvas || !mirrorCtx || !sourceCanvas) return;
+          try {
+            if (
+              mirrorCanvas.width !== Math.max(1, sourceCanvas.width || sourceCanvas.clientWidth || 720) ||
+              mirrorCanvas.height !== Math.max(1, sourceCanvas.height || sourceCanvas.clientHeight || 1280)
+            ) {
+              mirrorCanvas.width = Math.max(1, sourceCanvas.width || sourceCanvas.clientWidth || 720);
+              mirrorCanvas.height = Math.max(1, sourceCanvas.height || sourceCanvas.clientHeight || 1280);
+            }
+            mirrorCtx.drawImage(sourceCanvas, 0, 0, mirrorCanvas.width, mirrorCanvas.height);
+          } catch (e) {}
+          mirrorRafId = requestAnimationFrame(tick);
+        }
+
+        tick();
+        return mirrorCanvas;
+      }
+
+      function pickSupportedMimeType() {
         var candidates = [
-            "video/mp4;codecs=h264,aac",
-            "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
-            "video/mp4",
-            "video/webm;codecs=vp9,opus",
-            "video/webm;codecs=vp8,opus",
-            "video/webm"
+          "video/mp4;codecs=h264,aac",
+          "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+          "video/mp4",
+          "video/webm;codecs=vp9,opus",
+          "video/webm;codecs=vp8,opus",
+          "video/webm"
         ];
 
         if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== "function") {
-            return "";
+          return "";
         }
 
         for (var i = 0; i < candidates.length; i++) {
+          try {
             if (MediaRecorder.isTypeSupported(candidates[i])) {
-                return candidates[i];
+              return candidates[i];
             }
+          } catch (e) {}
         }
 
         return "";
-    }
+      }
 
-    function getFileExtensionFromMimeType(mimeType) {
+      function getFileExtensionFromMimeType(mimeType) {
         if (!mimeType) return "webm";
         return mimeType.indexOf("mp4") !== -1 ? "mp4" : "webm";
-    }
+      }
 
-    function downloadRecording(blob, mimeType) {
+      function downloadRecording(blob, mimeType) {
         var ext = getFileExtensionFromMimeType(mimeType);
         var stamp = new Date().toISOString().replace(/[:.]/g, "-");
         var filename = "boss-rush-recording-" + stamp + "." + ext;
         var url = URL.createObjectURL(blob);
 
         try {
-            var a = document.createElement("a");
-            a.href = url;
-            a.download = filename;
-            a.rel = "noopener";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          a.rel = "noopener";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
         } catch (e) {
-            console.error("Failed to trigger download", e);
+          console.error("Failed to trigger download", e);
+          showToast("Recording finished, but auto-download failed on this browser.");
         }
 
         setTimeout(function () {
-            URL.revokeObjectURL(url);
-        }, 1500);
-    }
+          URL.revokeObjectURL(url);
+        }, 2000);
+      }
 
-    function cleanupRecordingState() {
-        stopTracks(canvasStream);
-        canvasStream = null;
+      function cleanupRecordingState() {
+        stopTracks(activeStream);
+        activeStream = null;
         mediaRecorder = null;
         recordedChunks = [];
-        currentRecordedMimeType = "";
+        activeMimeType = "";
         autoStopTriggered = false;
+        isStartingRecorder = false;
         stopRecordClock();
         hideRecordingStatus();
+        stopMirrorCanvasLoop();
         setRecordButtonIdle();
-    }
+      }
 
-    function startCanvasRecording() {
-        if (!supportsCanvasRecording()) {
-            alert("এই ব্রাউজারে canvas recording support নেই।");
-            return;
+      function createRecorderFromStream(stream) {
+        var mimeType = pickSupportedMimeType();
+        var recorder = null;
+
+        if (!window.MediaRecorder) {
+          throw new Error("MediaRecorder not supported");
         }
+
+        if (mimeType) {
+          try {
+            recorder = new MediaRecorder(stream, { mimeType: mimeType });
+            activeMimeType = mimeType;
+            return recorder;
+          } catch (e) {}
+        }
+
+        recorder = new MediaRecorder(stream);
+        activeMimeType = recorder.mimeType || mimeType || "video/webm";
+        return recorder;
+      }
+
+      function getBestRecordStream() {
+        if (!canvas) {
+          throw new Error("Canvas not found");
+        }
+
+        if (typeof canvas.captureStream === "function") {
+          try {
+            return canvas.captureStream(30);
+          } catch (e) {}
+        }
+
+        var mirrored = startMirrorCanvasLoop(canvas);
+        if (mirrored && typeof mirrored.captureStream === "function") {
+          try {
+            return mirrored.captureStream(30);
+          } catch (e) {}
+        }
+
+        throw new Error("Canvas stream unavailable");
+      }
+
+      function startCanvasRecording() {
+        if (isStartingRecorder) return Promise.resolve(false);
 
         if (mediaRecorder && mediaRecorder.state === "recording") {
-            return;
+          return Promise.resolve(true);
         }
 
-        try {
+        isStartingRecorder = true;
+        setRecordButtonBusy();
+
+        return new Promise(function (resolve) {
+          try {
             recordedChunks = [];
             autoStopTriggered = false;
-            canvasStream = canvas.captureStream(30);
 
-            var mimeType = pickSupportedMimeType();
-            currentRecordedMimeType = mimeType || "";
-            var options = mimeType ? { mimeType: mimeType } : undefined;
+            var stream = getBestRecordStream();
+            activeStream = stream;
 
-            mediaRecorder = new MediaRecorder(canvasStream, options);
+            mediaRecorder = createRecorderFromStream(stream);
 
             mediaRecorder.ondataavailable = function (event) {
-                if (event.data && event.data.size > 0) {
-                    recordedChunks.push(event.data);
-                }
+              if (event.data && event.data.size > 0) {
+                recordedChunks.push(event.data);
+              }
             };
 
             mediaRecorder.onerror = function (event) {
-                console.error("MediaRecorder error:", event);
-                cleanupRecordingState();
+              console.error("MediaRecorder error:", event);
+              showToast("Recording could not start on this device/browser.");
+              cleanupRecordingState();
+              resolve(false);
             };
 
             mediaRecorder.onstop = function () {
-                try {
-                    var finalMime =
-                        currentRecordedMimeType ||
-                        (mediaRecorder && mediaRecorder.mimeType) ||
-                        "video/webm";
-
-                    if (recordedChunks.length > 0) {
-                        var blob = new Blob(recordedChunks, { type: finalMime });
-                        downloadRecording(blob, finalMime);
-                    }
-                } catch (e) {
-                    console.error("Failed to save recording", e);
+              try {
+                var finalMime = activeMimeType || mediaRecorder.mimeType || "video/webm";
+                if (recordedChunks.length > 0) {
+                  var blob = new Blob(recordedChunks, { type: finalMime });
+                  downloadRecording(blob, finalMime);
+                } else {
+                  showToast("No recording data was captured.");
                 }
+              } catch (e) {
+                console.error("Failed to save recording", e);
+                showToast("Recording finished, but saving failed.");
+              }
 
-                cleanupRecordingState();
+              cleanupRecordingState();
             };
 
             mediaRecorder.start(1000);
-            startRecordClock();
             setRecordButtonRecording();
-        } catch (err) {
+            startRecordClock();
+            isStartingRecorder = false;
+            showToast("Recording started");
+            resolve(true);
+          } catch (err) {
             console.error("Failed to start canvas recording:", err);
             cleanupRecordingState();
-        }
-    }
+            showToast("This device/browser does not support recording here.");
+            resolve(false);
+          }
+        });
+      }
 
-    function stopCanvasRecording() {
+      function stopCanvasRecording() {
         if (mediaRecorder && mediaRecorder.state === "recording") {
-            try {
-                mediaRecorder.stop();
-            } catch (e) {
-                console.error("Failed to stop recorder", e);
-                cleanupRecordingState();
-            }
-        } else {
+          try {
+            mediaRecorder.stop();
+          } catch (e) {
+            console.error("Failed to stop recorder", e);
             cleanupRecordingState();
+          }
+        } else {
+          cleanupRecordingState();
         }
-    }
+      }
 
-    function stopCanvasRecordingOnce() {
+      function stopCanvasRecordingOnce() {
         if (autoStopTriggered) return;
         autoStopTriggered = true;
         stopCanvasRecording();
-    }
+      }
 
-    function markRecordingUIPositioned() {
-        if (recordingUI) {
-            recordingUI.classList.add("positioned");
-        }
-    }
+      function markRecordingUIPositioned() {
+        recordingUI.classList.add("positioned");
+      }
 
-    function setRecordingUIPosition(left, top) {
+      function setRecordingUIPosition(left, top) {
         var rect = recordingUI.getBoundingClientRect();
-        var maxLeft = Math.max(0, window.innerWidth - rect.width);
-        var maxTop = Math.max(0, window.innerHeight - rect.height);
+        var width = rect.width || 56;
+        var height = rect.height || 56;
+
+        var maxLeft = Math.max(0, window.innerWidth - width);
+        var maxTop = Math.max(0, window.innerHeight - height);
 
         var clampedLeft = Math.min(Math.max(0, left), maxLeft);
         var clampedTop = Math.min(Math.max(0, top), maxTop);
@@ -726,61 +833,62 @@
         recordingUI.style.bottom = "auto";
 
         markRecordingUIPositioned();
-    }
+      }
 
-    function saveRecordingUIPosition() {
+      function saveRecordingUIPosition() {
         try {
-            localStorage.setItem("ia_recording_ui_position", JSON.stringify({
-                left: parseFloat(recordingUI.style.left || "0"),
-                top: parseFloat(recordingUI.style.top || "0")
-            }));
+          localStorage.setItem("ia_recording_ui_position", JSON.stringify({
+            left: parseFloat(recordingUI.style.left || "0"),
+            top: parseFloat(recordingUI.style.top || "0")
+          }));
         } catch (e) {}
-    }
+      }
 
-    function clearSavedRecordingUIPosition() {
+      function clearSavedRecordingUIPosition() {
         try {
-            localStorage.removeItem("ia_recording_ui_position");
+          localStorage.removeItem("ia_recording_ui_position");
         } catch (e) {}
-    }
+      }
 
-    function setInitialRecordingUIPositionInCanvas() {
+      function setInitialRecordingUIPositionInCanvas() {
         var frameRect = unityFrame.getBoundingClientRect();
         var uiRect = recordingUI.getBoundingClientRect();
 
-        var left = frameRect.right - uiRect.width - 12;
+        var uiWidth = uiRect.width || 56;
+        var left = frameRect.right - uiWidth - 12;
         var top = frameRect.top + 12;
 
         setRecordingUIPosition(left, top);
-    }
+      }
 
-    function restoreRecordingUIPosition() {
+      function restoreRecordingUIPosition() {
         try {
-            var raw = localStorage.getItem("ia_recording_ui_position");
+          var raw = localStorage.getItem("ia_recording_ui_position");
 
-            if (!raw) {
-                setInitialRecordingUIPositionInCanvas();
-                return;
-            }
+          if (!raw) {
+            setInitialRecordingUIPositionInCanvas();
+            return;
+          }
 
-            var parsed = JSON.parse(raw);
+          var parsed = JSON.parse(raw);
 
-            if (typeof parsed.left === "number" && typeof parsed.top === "number") {
-                setRecordingUIPosition(parsed.left, parsed.top);
-            } else {
-                clearSavedRecordingUIPosition();
-                setInitialRecordingUIPositionInCanvas();
-            }
-        } catch (e) {
+          if (typeof parsed.left === "number" && typeof parsed.top === "number") {
+            setRecordingUIPosition(parsed.left, parsed.top);
+          } else {
             clearSavedRecordingUIPosition();
             setInitialRecordingUIPositionInCanvas();
+          }
+        } catch (e) {
+          clearSavedRecordingUIPosition();
+          setInitialRecordingUIPositionInCanvas();
         }
-    }
+      }
 
-    function handleDragStart(event) {
-        if (!recordingUI || !recordBtn || recordBtn.disabled) return;
+      function beginDrag(event) {
+        if (!recordBtn || !recordingUI) return;
 
-        dragState.isPointerDown = true;
-        dragState.isDragging = false;
+        dragState.active = true;
+        dragState.dragging = false;
         dragState.moved = false;
         dragState.pointerId = event.pointerId;
         dragState.startX = event.clientX;
@@ -792,143 +900,184 @@
         dragState.startTop = rect.top;
 
         if (recordBtn.setPointerCapture) {
-            try {
-                recordBtn.setPointerCapture(event.pointerId);
-            } catch (e) {}
+          try {
+            recordBtn.setPointerCapture(event.pointerId);
+          } catch (e) {}
         }
-    }
+      }
 
-    function handleDragMove(event) {
-        if (!dragState.isPointerDown || dragState.pointerId !== event.pointerId) return;
+      function moveDrag(event) {
+        if (!dragState.active || dragState.pointerId !== event.pointerId) return;
 
         var dx = event.clientX - dragState.startX;
         var dy = event.clientY - dragState.startY;
         var distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (!dragState.isDragging && distance >= dragState.threshold) {
-            dragState.isDragging = true;
-            dragState.moved = true;
-            recordingUI.classList.add("dragging");
+        if (!dragState.dragging && distance >= dragState.threshold) {
+          dragState.dragging = true;
+          dragState.moved = true;
+          recordingUI.classList.add("dragging");
         }
 
-        if (!dragState.isDragging) return;
+        if (!dragState.dragging) return;
 
         event.preventDefault();
         setRecordingUIPosition(dragState.startLeft + dx, dragState.startTop + dy);
-    }
+      }
 
-    function handleDragEnd(event) {
-        if (dragState.pointerId !== null && event.pointerId !== dragState.pointerId) return;
+      function endDrag(event) {
+        if (!dragState.active || dragState.pointerId !== event.pointerId) return;
 
         if (recordBtn.releasePointerCapture) {
-            try {
-                recordBtn.releasePointerCapture(event.pointerId);
-            } catch (e) {}
+          try {
+            recordBtn.releasePointerCapture(event.pointerId);
+          } catch (e) {}
         }
 
-        if (dragState.isDragging) {
-            saveRecordingUIPosition();
+        if (dragState.dragging) {
+          saveRecordingUIPosition();
+        } else {
+          toggleRecordingFromUserGesture();
         }
 
         setTimeout(function () {
-            dragState.isPointerDown = false;
-            dragState.isDragging = false;
-            dragState.pointerId = null;
-            recordingUI.classList.remove("dragging");
+          dragState.active = false;
+          dragState.dragging = false;
+          dragState.pointerId = null;
+          recordingUI.classList.remove("dragging");
         }, 0);
-    }
+      }
 
-    if (recordBtn) {
-        recordBtn.addEventListener("pointerdown", handleDragStart);
-        recordBtn.addEventListener("pointermove", handleDragMove);
-        recordBtn.addEventListener("pointerup", handleDragEnd);
-        recordBtn.addEventListener("pointercancel", handleDragEnd);
+      function cancelDrag(event) {
+        if (dragState.pointerId !== null && event.pointerId !== dragState.pointerId) return;
+
+        if (recordBtn.releasePointerCapture) {
+          try {
+            recordBtn.releasePointerCapture(event.pointerId);
+          } catch (e) {}
+        }
+
+        dragState.active = false;
+        dragState.dragging = false;
+        dragState.pointerId = null;
+        recordingUI.classList.remove("dragging");
+      }
+
+      function toggleRecordingFromUserGesture() {
+        if (isStartingRecorder) return;
+
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          stopCanvasRecording();
+          return;
+        }
+
+        startCanvasRecording();
+      }
+
+      function attachRecordButtonHandlers() {
+        if (!recordBtn) return;
+
+        recordBtn.addEventListener("pointerdown", function (event) {
+          if (event.button !== undefined && event.button !== 0) return;
+          event.preventDefault();
+          beginDrag(event);
+        }, { passive: false });
+
+        recordBtn.addEventListener("pointermove", function (event) {
+          moveDrag(event);
+        }, { passive: false });
+
+        recordBtn.addEventListener("pointerup", function (event) {
+          event.preventDefault();
+          endDrag(event);
+        }, { passive: false });
+
+        recordBtn.addEventListener("pointercancel", function (event) {
+          cancelDrag(event);
+        }, { passive: false });
 
         recordBtn.addEventListener("click", function (event) {
-            if (dragState.moved) {
-                event.preventDefault();
-                event.stopPropagation();
-                dragState.moved = false;
-                return;
-            }
+          event.preventDefault();
+        }, { passive: false });
 
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                stopCanvasRecording();
-            } else {
-                startCanvasRecording();
-            }
+        recordBtn.addEventListener("keydown", function (event) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            toggleRecordingFromUserGesture();
+          }
         });
-    }
+      }
 
-    window.addEventListener("resize", function () {
+      window.addEventListener("resize", function () {
         var hasSavedPosition = false;
-
         try {
-            hasSavedPosition = !!localStorage.getItem("ia_recording_ui_position");
+          hasSavedPosition = !!localStorage.getItem("ia_recording_ui_position");
         } catch (e) {}
 
         if (hasSavedPosition) {
-            var rect = recordingUI.getBoundingClientRect();
-            setRecordingUIPosition(rect.left, rect.top);
-            saveRecordingUIPosition();
+          var rect = recordingUI.getBoundingClientRect();
+          setRecordingUIPosition(rect.left, rect.top);
+          saveRecordingUIPosition();
         } else {
-            setInitialRecordingUIPositionInCanvas();
+          setInitialRecordingUIPositionInCanvas();
         }
-    });
+      });
 
-    window.IA_RecordCanvasCheckpoint = function () {
+      window.IA_RecordCanvasCheckpoint = function () {
         return recordAuditSample("manual");
-    };
+      };
 
-    window.IA_RecordCanvasGameOver = function () {
+      window.IA_RecordCanvasGameOver = function () {
         var sample = recordAuditSample("game_over");
 
         if (mediaRecorder && mediaRecorder.state === "recording") {
-            setTimeout(function () {
-                stopCanvasRecordingOnce();
-            }, 500);
+          setTimeout(function () {
+            stopCanvasRecordingOnce();
+          }, 500);
         }
 
         return sample;
-    };
+      };
 
-    window.IA_GetCanvasAuditMeta = function () {
+      window.IA_GetCanvasAuditMeta = function () {
         return {
-            canvas_audit: JSON.parse(JSON.stringify(canvasAudit))
+          canvas_audit: JSON.parse(JSON.stringify(canvasAudit))
         };
-    };
+      };
 
-    window.addEventListener("message", function (event) {
+      window.addEventListener("message", function (event) {
         try {
-            var data = event.data || {};
-            if (data.type === "STOP_CANVAS_RECORDING") {
-                stopCanvasRecordingOnce();
-            }
+          var data = event.data || {};
+          if (data.type === "STOP_CANVAS_RECORDING") {
+            stopCanvasRecordingOnce();
+          }
         } catch (e) {
-            console.error("message handler error", e);
+          console.error("message handler error", e);
         }
-    });
+      });
 
-    window.addEventListener("pagehide", function () {
+      window.addEventListener("pagehide", function () {
         stopCanvasAudit();
         if (mediaRecorder && mediaRecorder.state === "recording") {
-            stopCanvasRecording();
+          stopCanvasRecording();
         } else {
-            cleanupRecordingState();
+          cleanupRecordingState();
         }
-    });
+      });
 
-    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
         var meta = document.createElement("meta");
         meta.name = "viewport";
         meta.content =
-            "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover";
+          "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover";
         document.getElementsByTagName("head")[0].appendChild(meta);
 
         document.body.style.textAlign = "left";
-    }
+      }
 
-    createUnityInstance(canvas, {
+      attachRecordButtonHandlers();
+
+      createUnityInstance(canvas, {
         arguments: [],
         dataUrl: "Build/boss2.data.br",
         frameworkUrl: "Build/boss2.framework.js.br",
@@ -937,7 +1086,7 @@
         companyName: "illusion Lab",
         productName: "Boss Rush",
         productVersion: "0.11"
-    }).then(function (unityInstance) {
+      }).then(function (unityInstance) {
         window.unityInstance = unityInstance;
         hideLoader();
 
@@ -947,17 +1096,13 @@
         recordAuditSample("start");
         startCanvasAudit();
         restoreRecordingUIPosition();
-
-        if (!supportsCanvasRecording()) {
-            setRecordButtonUnsupported();
-        } else {
-            setRecordButtonIdle();
-        }
-    }).catch(function (message) {
+        setRecordButtonIdle();
+      }).catch(function (message) {
         alert(message);
         restoreRecordingUIPosition();
-    });
-})();
-</script>
+        setRecordButtonIdle();
+      });
+    })();
+  </script>
 </body>
 </html>
