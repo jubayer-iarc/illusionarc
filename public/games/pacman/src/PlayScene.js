@@ -5,30 +5,38 @@ var EVENT_PLAYSCENE_READY = 'EVENT_PLAYSCENE_READY';
 function PlayScene(game, maps) {
   this._game = game;
   this._maps = maps || this._getDefaultMaps();
-  
+
   this._readyMessage = new ReadyMessage();
   this._readyMessage.setVisibilityDuration(READY_MESSAGE_DURATION_LONG);
   this._readyMessage.show();
-  
+
   this._cherry = new Cherry(this);
-  
+
   this._pacman = new Pacman(this, game);
   this._pacman.setStrategy(new PacmanPlaySceneStrategy(this._pacman, this));
   this._pacman.setSpeed(4);
   this._pacman.requestNewDirection(DIRECTION_RIGHT);
-  
+
   this._currentLevel = 1;
-  this.loadMap(this._getMapForCurrentLevel());
-  
   this._score = 0;
+  this._syncGlobalScore();
+
   this._x = 50;
   this._y = 50;
-  
+
+  this.loadMap(this._getMapForCurrentLevel());
+
   this.setGhostScoreValue(200);
   this._pointsMessage = new PointsMessage(this);
   this._pacmanDiesPause = new PacmanDiesPause(this, game);
-  this._game.getEventManager().fireEvent({'name': EVENT_PLAYSCENE_READY});
+  this._game.getEventManager().fireEvent({ 'name': EVENT_PLAYSCENE_READY });
 }
+
+PlayScene.prototype._syncGlobalScore = function () {
+  try {
+    window.__PACMAN_SCORE__ = Number(this._score) || 0;
+  } catch (e) {}
+};
 
 PlayScene.prototype.getX = function () {
   return this._x;
@@ -43,17 +51,17 @@ PlayScene.prototype.tick = function () {
   this._readyMessage.tick();
   this._pointsMessage.tick();
   this._pacman.tick();
-  
+
   for (var ghost in this._ghosts) {
     this._ghosts[ghost].tick();
   }
-  
+
   for (var pellet in this._pellets) {
     if (this._pellets[pellet] instanceof PowerPellet) {
       this._pellets[pellet].tick();
     }
   }
-  
+
   this._cherry.tick();
 };
 
@@ -61,18 +69,18 @@ PlayScene.prototype.draw = function (ctx) {
   for (var wall in this._walls) {
     this._walls[wall].draw(ctx);
   }
-  
+
   for (var pellet in this._pellets) {
     this._pellets[pellet].draw(ctx);
   }
-  
+
   this._cherry.draw(ctx);
   this._pacman.draw(ctx);
-  
+
   for (var ghost in this._ghosts) {
     this._ghosts[ghost].draw(ctx);
   }
-  
+
   this._gate.draw(ctx);
   this._drawScore(ctx);
   this._drawLives(ctx);
@@ -84,16 +92,16 @@ PlayScene.prototype._drawScore = function (ctx) {
   var SCORE_X = 55;
   var SCORE_Y = 30;
   ctx.fillStyle = "#dedede";
-  ctx.font = "bold 14px 'Lucida Console', Monaco, monospace"
+  ctx.font = "bold 14px 'Lucida Console', Monaco, monospace";
   var text = "SCORE: " + this._score;
   ctx.fillText(text, SCORE_X, SCORE_Y);
 };
 
 PlayScene.prototype._drawLives = function (ctx) {
   var x = 55;
-  var width = 18
+  var width = 18;
   var y = 430;
-  
+
   for (var i = 0; i < this._pacman.getLivesCount(); ++i) {
     ctx.drawImage(ImageManager.getImage('pacman_3l'), x + i * width, y);
   }
@@ -115,18 +123,18 @@ PlayScene.prototype.loadMap = function (map) {
   this._walls = [];
   this._pellets = [];
   this._ghosts = [];
-  
+
   var numRows = map.length;
   var numCols = map[0].length;
-  
+
   this._mapRows = numRows;
   this._mapCols = numCols;
-  
+
   for (var row = 0; row < numRows; ++row) {
     for (var col = 0; col < numCols; ++col) {
       var tile = map[row][col];
       var position = new Position(col * TILE_SIZE, row * TILE_SIZE);
-      
+
       if (tile == '#') {
         var wall = new Wall(this._getWallImage(map, row, col), this);
         wall.setPosition(position);
@@ -144,7 +152,7 @@ PlayScene.prototype.loadMap = function (map) {
       }
       else if (tile == '-') {
         this._lairPosition = new Position(position.x, position.y + TILE_SIZE);
-          
+
         var gate = new Gate(this);
         position.y += (TILE_SIZE - GATE_HEIGHT) / 2 + 1;
         gate.setPosition(position);
@@ -154,7 +162,7 @@ PlayScene.prototype.loadMap = function (map) {
         this._pacman.setStartPosition(position);
         this._pacman.setPosition(position);
         this._pacman.setFrame(0);
-        
+
         this._cherry.setPosition(position);
       }
       else if (tile == '1' || tile == '2' || tile == '3' || tile == '4') {
@@ -171,6 +179,7 @@ PlayScene.prototype.loadMap = function (map) {
         else if (tile == '4') {
           name = GHOST_CLYDE;
         }
+
         var ghost = new Ghost(name, this);
         ghost.setPosition(position);
         ghost.setStartPosition(position);
@@ -178,10 +187,12 @@ PlayScene.prototype.loadMap = function (map) {
       }
     }
   }
-  
+
   for (var i in this._ghosts) {
     this._ghosts[i].setRandomDirectionNotBlockedByWall();
   }
+
+  this._syncGlobalScore();
 };
 
 PlayScene.prototype._getWallImage = function (map, row, col) {
@@ -189,7 +200,7 @@ PlayScene.prototype._getWallImage = function (map, row, col) {
   var numCols = map[0].length;
   var lastRow = numRows - 1;
   var lastCol = numCols - 1;
-  
+
   if ((col > 0 && col < lastCol) &&
       (map[row][col-1] == '#' && map[row][col+1] == '#') &&
       ((row == 0 || map[row-1][col] != '#') && (row == lastRow || map[row+1][col] != '#'))) {
@@ -260,7 +271,7 @@ PlayScene.prototype._getWallImage = function (map, row, col) {
       (col == lastCol || map[row][col+1] != '#')) {
     return 'wall_mr';
   }
-  
+
   return null;
 };
 
@@ -307,8 +318,10 @@ PlayScene.prototype.nextLevel = function () {
     this._game.setScene(new StartupScene(this._game));
     return;
   }
+
   this.loadMap(this._getMapForCurrentLevel());
   this._readyMessage.show();
+  this._syncGlobalScore();
 };
 
 PlayScene.prototype.setGhostScoreValue = function (value) {
@@ -320,7 +333,7 @@ PlayScene.prototype.addScoreForEatenGhost = function (ghost) {
   var amount = this._previousEatenGhostScoreValue == 0 ? this._ghostScoreValue : this._previousEatenGhostScoreValue * 2;
   this.increaseScore(amount);
   this._previousEatenGhostScoreValue = amount;
-  
+
   this._pointsMessage.setEatenGhost(ghost);
   this._pointsMessage.setValue(amount);
   this._pointsMessage.setPosition(this._pacman.getPosition());
@@ -333,8 +346,7 @@ PlayScene.prototype.getScore = function () {
 
 PlayScene.prototype.increaseScore = function (amount) {
   this._score += amount;
-   // ✅ Keep latest score accessible globally
-  window.__PACMAN_SCORE__ = this._score;
+  this._syncGlobalScore();
 };
 
 PlayScene.prototype.getPointsMessage = function () {
@@ -370,7 +382,6 @@ PlayScene.prototype.getRight = function () {
   return this.getWidth() - 1;
 };
 
-
 PlayScene.prototype.getTop = function () {
   return 0;
 };
@@ -405,7 +416,6 @@ PlayScene.prototype._getMapForCurrentLevel = function () {
 
 PlayScene.prototype._getDefaultMaps = function () {
   return [
-   // Level 1
    ['###########################',
     '#............#............#',
     '#.####.#####.#.#####.####.#',
@@ -429,8 +439,7 @@ PlayScene.prototype._getDefaultMaps = function () {
     '#.##########.#.##########.#',
     '#.........................#',
     '###########################'],
-  
-   // Level 2
+
    ['#############.#############',
     '#..........O#.#O..........#',
     '#.####.######.######.####.#',
@@ -454,8 +463,7 @@ PlayScene.prototype._getDefaultMaps = function () {
     '#.#####.#####.#####.#####.#',
     '#..........O#.#O..........#',
     '#############.#############'],
-  
-   // Level 3
+
    ['######### ### ### #########',
     '#.......# #.# #.# #.......#',
     '#.#####.###.###.###.#####.#',

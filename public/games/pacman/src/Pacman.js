@@ -209,10 +209,18 @@ Pacman.prototype._resetDeathFrame = function () {
 
 Pacman.prototype.diesAnimationCompleted = function () {
   if (this._livesCount == 0) {
-
-    // send final score to parent with arcade/tournament session context
     try {
-      var score = (typeof window.__PACMAN_SCORE__ === 'number') ? window.__PACMAN_SCORE__ : 0;
+      var score = 0;
+
+      if (typeof window.__PACMAN_SCORE__ === 'number') {
+        score = window.__PACMAN_SCORE__;
+      } else if (this._scene && typeof this._scene.getScore === 'function') {
+        score = Number(this._scene.getScore()) || 0;
+      } else if (this._scene && typeof this._scene._score !== 'undefined') {
+        score = Number(this._scene._score) || 0;
+      } else if (typeof window.score !== 'undefined') {
+        score = Number(window.score) || 0;
+      }
 
       var session = window.IA_SESSION_CONTEXT || {};
       var sessionId = String(session.sessionId || '');
@@ -236,6 +244,18 @@ Pacman.prototype.diesAnimationCompleted = function () {
     this._game.setScene(new StartupScene(this._game));
     return;
   }
+
+  this.setStrategy(new PacmanPlaySceneStrategy(this, this._scene));
+  this._livesCount--;
+  this._scene.getReadyMessage().setVisibilityDuration(READY_MESSAGE_DURATION_SHORT);
+  this._scene.getReadyMessage().show();
+  this._scene.getCherry().hide();
+  this._scene.showGhosts();
+  this.placeToStartPosition();
+  this._frame = 0;
+  this._resetDeathFrame();
+  this._scene.placeGhostsToStartPositions();
+};
 
   this.setStrategy(new PacmanPlaySceneStrategy(this, this._scene));
   this._livesCount--;
