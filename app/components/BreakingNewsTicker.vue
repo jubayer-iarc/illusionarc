@@ -80,7 +80,7 @@ const notices: NoticeItem[] = [
   z-index: 90;
 
   width: calc(100% - 24px);
-  margin: 8px auto 0;
+  margin: 0px auto 0;
   height: var(--ticker-height);
 
   display: flex;
