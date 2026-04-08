@@ -6,8 +6,8 @@
     <title>Unity Web Player | Boss Rush</title>
 
     <meta
-            name="viewport"
-            content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
+        name="viewport"
+        content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
 
     <style>
@@ -59,9 +59,9 @@
             height: min(calc(100dvh - (var(--frame-gap) * 2)), 100%);
             width: auto;
             max-width: min(
-                    calc((100dvh - (var(--frame-gap) * 2)) * 9 / 16),
-                    calc(100vw - (var(--frame-gap) * 2)),
-                    var(--frame-max-width)
+                calc((100dvh - (var(--frame-gap) * 2)) * 9 / 16),
+                calc(100vw - (var(--frame-gap) * 2)),
+                var(--frame-max-width)
             );
             max-height: calc(100dvh - (var(--frame-gap) * 2));
             background: #000;
@@ -80,8 +80,8 @@
         @media (min-width: 900px) {
             #unity-frame {
                 box-shadow:
-                        0 0 0 1px rgba(255,255,255,0.06),
-                        0 24px 80px rgba(0,0,0,0.45);
+                    0 0 0 1px rgba(255,255,255,0.06),
+                    0 24px 80px rgba(0,0,0,0.45);
             }
         }
 
@@ -170,6 +170,19 @@
             touch-action: none;
             user-select: none;
             -webkit-user-select: none;
+
+            /* keep hidden until exact position is applied */
+            visibility: hidden;
+            opacity: 0;
+
+            /* safe default */
+            right: 12px;
+            top: 12px;
+        }
+
+        #recording-ui.positioned {
+            visibility: visible;
+            opacity: 1;
         }
 
         #record-btn,
@@ -193,8 +206,8 @@
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
             box-shadow:
-                    0 8px 24px rgba(0,0,0,0.35),
-                    inset 0 0 0 1px rgba(255,255,255,0.12);
+                0 8px 24px rgba(0,0,0,0.35),
+                inset 0 0 0 1px rgba(255,255,255,0.12);
             transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
         }
 
@@ -321,597 +334,630 @@
 
 <script src="Build/boss2.loader.js"></script>
 <script>
-    (function () {
-        var canvas = document.querySelector("#unity-canvas");
-        var loadingOverlay = document.querySelector("#loading-overlay");
-        var unityFrame = document.querySelector("#unity-frame");
-        var unityContainer = document.querySelector("#unity-container");
+(function () {
+    var canvas = document.querySelector("#unity-canvas");
+    var loadingOverlay = document.querySelector("#loading-overlay");
+    var unityFrame = document.querySelector("#unity-frame");
+    var unityContainer = document.querySelector("#unity-container");
 
-        var recordingUI = document.querySelector("#recording-ui");
-        var recordBtn = document.querySelector("#record-btn");
-        var recordStatus = document.querySelector("#record-status");
-        var recordStatusText = document.querySelector("#record-status-text");
+    var recordingUI = document.querySelector("#recording-ui");
+    var recordBtn = document.querySelector("#record-btn");
+    var recordStatus = document.querySelector("#record-status");
+    var recordStatusText = document.querySelector("#record-status-text");
 
-        var runStartedAt = 0;
-        var auditSeq = 0;
-        var auditIntervalMs = 30000;
-        var auditTimer = null;
+    var runStartedAt = 0;
+    var auditSeq = 0;
+    var auditIntervalMs = 30000;
+    var auditTimer = null;
 
-        var canvasAudit = {
-            startedAt: null,
-            samples: [],
-            latest: null,
-            gameOver: null
+    var canvasAudit = {
+        startedAt: null,
+        samples: [],
+        latest: null,
+        gameOver: null
+    };
+
+    var mediaRecorder = null;
+    var recordedChunks = [];
+    var canvasStream = null;
+    var currentRecordedMimeType = "";
+    var recordStartedAt = 0;
+    var recordTimer = null;
+    var autoStopTriggered = false;
+    var dragState = {
+        isPointerDown: false,
+        isDragging: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        startLeft: 0,
+        startTop: 0,
+        moved: false,
+        threshold: 6
+    };
+
+    function hideLoader() {
+        canvas.classList.add("ready");
+        loadingOverlay.classList.add("hidden");
+
+        setTimeout(function () {
+            if (loadingOverlay && loadingOverlay.parentNode) {
+                loadingOverlay.remove();
+            }
+        }, 180);
+    }
+
+    function nowIso() {
+        try {
+            return new Date().toISOString();
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function getOrientationByRect(rect) {
+        if (!rect) return null;
+        return rect.width > rect.height ? "landscape" : "portrait";
+    }
+
+    function rectData(el) {
+        if (!el || typeof el.getBoundingClientRect !== "function") return null;
+        var rect = el.getBoundingClientRect();
+
+        return {
+            width: Math.round(rect.width || 0),
+            height: Math.round(rect.height || 0)
         };
+    }
 
-        var mediaRecorder = null;
-        var recordedChunks = [];
-        var canvasStream = null;
-        var recordStartedAt = 0;
-        var recordTimer = null;
-        var autoStopTriggered = false;
-        var dragState = {
-            isPointerDown: false,
-            isDragging: false,
-            pointerId: null,
-            startX: 0,
-            startY: 0,
-            startLeft: 0,
-            startTop: 0,
-            moved: false,
-            threshold: 6
+    function ratioOf(rect) {
+        if (!rect || !rect.width || !rect.height) return null;
+        return Number((rect.width / rect.height).toFixed(6));
+    }
+
+    function buildCanvasAuditSample(phase) {
+        var frameRect = rectData(unityFrame);
+        var canvasRect = rectData(canvas);
+        var containerRect = rectData(unityContainer);
+        var now = Date.now();
+
+        return {
+            seq: ++auditSeq,
+            phase: phase || "periodic",
+            capturedAt: nowIso(),
+            elapsedMs: runStartedAt > 0 ? Math.max(0, now - runStartedAt) : 0,
+            canvas: canvasRect,
+            frame: frameRect,
+            container: containerRect,
+            canvasRatio: ratioOf(canvasRect),
+            frameRatio: ratioOf(frameRect),
+            orientation: getOrientationByRect(canvasRect)
         };
+    }
 
-        function hideLoader() {
-            canvas.classList.add("ready");
-            loadingOverlay.classList.add("hidden");
-
-            setTimeout(function () {
-                if (loadingOverlay && loadingOverlay.parentNode) {
-                    loadingOverlay.remove();
-                }
-            }, 180);
-        }
-
-        function nowIso() {
-            try {
-                return new Date().toISOString();
-            } catch (e) {
-                return null;
+    function postAuditToParent(sample) {
+        try {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage(
+                    {
+                        type: "IA_CANVAS_AUDIT",
+                        payload: sample
+                    },
+                    "*"
+                );
             }
+        } catch (e) {}
+    }
+
+    function recordAuditSample(phase) {
+        var sample = buildCanvasAuditSample(phase);
+
+        canvasAudit.latest = sample;
+        canvasAudit.samples.push(sample);
+
+        if (phase === "game_over") {
+            canvasAudit.gameOver = sample;
         }
 
-        function getOrientationByRect(rect) {
-            if (!rect) return null;
-            return rect.width > rect.height ? "landscape" : "portrait";
+        postAuditToParent(sample);
+        return sample;
+    }
+
+    function startCanvasAudit() {
+        if (auditTimer) {
+            clearInterval(auditTimer);
+            auditTimer = null;
         }
 
-        function rectData(el) {
-            if (!el || typeof el.getBoundingClientRect !== "function") return null;
-            var rect = el.getBoundingClientRect();
+        auditTimer = setInterval(function () {
+            recordAuditSample("periodic");
+        }, auditIntervalMs);
+    }
 
-            return {
-                width: Math.round(rect.width || 0),
-                height: Math.round(rect.height || 0)
-            };
+    function stopCanvasAudit() {
+        if (auditTimer) {
+            clearInterval(auditTimer);
+            auditTimer = null;
         }
+    }
 
-        function ratioOf(rect) {
-            if (!rect || !rect.width || !rect.height) return null;
-            return Number((rect.width / rect.height).toFixed(6));
+    function supportsCanvasRecording() {
+        return !!(
+            canvas &&
+            typeof canvas.captureStream === "function" &&
+            window.MediaRecorder
+        );
+    }
+
+    function showRecordingStatus() {
+        if (recordStatus) {
+            recordStatus.classList.add("visible");
         }
+    }
 
-        function buildCanvasAuditSample(phase) {
-            var frameRect = rectData(unityFrame);
-            var canvasRect = rectData(canvas);
-            var containerRect = rectData(unityContainer);
-            var now = Date.now();
-
-            return {
-                seq: ++auditSeq,
-                phase: phase || "periodic",
-                capturedAt: nowIso(),
-                elapsedMs: runStartedAt > 0 ? Math.max(0, now - runStartedAt) : 0,
-                canvas: canvasRect,
-                frame: frameRect,
-                container: containerRect,
-                canvasRatio: ratioOf(canvasRect),
-                frameRatio: ratioOf(frameRect),
-                orientation: getOrientationByRect(canvasRect)
-            };
+    function hideRecordingStatus() {
+        if (recordStatus) {
+            recordStatus.classList.remove("visible");
         }
+    }
 
-        function postAuditToParent(sample) {
-            try {
-                if (window.parent && window.parent !== window) {
-                    window.parent.postMessage(
-                        {
-                            type: "IA_CANVAS_AUDIT",
-                            payload: sample
-                        },
-                        "*"
-                    );
-                }
-            } catch (e) {}
+    function formatDuration(ms) {
+        var totalSec = Math.max(0, Math.floor(ms / 1000));
+        var min = Math.floor(totalSec / 60);
+        var sec = totalSec % 60;
+        return String(min).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+    }
+
+    function startRecordClock() {
+        stopRecordClock();
+        recordStartedAt = Date.now();
+        if (recordStatusText) {
+            recordStatusText.textContent = "REC 00:00";
         }
+        showRecordingStatus();
 
-        function recordAuditSample(phase) {
-            var sample = buildCanvasAuditSample(phase);
-
-            canvasAudit.latest = sample;
-            canvasAudit.samples.push(sample);
-
-            if (phase === "game_over") {
-                canvasAudit.gameOver = sample;
-            }
-
-            postAuditToParent(sample);
-            return sample;
-        }
-
-        function startCanvasAudit() {
-            if (auditTimer) {
-                clearInterval(auditTimer);
-                auditTimer = null;
-            }
-
-            auditTimer = setInterval(function () {
-                recordAuditSample("periodic");
-            }, auditIntervalMs);
-        }
-
-        function stopCanvasAudit() {
-            if (auditTimer) {
-                clearInterval(auditTimer);
-                auditTimer = null;
-            }
-        }
-
-        function supportsCanvasRecording() {
-            return !!(
-                canvas &&
-                typeof canvas.captureStream === "function" &&
-                window.MediaRecorder
-            );
-        }
-
-        function showRecordingStatus() {
-            if (recordStatus) {
-                recordStatus.classList.add("visible");
-            }
-        }
-
-        function hideRecordingStatus() {
-            if (recordStatus) {
-                recordStatus.classList.remove("visible");
-            }
-        }
-
-        function formatDuration(ms) {
-            var totalSec = Math.max(0, Math.floor(ms / 1000));
-            var min = Math.floor(totalSec / 60);
-            var sec = totalSec % 60;
-            return String(min).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
-        }
-
-        function startRecordClock() {
-            stopRecordClock();
-            recordStartedAt = Date.now();
+        recordTimer = setInterval(function () {
             if (recordStatusText) {
-                recordStatusText.textContent = "REC 00:00";
+                recordStatusText.textContent = "REC " + formatDuration(Date.now() - recordStartedAt);
             }
-            showRecordingStatus();
+        }, 500);
+    }
 
-            recordTimer = setInterval(function () {
-                if (recordStatusText) {
-                    recordStatusText.textContent = "REC " + formatDuration(Date.now() - recordStartedAt);
-                }
-            }, 500);
+    function stopRecordClock() {
+        if (recordTimer) {
+            clearInterval(recordTimer);
+            recordTimer = null;
         }
+    }
 
-        function stopRecordClock() {
-            if (recordTimer) {
-                clearInterval(recordTimer);
-                recordTimer = null;
-            }
-        }
+    function setRecordButtonIdle() {
+        if (!recordBtn) return;
+        recordBtn.disabled = false;
+        recordBtn.classList.remove("recording");
+        recordBtn.setAttribute("aria-label", "Start recording");
+        recordBtn.setAttribute("title", "Start recording");
+    }
 
-        function setRecordButtonIdle() {
-            if (!recordBtn) return;
-            recordBtn.disabled = false;
-            recordBtn.classList.remove("recording");
-            recordBtn.setAttribute("aria-label", "Start recording");
-            recordBtn.setAttribute("title", "Start recording");
-        }
+    function setRecordButtonRecording() {
+        if (!recordBtn) return;
+        recordBtn.disabled = false;
+        recordBtn.classList.add("recording");
+        recordBtn.setAttribute("aria-label", "Stop recording");
+        recordBtn.setAttribute("title", "Stop recording");
+    }
 
-        function setRecordButtonRecording() {
-            if (!recordBtn) return;
-            recordBtn.disabled = false;
-            recordBtn.classList.add("recording");
-            recordBtn.setAttribute("aria-label", "Stop recording");
-            recordBtn.setAttribute("title", "Stop recording");
-        }
+    function setRecordButtonUnsupported() {
+        if (!recordBtn) return;
+        recordBtn.disabled = true;
+        recordBtn.classList.remove("recording");
+        recordBtn.setAttribute("aria-label", "Recording unsupported");
+        recordBtn.setAttribute("title", "Recording unsupported");
+    }
 
-        function setRecordButtonUnsupported() {
-            if (!recordBtn) return;
-            recordBtn.disabled = true;
-            recordBtn.classList.remove("recording");
-            recordBtn.setAttribute("aria-label", "Recording unsupported");
-            recordBtn.setAttribute("title", "Recording unsupported");
-        }
+    function stopTracks(stream) {
+        if (!stream) return;
+        try {
+            stream.getTracks().forEach(function (track) {
+                try {
+                    track.stop();
+                } catch (e) {}
+            });
+        } catch (e) {}
+    }
 
-        function stopTracks(stream) {
-            if (!stream) return;
-            try {
-                stream.getTracks().forEach(function (track) {
-                    try {
-                        track.stop();
-                    } catch (e) {}
-                });
-            } catch (e) {}
-        }
+    function pickSupportedMimeType() {
+        var candidates = [
+            "video/mp4;codecs=h264,aac",
+            "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+            "video/mp4",
+            "video/webm;codecs=vp9,opus",
+            "video/webm;codecs=vp8,opus",
+            "video/webm"
+        ];
 
-        function pickSupportedMimeType() {
-            var candidates = [
-                "video/webm;codecs=vp9,opus",
-                "video/webm;codecs=vp8,opus",
-                "video/webm"
-            ];
-
-            if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== "function") {
-                return "";
-            }
-
-            for (var i = 0; i < candidates.length; i++) {
-                if (MediaRecorder.isTypeSupported(candidates[i])) {
-                    return candidates[i];
-                }
-            }
-
+        if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== "function") {
             return "";
         }
 
-        function downloadRecording(blob, mimeType) {
-            var ext = (mimeType && mimeType.indexOf("mp4") !== -1) ? "mp4" : "webm";
-            var stamp = new Date().toISOString().replace(/[:.]/g, "-");
-            var filename = "boss-rush-recording-" + stamp + "." + ext;
-            var url = URL.createObjectURL(blob);
-
-            try {
-                var a = document.createElement("a");
-                a.href = url;
-                a.download = filename;
-                a.rel = "noopener";
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            } catch (e) {
-                console.error("Failed to trigger download", e);
+        for (var i = 0; i < candidates.length; i++) {
+            if (MediaRecorder.isTypeSupported(candidates[i])) {
+                return candidates[i];
             }
-
-            setTimeout(function () {
-                URL.revokeObjectURL(url);
-            }, 1500);
         }
 
-        function cleanupRecordingState() {
-            stopTracks(canvasStream);
-            canvasStream = null;
-            mediaRecorder = null;
+        return "";
+    }
+
+    function getFileExtensionFromMimeType(mimeType) {
+        if (!mimeType) return "webm";
+        return mimeType.indexOf("mp4") !== -1 ? "mp4" : "webm";
+    }
+
+    function downloadRecording(blob, mimeType) {
+        var ext = getFileExtensionFromMimeType(mimeType);
+        var stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        var filename = "boss-rush-recording-" + stamp + "." + ext;
+        var url = URL.createObjectURL(blob);
+
+        try {
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            a.rel = "noopener";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (e) {
+            console.error("Failed to trigger download", e);
+        }
+
+        setTimeout(function () {
+            URL.revokeObjectURL(url);
+        }, 1500);
+    }
+
+    function cleanupRecordingState() {
+        stopTracks(canvasStream);
+        canvasStream = null;
+        mediaRecorder = null;
+        recordedChunks = [];
+        currentRecordedMimeType = "";
+        autoStopTriggered = false;
+        stopRecordClock();
+        hideRecordingStatus();
+        setRecordButtonIdle();
+    }
+
+    function startCanvasRecording() {
+        if (!supportsCanvasRecording()) {
+            alert("এই ব্রাউজারে canvas recording support নেই।");
+            return;
+        }
+
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            return;
+        }
+
+        try {
             recordedChunks = [];
             autoStopTriggered = false;
-            stopRecordClock();
-            hideRecordingStatus();
-            setRecordButtonIdle();
-        }
+            canvasStream = canvas.captureStream(30);
 
-        function startCanvasRecording() {
-            if (!supportsCanvasRecording()) {
-                alert("এই ব্রাউজারে canvas recording support নেই।");
-                return;
-            }
+            var mimeType = pickSupportedMimeType();
+            currentRecordedMimeType = mimeType || "";
+            var options = mimeType ? { mimeType: mimeType } : undefined;
 
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                return;
-            }
+            mediaRecorder = new MediaRecorder(canvasStream, options);
 
-            try {
-                recordedChunks = [];
-                autoStopTriggered = false;
-                canvasStream = canvas.captureStream(30);
-
-                var mimeType = pickSupportedMimeType();
-                var options = mimeType ? { mimeType: mimeType } : undefined;
-
-                mediaRecorder = new MediaRecorder(canvasStream, options);
-
-                mediaRecorder.ondataavailable = function (event) {
-                    if (event.data && event.data.size > 0) {
-                        recordedChunks.push(event.data);
-                    }
-                };
-
-                mediaRecorder.onerror = function (event) {
-                    console.error("MediaRecorder error:", event);
-                    cleanupRecordingState();
-                };
-
-                mediaRecorder.onstop = function () {
-                    try {
-                        var finalMime = (mediaRecorder && mediaRecorder.mimeType) || mimeType || "video/webm";
-                        if (recordedChunks.length > 0) {
-                            var blob = new Blob(recordedChunks, { type: finalMime });
-                            downloadRecording(blob, finalMime);
-                        }
-                    } catch (e) {
-                        console.error("Failed to save recording", e);
-                    }
-
-                    cleanupRecordingState();
-                };
-
-                mediaRecorder.start(1000);
-                startRecordClock();
-                setRecordButtonRecording();
-            } catch (err) {
-                console.error("Failed to start canvas recording:", err);
-                cleanupRecordingState();
-            }
-        }
-
-        function stopCanvasRecording() {
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                try {
-                    mediaRecorder.stop();
-                } catch (e) {
-                    console.error("Failed to stop recorder", e);
-                    cleanupRecordingState();
+            mediaRecorder.ondataavailable = function (event) {
+                if (event.data && event.data.size > 0) {
+                    recordedChunks.push(event.data);
                 }
-            } else {
-                cleanupRecordingState();
-            }
-        }
-
-        function stopCanvasRecordingOnce() {
-            if (autoStopTriggered) return;
-            autoStopTriggered = true;
-            stopCanvasRecording();
-        }
-
-        function setRecordingUIPosition(left, top) {
-            var rect = recordingUI.getBoundingClientRect();
-            var maxLeft = Math.max(0, window.innerWidth - rect.width);
-            var maxTop = Math.max(0, window.innerHeight - rect.height);
-
-            var clampedLeft = Math.min(Math.max(0, left), maxLeft);
-            var clampedTop = Math.min(Math.max(0, top), maxTop);
-
-            recordingUI.style.left = clampedLeft + "px";
-            recordingUI.style.top = clampedTop + "px";
-            recordingUI.style.right = "auto";
-            recordingUI.style.bottom = "auto";
-        }
-
-        function saveRecordingUIPosition() {
-            try {
-                localStorage.setItem("ia_recording_ui_position", JSON.stringify({
-                    left: parseFloat(recordingUI.style.left || "0"),
-                    top: parseFloat(recordingUI.style.top || "0")
-                }));
-            } catch (e) {}
-        }
-
-        function setInitialRecordingUIPositionInCanvas() {
-            var frameRect = unityFrame.getBoundingClientRect();
-            var uiRect = recordingUI.getBoundingClientRect();
-
-            var left = frameRect.right - uiRect.width - 12;
-            var top = frameRect.top + 12;
-
-            setRecordingUIPosition(left, top);
-        }
-
-        function restoreRecordingUIPosition() {
-            try {
-                var raw = localStorage.getItem("ia_recording_ui_position");
-                if (!raw) {
-                    setInitialRecordingUIPositionInCanvas();
-                    return;
-                }
-
-                var parsed = JSON.parse(raw);
-                if (typeof parsed.left === "number" && typeof parsed.top === "number") {
-                    setRecordingUIPosition(parsed.left, parsed.top);
-                } else {
-                    setInitialRecordingUIPositionInCanvas();
-                }
-            } catch (e) {
-                setInitialRecordingUIPositionInCanvas();
-            }
-        }
-
-        function handleDragStart(event) {
-            if (!recordingUI || !recordBtn || recordBtn.disabled) return;
-
-            dragState.isPointerDown = true;
-            dragState.isDragging = false;
-            dragState.moved = false;
-            dragState.pointerId = event.pointerId;
-            dragState.startX = event.clientX;
-            dragState.startY = event.clientY;
-
-            var rect = recordingUI.getBoundingClientRect();
-            setRecordingUIPosition(rect.left, rect.top);
-            dragState.startLeft = rect.left;
-            dragState.startTop = rect.top;
-
-            if (recordBtn.setPointerCapture) {
-                try {
-                    recordBtn.setPointerCapture(event.pointerId);
-                } catch (e) {}
-            }
-        }
-
-        function handleDragMove(event) {
-            if (!dragState.isPointerDown || dragState.pointerId !== event.pointerId) return;
-
-            var dx = event.clientX - dragState.startX;
-            var dy = event.clientY - dragState.startY;
-            var distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (!dragState.isDragging && distance >= dragState.threshold) {
-                dragState.isDragging = true;
-                dragState.moved = true;
-                recordingUI.classList.add("dragging");
-            }
-
-            if (!dragState.isDragging) return;
-
-            event.preventDefault();
-            setRecordingUIPosition(dragState.startLeft + dx, dragState.startTop + dy);
-        }
-
-        function handleDragEnd(event) {
-            if (dragState.pointerId !== null && event.pointerId !== dragState.pointerId) return;
-
-            if (recordBtn.releasePointerCapture) {
-                try {
-                    recordBtn.releasePointerCapture(event.pointerId);
-                } catch (e) {}
-            }
-
-            if (dragState.isDragging) {
-                saveRecordingUIPosition();
-            }
-
-            setTimeout(function () {
-                dragState.isPointerDown = false;
-                dragState.isDragging = false;
-                dragState.pointerId = null;
-                recordingUI.classList.remove("dragging");
-            }, 0);
-        }
-
-        if (recordBtn) {
-            recordBtn.addEventListener("pointerdown", handleDragStart);
-            recordBtn.addEventListener("pointermove", handleDragMove);
-            recordBtn.addEventListener("pointerup", handleDragEnd);
-            recordBtn.addEventListener("pointercancel", handleDragEnd);
-
-            recordBtn.addEventListener("click", function (event) {
-                if (dragState.moved) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    dragState.moved = false;
-                    return;
-                }
-
-                if (mediaRecorder && mediaRecorder.state === "recording") {
-                    stopCanvasRecording();
-                } else {
-                    startCanvasRecording();
-                }
-            });
-        }
-
-        window.addEventListener("resize", function () {
-            var hasSavedPosition = false;
-
-            try {
-                hasSavedPosition = !!localStorage.getItem("ia_recording_ui_position");
-            } catch (e) {}
-
-            if (hasSavedPosition) {
-                var rect = recordingUI.getBoundingClientRect();
-                setRecordingUIPosition(rect.left, rect.top);
-                saveRecordingUIPosition();
-            } else {
-                setInitialRecordingUIPositionInCanvas();
-            }
-        });
-
-        window.IA_RecordCanvasCheckpoint = function () {
-            return recordAuditSample("manual");
-        };
-
-        window.IA_RecordCanvasGameOver = function () {
-            var sample = recordAuditSample("game_over");
-
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                setTimeout(function () {
-                    stopCanvasRecordingOnce();
-                }, 500);
-            }
-
-            return sample;
-        };
-
-        window.IA_GetCanvasAuditMeta = function () {
-            return {
-                canvas_audit: JSON.parse(JSON.stringify(canvasAudit))
             };
-        };
 
-        window.addEventListener("message", function (event) {
-            try {
-                var data = event.data || {};
-                if (data.type === "STOP_CANVAS_RECORDING") {
-                    stopCanvasRecordingOnce();
+            mediaRecorder.onerror = function (event) {
+                console.error("MediaRecorder error:", event);
+                cleanupRecordingState();
+            };
+
+            mediaRecorder.onstop = function () {
+                try {
+                    var finalMime =
+                        currentRecordedMimeType ||
+                        (mediaRecorder && mediaRecorder.mimeType) ||
+                        "video/webm";
+
+                    if (recordedChunks.length > 0) {
+                        var blob = new Blob(recordedChunks, { type: finalMime });
+                        downloadRecording(blob, finalMime);
+                    }
+                } catch (e) {
+                    console.error("Failed to save recording", e);
                 }
-            } catch (e) {
-                console.error("message handler error", e);
-            }
-        });
 
-        window.addEventListener("pagehide", function () {
-            stopCanvasAudit();
+                cleanupRecordingState();
+            };
+
+            mediaRecorder.start(1000);
+            startRecordClock();
+            setRecordButtonRecording();
+        } catch (err) {
+            console.error("Failed to start canvas recording:", err);
+            cleanupRecordingState();
+        }
+    }
+
+    function stopCanvasRecording() {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            try {
+                mediaRecorder.stop();
+            } catch (e) {
+                console.error("Failed to stop recorder", e);
+                cleanupRecordingState();
+            }
+        } else {
+            cleanupRecordingState();
+        }
+    }
+
+    function stopCanvasRecordingOnce() {
+        if (autoStopTriggered) return;
+        autoStopTriggered = true;
+        stopCanvasRecording();
+    }
+
+    function markRecordingUIPositioned() {
+        if (recordingUI) {
+            recordingUI.classList.add("positioned");
+        }
+    }
+
+    function setRecordingUIPosition(left, top) {
+        var rect = recordingUI.getBoundingClientRect();
+        var maxLeft = Math.max(0, window.innerWidth - rect.width);
+        var maxTop = Math.max(0, window.innerHeight - rect.height);
+
+        var clampedLeft = Math.min(Math.max(0, left), maxLeft);
+        var clampedTop = Math.min(Math.max(0, top), maxTop);
+
+        recordingUI.style.left = clampedLeft + "px";
+        recordingUI.style.top = clampedTop + "px";
+        recordingUI.style.right = "auto";
+        recordingUI.style.bottom = "auto";
+
+        markRecordingUIPositioned();
+    }
+
+    function saveRecordingUIPosition() {
+        try {
+            localStorage.setItem("ia_recording_ui_position", JSON.stringify({
+                left: parseFloat(recordingUI.style.left || "0"),
+                top: parseFloat(recordingUI.style.top || "0")
+            }));
+        } catch (e) {}
+    }
+
+    function clearSavedRecordingUIPosition() {
+        try {
+            localStorage.removeItem("ia_recording_ui_position");
+        } catch (e) {}
+    }
+
+    function setInitialRecordingUIPositionInCanvas() {
+        var frameRect = unityFrame.getBoundingClientRect();
+        var uiRect = recordingUI.getBoundingClientRect();
+
+        var left = frameRect.right - uiRect.width - 12;
+        var top = frameRect.top + 12;
+
+        setRecordingUIPosition(left, top);
+    }
+
+    function restoreRecordingUIPosition() {
+        try {
+            var raw = localStorage.getItem("ia_recording_ui_position");
+
+            if (!raw) {
+                setInitialRecordingUIPositionInCanvas();
+                return;
+            }
+
+            var parsed = JSON.parse(raw);
+
+            if (typeof parsed.left === "number" && typeof parsed.top === "number") {
+                setRecordingUIPosition(parsed.left, parsed.top);
+            } else {
+                clearSavedRecordingUIPosition();
+                setInitialRecordingUIPositionInCanvas();
+            }
+        } catch (e) {
+            clearSavedRecordingUIPosition();
+            setInitialRecordingUIPositionInCanvas();
+        }
+    }
+
+    function handleDragStart(event) {
+        if (!recordingUI || !recordBtn || recordBtn.disabled) return;
+
+        dragState.isPointerDown = true;
+        dragState.isDragging = false;
+        dragState.moved = false;
+        dragState.pointerId = event.pointerId;
+        dragState.startX = event.clientX;
+        dragState.startY = event.clientY;
+
+        var rect = recordingUI.getBoundingClientRect();
+        setRecordingUIPosition(rect.left, rect.top);
+        dragState.startLeft = rect.left;
+        dragState.startTop = rect.top;
+
+        if (recordBtn.setPointerCapture) {
+            try {
+                recordBtn.setPointerCapture(event.pointerId);
+            } catch (e) {}
+        }
+    }
+
+    function handleDragMove(event) {
+        if (!dragState.isPointerDown || dragState.pointerId !== event.pointerId) return;
+
+        var dx = event.clientX - dragState.startX;
+        var dy = event.clientY - dragState.startY;
+        var distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (!dragState.isDragging && distance >= dragState.threshold) {
+            dragState.isDragging = true;
+            dragState.moved = true;
+            recordingUI.classList.add("dragging");
+        }
+
+        if (!dragState.isDragging) return;
+
+        event.preventDefault();
+        setRecordingUIPosition(dragState.startLeft + dx, dragState.startTop + dy);
+    }
+
+    function handleDragEnd(event) {
+        if (dragState.pointerId !== null && event.pointerId !== dragState.pointerId) return;
+
+        if (recordBtn.releasePointerCapture) {
+            try {
+                recordBtn.releasePointerCapture(event.pointerId);
+            } catch (e) {}
+        }
+
+        if (dragState.isDragging) {
+            saveRecordingUIPosition();
+        }
+
+        setTimeout(function () {
+            dragState.isPointerDown = false;
+            dragState.isDragging = false;
+            dragState.pointerId = null;
+            recordingUI.classList.remove("dragging");
+        }, 0);
+    }
+
+    if (recordBtn) {
+        recordBtn.addEventListener("pointerdown", handleDragStart);
+        recordBtn.addEventListener("pointermove", handleDragMove);
+        recordBtn.addEventListener("pointerup", handleDragEnd);
+        recordBtn.addEventListener("pointercancel", handleDragEnd);
+
+        recordBtn.addEventListener("click", function (event) {
+            if (dragState.moved) {
+                event.preventDefault();
+                event.stopPropagation();
+                dragState.moved = false;
+                return;
+            }
+
             if (mediaRecorder && mediaRecorder.state === "recording") {
                 stopCanvasRecording();
             } else {
-                cleanupRecordingState();
+                startCanvasRecording();
             }
         });
+    }
 
-        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-            var meta = document.createElement("meta");
-            meta.name = "viewport";
-            meta.content =
-                "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover";
-            document.getElementsByTagName("head")[0].appendChild(meta);
+    window.addEventListener("resize", function () {
+        var hasSavedPosition = false;
 
-            document.body.style.textAlign = "left";
+        try {
+            hasSavedPosition = !!localStorage.getItem("ia_recording_ui_position");
+        } catch (e) {}
+
+        if (hasSavedPosition) {
+            var rect = recordingUI.getBoundingClientRect();
+            setRecordingUIPosition(rect.left, rect.top);
+            saveRecordingUIPosition();
+        } else {
+            setInitialRecordingUIPositionInCanvas();
+        }
+    });
+
+    window.IA_RecordCanvasCheckpoint = function () {
+        return recordAuditSample("manual");
+    };
+
+    window.IA_RecordCanvasGameOver = function () {
+        var sample = recordAuditSample("game_over");
+
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            setTimeout(function () {
+                stopCanvasRecordingOnce();
+            }, 500);
         }
 
-        createUnityInstance(canvas, {
-            arguments: [],
-            dataUrl: "Build/boss2.data.br",
-            frameworkUrl: "Build/boss2.framework.js.br",
-            codeUrl: "Build/boss2.wasm.br",
-            streamingAssetsUrl: "StreamingAssets",
-            companyName: "illusion Lab",
-            productName: "Boss Rush",
-            productVersion: "0.11"
-        }).then(function (unityInstance) {
-            window.unityInstance = unityInstance;
-            hideLoader();
+        return sample;
+    };
 
-            runStartedAt = Date.now();
-            canvasAudit.startedAt = nowIso();
+    window.IA_GetCanvasAuditMeta = function () {
+        return {
+            canvas_audit: JSON.parse(JSON.stringify(canvasAudit))
+        };
+    };
 
-            recordAuditSample("start");
-            startCanvasAudit();
-            restoreRecordingUIPosition();
-
-            if (!supportsCanvasRecording()) {
-                setRecordButtonUnsupported();
-            } else {
-                setRecordButtonIdle();
+    window.addEventListener("message", function (event) {
+        try {
+            var data = event.data || {};
+            if (data.type === "STOP_CANVAS_RECORDING") {
+                stopCanvasRecordingOnce();
             }
-        }).catch(function (message) {
-            alert(message);
-            restoreRecordingUIPosition();
-        });
-    })();
+        } catch (e) {
+            console.error("message handler error", e);
+        }
+    });
+
+    window.addEventListener("pagehide", function () {
+        stopCanvasAudit();
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            stopCanvasRecording();
+        } else {
+            cleanupRecordingState();
+        }
+    });
+
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        var meta = document.createElement("meta");
+        meta.name = "viewport";
+        meta.content =
+            "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover";
+        document.getElementsByTagName("head")[0].appendChild(meta);
+
+        document.body.style.textAlign = "left";
+    }
+
+    createUnityInstance(canvas, {
+        arguments: [],
+        dataUrl: "Build/boss2.data.br",
+        frameworkUrl: "Build/boss2.framework.js.br",
+        codeUrl: "Build/boss2.wasm.br",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "illusion Lab",
+        productName: "Boss Rush",
+        productVersion: "0.11"
+    }).then(function (unityInstance) {
+        window.unityInstance = unityInstance;
+        hideLoader();
+
+        runStartedAt = Date.now();
+        canvasAudit.startedAt = nowIso();
+
+        recordAuditSample("start");
+        startCanvasAudit();
+        restoreRecordingUIPosition();
+
+        if (!supportsCanvasRecording()) {
+            setRecordButtonUnsupported();
+        } else {
+            setRecordButtonIdle();
+        }
+    }).catch(function (message) {
+        alert(message);
+        restoreRecordingUIPosition();
+    });
+})();
 </script>
 </body>
 </html>
