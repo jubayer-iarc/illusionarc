@@ -11,6 +11,7 @@ const supabase = useSupabaseClient()
 
 type Role = 'user' | 'admin'
 type SubStatus = 'active' | 'expired' | 'canceled' | 'none'
+type ParticipationFilter = 'all' | 'joined_selected' | 'not_joined_selected'
 
 type ProfileRow = {
   user_id: string
@@ -65,6 +66,7 @@ type TournamentScoreRow = {
   updated_at: string | null
   device_type: string | null
   submitted_at: string | null
+  session_id: string | null
 }
 
 type LeaderboardScoreRow = {
@@ -84,6 +86,24 @@ type ReferralEarnedRow = {
   bonus_bdt: number
   status: string
   created_at: string | null
+}
+
+type TournamentMeta = {
+  id: string
+  slug: string
+  title: string
+  status: string
+  starts_at: string | null
+  ends_at: string | null
+  updated_at: string | null
+}
+
+type TournamentScopedStats = {
+  entries: number
+  best_score: number | null
+  best_accepted_score: number | null
+  latest_at: string | null
+  rows: TournamentScoreRow[]
 }
 
 type UserRow = {
@@ -116,6 +136,7 @@ type UserRow = {
 
   tournament_entries: number
   tournament_best_score: number | null
+  tournament_best_accepted_score: number | null
   tournament_latest_at: string | null
 
   leaderboard_entries: number
@@ -127,6 +148,8 @@ type UserRow = {
   tournament_scores: TournamentScoreRow[]
   leaderboard_scores: LeaderboardScoreRow[]
   referrals_earned: ReferralEarnedRow[]
+
+  tournament_stats_by_id: Record<string, TournamentScopedStats>
 }
 
 const loading = ref(true)
@@ -136,17 +159,24 @@ const updating = ref(false)
 const q = ref('')
 const roleFilter = ref<Role | 'all'>('all')
 const subFilter = ref<SubStatus | 'all'>('all')
+const participationFilter = ref<ParticipationFilter>('all')
+
 const sortBy = ref<
   | 'updated_desc'
   | 'name_asc'
   | 'payments_desc'
   | 'tournament_desc'
+  | 'selected_tournament_desc'
   | 'leaderboard_desc'
   | 'referrals_desc'
 >('updated_desc')
+
 const limit = ref(100)
 
 const rows = ref<UserRow[]>([])
+const tournaments = ref<TournamentMeta[]>([])
+const selectedTournamentId = ref<string>('')
+
 const selected = ref<UserRow | null>(null)
 const modalOpen = ref(false)
 
@@ -166,6 +196,11 @@ function fmtMoney(n?: number | null) {
   return new Intl.NumberFormat().format(Number(n || 0))
 }
 
+function fmtScore(n?: number | null) {
+  if (n === null || n === undefined) return '—'
+  return new Intl.NumberFormat().format(Number(n))
+}
+
 function rolePillClass(r: Role) {
   return r === 'admin'
     ? 'bg-rose-500/10 text-rose-700 dark:text-rose-200 border-rose-500/20'
@@ -176,6 +211,15 @@ function subPillClass(s: SubStatus) {
   if (s === 'active') return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-200 border-emerald-500/20'
   if (s === 'expired') return 'bg-amber-500/10 text-amber-700 dark:text-amber-200 border-amber-500/20'
   if (s === 'canceled') return 'bg-rose-500/10 text-rose-700 dark:text-rose-200 border-rose-500/20'
+  return 'bg-black/5 dark:bg-white/5 text-black/60 dark:text-white/60 border-black/10 dark:border-white/10'
+}
+
+function tournamentStatusClass(s?: string | null) {
+  const v = String(s || '').toLowerCase()
+  if (v === 'live') return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-200 border-emerald-500/20'
+  if (v === 'scheduled') return 'bg-sky-500/10 text-sky-700 dark:text-sky-200 border-sky-500/20'
+  if (v === 'ended') return 'bg-amber-500/10 text-amber-700 dark:text-amber-200 border-amber-500/20'
+  if (v === 'canceled') return 'bg-rose-500/10 text-rose-700 dark:text-rose-200 border-rose-500/20'
   return 'bg-black/5 dark:bg-white/5 text-black/60 dark:text-white/60 border-black/10 dark:border-white/10'
 }
 
@@ -238,6 +282,108 @@ function deriveSubscriptionStatus(subs: SubscriptionRow[]): {
   }
 }
 
+function pickLatestTime(rows: Array<{ updated_at?: string | null; created_at?: string | null; submitted_at?: string | null }>) {
+  let best: string | null = null
+  let bestTs = 0
+
+  for (const row of rows) {
+    const ts = row.updated_at || row.submitted_at || row.created_at || null
+    if (!ts) continue
+    const n = new Date(ts).getTime()
+    if (Number.isNaN(n)) continue
+    if (n > bestTs) {
+      bestTs = n
+      best = ts
+    }
+  }
+
+  return best
+}
+
+function buildTournamentStatsById(scores: TournamentScoreRow[]): Record<string, TournamentScopedStats> {
+  const grouped = new Map<string, TournamentScoreRow[]>()
+
+  for (const row of scores) {
+    const key = row.tournament_id
+    const arr = grouped.get(key) || []
+    arr.push(row)
+    grouped.set(key, arr)
+  }
+
+  const out: Record<string, TournamentScopedStats> = {}
+
+  for (const [tournamentId, list] of grouped.entries()) {
+    const bestScore = list.length ? Math.max(...list.map((x) => Number(x.score ?? 0))) : null
+
+    const acceptedValues = list
+      .map((x) => (x.accepted_score === null || x.accepted_score === undefined ? null : Number(x.accepted_score)))
+      .filter((x): x is number => x !== null)
+
+    const bestAcceptedScore = acceptedValues.length ? Math.max(...acceptedValues) : null
+
+    const ordered = [...list].sort((a, b) => {
+      const at = a.updated_at ? new Date(a.updated_at).getTime() : (a.created_at ? new Date(a.created_at).getTime() : 0)
+      const bt = b.updated_at ? new Date(b.updated_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : 0)
+      return bt - at
+    })
+
+    out[tournamentId] = {
+      entries: list.length,
+      best_score: bestScore,
+      best_accepted_score: bestAcceptedScore,
+      latest_at: pickLatestTime(list),
+      rows: ordered
+    }
+  }
+
+  return out
+}
+
+function getScopedStats(user: UserRow, tournamentId: string) {
+  if (!tournamentId) return null
+  return user.tournament_stats_by_id[tournamentId] || null
+}
+
+const selectedTournament = computed(() => {
+  return tournaments.value.find((t) => t.id === selectedTournamentId.value) || null
+})
+
+const tournamentSummary = computed(() => {
+  if (!selectedTournamentId.value) {
+    return {
+      usersJoined: 0,
+      totalEntries: 0,
+      highestScore: null as number | null,
+      highestAcceptedScore: null as number | null
+    }
+  }
+
+  let usersJoined = 0
+  let totalEntries = 0
+  let highestScore: number | null = null
+  let highestAcceptedScore: number | null = null
+
+  for (const user of rows.value) {
+    const stats = getScopedStats(user, selectedTournamentId.value)
+    if (!stats) continue
+
+    usersJoined += 1
+    totalEntries += stats.entries
+
+    if (stats.best_score !== null) {
+      highestScore = highestScore === null ? stats.best_score : Math.max(highestScore, stats.best_score)
+    }
+
+    if (stats.best_accepted_score !== null) {
+      highestAcceptedScore = highestAcceptedScore === null
+        ? stats.best_accepted_score
+        : Math.max(highestAcceptedScore, stats.best_accepted_score)
+    }
+  }
+
+  return { usersJoined, totalEntries, highestScore, highestAcceptedScore }
+})
+
 const summary = computed(() => {
   const total = rows.value.length
   const admins = rows.value.filter((r) => r.role === 'admin').length
@@ -258,8 +404,18 @@ const filtered = computed(() => {
     list = list.filter((r) => r.subscription_status === subFilter.value)
   }
 
+  if (selectedTournamentId.value) {
+    if (participationFilter.value === 'joined_selected') {
+      list = list.filter((r) => !!getScopedStats(r, selectedTournamentId.value))
+    } else if (participationFilter.value === 'not_joined_selected') {
+      list = list.filter((r) => !getScopedStats(r, selectedTournamentId.value))
+    }
+  }
+
   if (needle) {
     list = list.filter((r) => {
+      const scoped = selectedTournamentId.value ? getScopedStats(r, selectedTournamentId.value) : null
+
       const searchable = [
         r.display_name,
         r.email || '',
@@ -269,7 +425,11 @@ const filtered = computed(() => {
         r.referral_code || '',
         r.subscription_status,
         String(r.tournament_best_score ?? ''),
-        String(r.leaderboard_best_score ?? '')
+        String(r.tournament_best_accepted_score ?? ''),
+        String(r.leaderboard_best_score ?? ''),
+        String(scoped?.best_score ?? ''),
+        String(scoped?.best_accepted_score ?? ''),
+        String(scoped?.entries ?? '')
       ]
         .join(' ')
         .toLowerCase()
@@ -282,6 +442,7 @@ const filtered = computed(() => {
     case 'name_asc':
       list.sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''))
       break
+
     case 'payments_desc':
       list.sort((a, b) => {
         if (b.payments_total_bdt !== a.payments_total_bdt) return b.payments_total_bdt - a.payments_total_bdt
@@ -290,11 +451,37 @@ const filtered = computed(() => {
         return bt - at
       })
       break
+
+    case 'selected_tournament_desc':
+      list.sort((a, b) => {
+        const aStats = selectedTournamentId.value ? getScopedStats(a, selectedTournamentId.value) : null
+        const bStats = selectedTournamentId.value ? getScopedStats(b, selectedTournamentId.value) : null
+
+        const aBest = aStats?.best_score ?? -1
+        const bBest = bStats?.best_score ?? -1
+        if (bBest !== aBest) return bBest - aBest
+
+        const aAccepted = aStats?.best_accepted_score ?? -1
+        const bAccepted = bStats?.best_accepted_score ?? -1
+        if (bAccepted !== aAccepted) return bAccepted - aAccepted
+
+        const aLatest = aStats?.latest_at ? new Date(aStats.latest_at).getTime() : 0
+        const bLatest = bStats?.latest_at ? new Date(bStats.latest_at).getTime() : 0
+        if (bLatest !== aLatest) return bLatest - aLatest
+
+        return a.display_name.localeCompare(b.display_name)
+      })
+      break
+
     case 'tournament_desc':
       list.sort((a, b) => {
         const as = a.tournament_best_score ?? -1
         const bs = b.tournament_best_score ?? -1
         if (bs !== as) return bs - as
+
+        const aa = a.tournament_best_accepted_score ?? -1
+        const ba = b.tournament_best_accepted_score ?? -1
+        if (ba !== aa) return ba - aa
 
         const aLatest = a.tournament_latest_at ? new Date(a.tournament_latest_at).getTime() : 0
         const bLatest = b.tournament_latest_at ? new Date(b.tournament_latest_at).getTime() : 0
@@ -303,6 +490,7 @@ const filtered = computed(() => {
         return a.display_name.localeCompare(b.display_name)
       })
       break
+
     case 'leaderboard_desc':
       list.sort((a, b) => {
         const as = a.leaderboard_best_score ?? -1
@@ -316,12 +504,14 @@ const filtered = computed(() => {
         return a.display_name.localeCompare(b.display_name)
       })
       break
+
     case 'referrals_desc':
       list.sort((a, b) => {
         if (b.referrals_count !== a.referrals_count) return b.referrals_count - a.referrals_count
         return b.referral_earned_total_bdt - a.referral_earned_total_bdt
       })
       break
+
     case 'updated_desc':
     default:
       list.sort((a, b) => {
@@ -369,14 +559,8 @@ async function load(): Promise<void> {
       role: (p.role || 'user') as Role
     }))
 
-    if (!profileRows.length) {
-      rows.value = []
-      return
-    }
-
-    const userIds = profileRows.map((p) => p.user_id)
-
     const [
+      tournamentsRes,
       subscriptionsRes,
       paymentsRes,
       tournamentRes,
@@ -384,92 +568,136 @@ async function load(): Promise<void> {
       referralsRes
     ] = await Promise.all([
       supabase
-        .from('subscriptions')
+        .from('tournaments')
         .select(`
           id,
-          user_id,
+          slug,
+          title,
           status,
           starts_at,
           ends_at,
-          amount_bdt,
-          currency,
-          provider,
-          provider_ref,
-          created_at,
           updated_at
         `)
-        .in('user_id', userIds)
-        .order('created_at', { ascending: false }),
+        .order('starts_at', { ascending: false }),
 
-      supabase
-        .from('payments')
-        .select(`
-          id,
-          user_id,
-          plan_code,
-          amount_bdt,
-          currency,
-          provider,
-          tran_id,
-          status,
-          applied,
-          created_at,
-          paid_at,
-          referral_bonus_used_bdt
-        `)
-        .in('user_id', userIds)
-        .order('created_at', { ascending: false }),
+      profileRows.length
+        ? supabase
+            .from('subscriptions')
+            .select(`
+              id,
+              user_id,
+              status,
+              starts_at,
+              ends_at,
+              amount_bdt,
+              currency,
+              provider,
+              provider_ref,
+              created_at,
+              updated_at
+            `)
+            .in('user_id', profileRows.map((p) => p.user_id))
+            .order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null } as any),
 
-      supabase
-        .from('tournament_scores')
-        .select(`
-          id,
-          tournament_id,
-          user_id,
-          player_name,
-          score,
-          accepted_score,
-          created_at,
-          updated_at,
-          device_type,
-          submitted_at
-        `)
-        .in('user_id', userIds)
-        .order('updated_at', { ascending: false }),
+      profileRows.length
+        ? supabase
+            .from('payments')
+            .select(`
+              id,
+              user_id,
+              plan_code,
+              amount_bdt,
+              currency,
+              provider,
+              tran_id,
+              status,
+              applied,
+              created_at,
+              paid_at,
+              referral_bonus_used_bdt
+            `)
+            .in('user_id', profileRows.map((p) => p.user_id))
+            .order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null } as any),
 
-      supabase
-        .from('leaderboard_scores')
-        .select(`
-          id,
-          game_slug,
-          user_id,
-          player_name,
-          score,
-          created_at
-        `)
-        .in('user_id', userIds)
-        .order('created_at', { ascending: false }),
+      profileRows.length
+        ? supabase
+            .from('tournament_scores')
+            .select(`
+              id,
+              tournament_id,
+              user_id,
+              player_name,
+              score,
+              accepted_score,
+              created_at,
+              updated_at,
+              device_type,
+              submitted_at,
+              session_id
+            `)
+            .in('user_id', profileRows.map((p) => p.user_id))
+            .order('updated_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null } as any),
 
-      supabase
-        .from('user_referrals')
-        .select(`
-          id,
-          referrer_user_id,
-          referred_user_id,
-          referral_code,
-          bonus_bdt,
-          status,
-          created_at
-        `)
-        .in('referrer_user_id', userIds)
-        .order('created_at', { ascending: false })
+      profileRows.length
+        ? supabase
+            .from('leaderboard_scores')
+            .select(`
+              id,
+              game_slug,
+              user_id,
+              player_name,
+              score,
+              created_at
+            `)
+            .in('user_id', profileRows.map((p) => p.user_id))
+            .order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null } as any),
+
+      profileRows.length
+        ? supabase
+            .from('user_referrals')
+            .select(`
+              id,
+              referrer_user_id,
+              referred_user_id,
+              referral_code,
+              bonus_bdt,
+              status,
+              created_at
+            `)
+            .in('referrer_user_id', profileRows.map((p) => p.user_id))
+            .order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null } as any)
     ])
 
+    if (tournamentsRes.error) throw tournamentsRes.error
     if (subscriptionsRes.error) throw subscriptionsRes.error
     if (paymentsRes.error) throw paymentsRes.error
     if (tournamentRes.error) throw tournamentRes.error
     if (leaderboardRes.error) throw leaderboardRes.error
     if (referralsRes.error) throw referralsRes.error
+
+    tournaments.value = ((tournamentsRes.data || []) as TournamentMeta[]).map((t) => ({
+      id: t.id,
+      slug: t.slug,
+      title: t.title,
+      status: t.status,
+      starts_at: t.starts_at,
+      ends_at: t.ends_at,
+      updated_at: t.updated_at
+    }))
+
+    if (selectedTournamentId.value && !tournaments.value.find((t) => t.id === selectedTournamentId.value)) {
+      selectedTournamentId.value = ''
+    }
+
+    if (!profileRows.length) {
+      rows.value = []
+      return
+    }
 
     const subscriptions = (subscriptionsRes.data || []) as SubscriptionRow[]
     const payments = (paymentsRes.data || []) as PaymentRow[]
@@ -531,12 +759,20 @@ async function load(): Promise<void> {
         ? Math.max(...userTournament.map((x) => Number(x.score ?? 0)))
         : null
 
+      const tournamentAcceptedValues = userTournament
+        .map((x) => (x.accepted_score === null || x.accepted_score === undefined ? null : Number(x.accepted_score)))
+        .filter((x): x is number => x !== null)
+
+      const tournamentBestAccepted = tournamentAcceptedValues.length
+        ? Math.max(...tournamentAcceptedValues)
+        : null
+
       const leaderboardBest = userLeaderboard.length
         ? Math.max(...userLeaderboard.map((x) => Number(x.score || 0)))
         : null
 
       const latestPaymentAt = userPayments[0]?.paid_at || userPayments[0]?.created_at || null
-      const tournamentLatestAt = userTournament[0]?.updated_at || userTournament[0]?.created_at || null
+      const tournamentLatestAt = pickLatestTime(userTournament)
       const leaderboardLatestAt = userLeaderboard[0]?.created_at || null
 
       return {
@@ -569,6 +805,7 @@ async function load(): Promise<void> {
 
         tournament_entries: userTournament.length,
         tournament_best_score: tournamentBest,
+        tournament_best_accepted_score: tournamentBestAccepted,
         tournament_latest_at: tournamentLatestAt,
 
         leaderboard_entries: userLeaderboard.length,
@@ -579,7 +816,9 @@ async function load(): Promise<void> {
         payments: userPayments,
         tournament_scores: userTournament,
         leaderboard_scores: userLeaderboard,
-        referrals_earned: userReferrals
+        referrals_earned: userReferrals,
+
+        tournament_stats_by_id: buildTournamentStatsById(userTournament)
       }
     })
   } catch (e: any) {
@@ -590,6 +829,14 @@ async function load(): Promise<void> {
 }
 
 onMounted(load)
+
+function resetTournamentLens() {
+  selectedTournamentId.value = ''
+  participationFilter.value = 'all'
+  if (sortBy.value === 'selected_tournament_desc') {
+    sortBy.value = 'updated_desc'
+  }
+}
 
 function openRow(r: UserRow) {
   selected.value = r
@@ -653,8 +900,19 @@ async function setRole(next: Role): Promise<void> {
   }
 }
 
+const selectedScopedStats = computed(() => {
+  if (!selected.value || !selectedTournamentId.value) return null
+  return getScopedStats(selected.value, selectedTournamentId.value)
+})
+
 const selectedRecentPayments = computed(() => selected.value?.payments.slice(0, 12) || [])
-const selectedRecentTournament = computed(() => selected.value?.tournament_scores.slice(0, 12) || [])
+const selectedRecentTournament = computed(() => {
+  if (!selected.value) return []
+  if (selectedTournamentId.value) {
+    return getScopedStats(selected.value, selectedTournamentId.value)?.rows.slice(0, 20) || []
+  }
+  return selected.value.tournament_scores.slice(0, 20)
+})
 const selectedRecentLeaderboard = computed(() => selected.value?.leaderboard_scores.slice(0, 12) || [])
 const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.slice(0, 12) || [])
 </script>
@@ -681,14 +939,15 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
             class="inline-flex items-center gap-2 rounded-full border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-1.5 text-xs text-black/60 dark:text-white/60"
           >
             <UIcon name="i-heroicons-users" class="h-4 w-4" />
-            Profiles + activity
+            User management + tournament lens
           </div>
 
           <h1 class="mt-3 text-2xl lg:text-3xl font-extrabold tracking-tight text-black dark:text-white">
             Users
           </h1>
-          <p class="mt-1 text-sm text-black/60 dark:text-white/60 max-w-3xl">
-            View user profile, email, role, subscription, payments, referral, tournament and leaderboard details from your application tables.
+
+          <p class="mt-1 text-sm text-black/60 dark:text-white/60 max-w-4xl">
+            Manage user role, subscription, payments, referrals, overall activity, and any selected tournament from one page.
           </p>
         </div>
 
@@ -738,7 +997,144 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
         </div>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 xl:grid-cols-[1fr_auto_auto_auto] gap-3">
+      <div class="mt-4 rounded-3xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div class="text-sm font-bold text-black dark:text-white">Tournament focus</div>
+            <div class="mt-1 text-xs text-black/60 dark:text-white/60">
+              Select a tournament to turn this page into tournament-wise user management.
+            </div>
+          </div>
+
+          <button
+            v-if="selectedTournamentId"
+            type="button"
+            class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10 transition"
+            @click="resetTournamentLens"
+          >
+            <UIcon name="i-heroicons-x-mark" class="h-4 w-4" />
+            Clear tournament focus
+          </button>
+        </div>
+
+        <div class="mt-3 grid grid-cols-1 xl:grid-cols-[1.3fr_auto_auto_auto] gap-3">
+          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5">
+            <div class="text-[11px] text-black/50 dark:text-white/50 mb-1">Tournament</div>
+            <select
+              v-model="selectedTournamentId"
+              class="w-full bg-transparent text-sm text-black dark:text-white outline-none"
+            >
+              <option value="">All tournaments</option>
+              <option
+                v-for="t in tournaments"
+                :key="t.id"
+                :value="t.id"
+              >
+                {{ t.title }} ({{ t.slug }})
+              </option>
+            </select>
+          </div>
+
+          <div
+            class="inline-flex flex-wrap items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-1.5 backdrop-blur"
+          >
+            <button
+              type="button"
+              class="px-3 py-2 rounded-xl text-sm transition"
+              :class="participationFilter === 'all'
+                ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white'
+                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
+              @click="participationFilter = 'all'"
+            >
+              All
+            </button>
+
+            <button
+              type="button"
+              class="px-3 py-2 rounded-xl text-sm transition"
+              :disabled="!selectedTournamentId"
+              :class="participationFilter === 'joined_selected'
+                ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200'
+                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white disabled:opacity-40'"
+              @click="participationFilter = 'joined_selected'"
+            >
+              Joined selected
+            </button>
+
+            <button
+              type="button"
+              class="px-3 py-2 rounded-xl text-sm transition"
+              :disabled="!selectedTournamentId"
+              :class="participationFilter === 'not_joined_selected'
+                ? 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
+                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white disabled:opacity-40'"
+              @click="participationFilter = 'not_joined_selected'"
+            >
+              Not joined
+            </button>
+          </div>
+
+          <div
+            v-if="selectedTournament"
+            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5"
+          >
+            <div class="text-[11px] text-black/50 dark:text-white/50 mb-1">Selected status</div>
+            <div class="flex items-center gap-2">
+              <span
+                class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold"
+                :class="tournamentStatusClass(selectedTournament.status)"
+              >
+                {{ selectedTournament.status }}
+              </span>
+            </div>
+          </div>
+
+          <div
+            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5"
+          >
+            <div class="text-[11px] text-black/50 dark:text-white/50 mb-1">Sort</div>
+            <select
+              v-model="sortBy"
+              class="w-full bg-transparent text-sm text-black dark:text-white outline-none"
+            >
+              <option value="updated_desc">Recently updated</option>
+              <option value="name_asc">Name A-Z</option>
+              <option value="payments_desc">Highest payments</option>
+              <option value="tournament_desc">Highest overall tournament score</option>
+              <option :disabled="!selectedTournamentId" value="selected_tournament_desc">Highest selected tournament score</option>
+              <option value="leaderboard_desc">Highest leaderboard score</option>
+              <option value="referrals_desc">Most referrals</option>
+            </select>
+          </div>
+        </div>
+
+        <div
+          v-if="selectedTournament"
+          class="mt-3 grid grid-cols-2 xl:grid-cols-4 gap-3"
+        >
+          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+            <div class="text-xs text-black/60 dark:text-white/60">Users joined</div>
+            <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ tournamentSummary.usersJoined }}</div>
+          </div>
+
+          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+            <div class="text-xs text-black/60 dark:text-white/60">Total entries</div>
+            <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ tournamentSummary.totalEntries }}</div>
+          </div>
+
+          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+            <div class="text-xs text-black/60 dark:text-white/60">Highest score</div>
+            <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ fmtScore(tournamentSummary.highestScore) }}</div>
+          </div>
+
+          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+            <div class="text-xs text-black/60 dark:text-white/60">Highest accepted</div>
+            <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ fmtScore(tournamentSummary.highestAcceptedScore) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 xl:grid-cols-[1fr_auto_auto] gap-3">
         <div
           class="flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5 backdrop-blur"
         >
@@ -746,7 +1142,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
           <input
             v-model="q"
             type="text"
-            placeholder="Search name, email, user id, phone, referral code…"
+            placeholder="Search name, user id, phone, referral code, score…"
             class="w-full bg-transparent text-sm outline-none text-black dark:text-white placeholder:text-black/40 dark:placeholder:text-white/40"
           />
           <button
@@ -854,23 +1250,6 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
             None
           </button>
         </div>
-
-        <div
-          class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5"
-        >
-          <UIcon name="i-heroicons-arrows-up-down" class="h-4 w-4 opacity-70" />
-          <select
-            v-model="sortBy"
-            class="bg-transparent text-sm text-black dark:text-white outline-none"
-          >
-            <option value="updated_desc">Recently updated</option>
-            <option value="name_asc">Name A-Z</option>
-            <option value="payments_desc">Highest payments</option>
-            <option value="tournament_desc">Highest tournament score</option>
-            <option value="leaderboard_desc">Highest leaderboard score</option>
-            <option value="referrals_desc">Most referrals</option>
-          </select>
-        </div>
       </div>
 
       <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-black/60 dark:text-white/60">
@@ -884,12 +1263,24 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
         </span>
 
         <span
+          v-if="selectedTournament"
+          class="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-cyan-800 dark:text-cyan-200"
+        >
+          <UIcon name="i-heroicons-trophy" class="h-4 w-4" />
+          Focused on: {{ selectedTournament.title }}
+        </span>
+
+        <span
           v-if="loading"
           class="inline-flex items-center gap-2 rounded-full px-3 py-1.5 border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5"
         >
           <span class="h-2 w-2 rounded-full animate-pulse bg-cyan-400" />
           Loading…
         </span>
+      </div>
+
+      <div class="mt-2 text-[11px] text-black/45 dark:text-white/45">
+        Email is not shown here because this page is loading directly from app tables. If you want auth email on this page, fetch it through a secure admin server API.
       </div>
     </div>
 
@@ -913,12 +1304,12 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
           <thead class="text-black/60 dark:text-white/60">
             <tr class="text-left border-b border-black/10 dark:border-white/10">
               <th class="py-3 px-4">User</th>
-              <th class="py-3 px-4 hidden xl:table-cell">Email</th>
               <th class="py-3 px-4 hidden lg:table-cell">Phone</th>
               <th class="py-3 px-4">Role</th>
               <th class="py-3 px-4 hidden xl:table-cell">Subscription</th>
               <th class="py-3 px-4 hidden xl:table-cell">Payments</th>
-              <th class="py-3 px-4 hidden 2xl:table-cell">Tournament</th>
+              <th class="py-3 px-4">Tournament focus</th>
+              <th class="py-3 px-4 hidden 2xl:table-cell">Overall tournament</th>
               <th class="py-3 px-4 hidden 2xl:table-cell">Leaderboard</th>
               <th class="py-3 px-4 text-right">Manage</th>
             </tr>
@@ -960,10 +1351,6 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                 </div>
               </td>
 
-              <td class="py-3 px-4 hidden xl:table-cell text-black/70 dark:text-white/70 break-all">
-                {{ r.email || '—' }}
-              </td>
-
               <td class="py-3 px-4 hidden lg:table-cell text-black/70 dark:text-white/70">
                 {{ r.phone || '—' }}
               </td>
@@ -999,15 +1386,50 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                 </div>
               </td>
 
+              <td class="py-3 px-4 min-w-[250px] text-black/70 dark:text-white/70">
+                <template v-if="selectedTournamentId">
+                  <div v-if="getScopedStats(r, selectedTournamentId)">
+                    <div class="font-semibold">
+                      Best: {{ fmtScore(getScopedStats(r, selectedTournamentId)?.best_score) }}
+                    </div>
+                    <div class="text-[11px] text-black/50 dark:text-white/50">
+                      Accepted: {{ fmtScore(getScopedStats(r, selectedTournamentId)?.best_accepted_score) }}
+                    </div>
+                    <div class="text-[11px] text-black/50 dark:text-white/50">
+                      Entries: {{ getScopedStats(r, selectedTournamentId)?.entries || 0 }}
+                    </div>
+                    <div class="text-[11px] text-black/50 dark:text-white/50">
+                      Latest: {{ fmtDate(getScopedStats(r, selectedTournamentId)?.latest_at) }}
+                    </div>
+                  </div>
+                  <div v-else class="text-sm text-black/45 dark:text-white/45">
+                    Not joined
+                  </div>
+                </template>
+
+                <template v-else>
+                  <div class="font-semibold">{{ fmtScore(r.tournament_best_score) }}</div>
+                  <div class="text-[11px] text-black/50 dark:text-white/50">
+                    Accepted: {{ fmtScore(r.tournament_best_accepted_score) }}
+                  </div>
+                  <div class="text-[11px] text-black/50 dark:text-white/50">
+                    {{ r.tournament_entries }} entries
+                  </div>
+                </template>
+              </td>
+
               <td class="py-3 px-4 hidden 2xl:table-cell text-black/70 dark:text-white/70">
-                <div class="font-semibold">{{ r.tournament_best_score ?? '—' }}</div>
+                <div class="font-semibold">{{ fmtScore(r.tournament_best_score) }}</div>
                 <div class="text-[11px] text-black/50 dark:text-white/50">
-                  {{ r.tournament_entries }} entries
+                  Accepted: {{ fmtScore(r.tournament_best_accepted_score) }}
+                </div>
+                <div class="text-[11px] text-black/50 dark:text-white/50">
+                  Latest: {{ fmtDate(r.tournament_latest_at) }}
                 </div>
               </td>
 
               <td class="py-3 px-4 hidden 2xl:table-cell text-black/70 dark:text-white/70">
-                <div class="font-semibold">{{ r.leaderboard_best_score ?? '—' }}</div>
+                <div class="font-semibold">{{ fmtScore(r.leaderboard_best_score) }}</div>
                 <div class="text-[11px] text-black/50 dark:text-white/50">
                   {{ r.leaderboard_entries }} entries
                 </div>
@@ -1089,6 +1511,14 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                 >
                   {{ selected.subscription_status }}
                 </span>
+
+                <span
+                  v-if="selectedTournament"
+                  class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold"
+                  :class="tournamentStatusClass(selectedTournament.status)"
+                >
+                  {{ selectedTournament.title }}
+                </span>
               </div>
 
               <div class="mt-1 text-xs text-black/60 dark:text-white/60 font-mono break-all">
@@ -1125,13 +1555,6 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                       <div class="text-xs text-black/60 dark:text-white/60">Display name</div>
                       <div class="mt-1 text-sm font-semibold text-black dark:text-white break-words">
                         {{ selected.display_name }}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div class="text-xs text-black/60 dark:text-white/60">Email</div>
-                      <div class="mt-1 text-sm font-semibold text-black dark:text-white break-all">
-                        {{ selected.email || '—' }}
                       </div>
                     </div>
 
@@ -1179,16 +1602,6 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                     >
                       <UIcon name="i-heroicons-clipboard" class="h-4 w-4" />
                       Copy user id
-                    </button>
-
-                    <button
-                      v-if="selected.email"
-                      type="button"
-                      class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/10 dark:hover:bg-white/10 transition"
-                      @click="copy(selected.email)"
-                    >
-                      <UIcon name="i-heroicons-envelope" class="h-4 w-4" />
-                      Copy email
                     </button>
 
                     <button
@@ -1242,7 +1655,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </div>
 
               <div class="mt-3 text-xs text-black/60 dark:text-white/60">
-                Note: Role update depends on your RLS policies allowing admins to update profiles.
+                Role update depends on your RLS policies allowing admins to update profiles.
               </div>
             </div>
           </div>
@@ -1263,27 +1676,39 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
             </div>
 
             <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
-              <div class="text-xs text-black/60 dark:text-white/60">Tournament entries</div>
-              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">{{ selected.tournament_entries }}</div>
-              <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">Best: {{ selected.tournament_best_score ?? '—' }}</div>
+              <div class="text-xs text-black/60 dark:text-white/60">
+                {{ selectedTournament ? 'Selected tournament entries' : 'Tournament entries' }}
+              </div>
+              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">
+                {{ selectedTournament ? (selectedScopedStats?.entries ?? 0) : selected.tournament_entries }}
+              </div>
+              <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">
+                Best: {{ selectedTournament ? fmtScore(selectedScopedStats?.best_score) : fmtScore(selected.tournament_best_score) }}
+              </div>
+            </div>
+
+            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+              <div class="text-xs text-black/60 dark:text-white/60">
+                {{ selectedTournament ? 'Selected accepted best' : 'Overall accepted best' }}
+              </div>
+              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">
+                {{ selectedTournament ? fmtScore(selectedScopedStats?.best_accepted_score) : fmtScore(selected.tournament_best_accepted_score) }}
+              </div>
+              <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">
+                Latest: {{ selectedTournament ? fmtDate(selectedScopedStats?.latest_at) : fmtDate(selected.tournament_latest_at) }}
+              </div>
             </div>
 
             <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
               <div class="text-xs text-black/60 dark:text-white/60">Leaderboard entries</div>
               <div class="mt-1 text-lg font-extrabold text-black dark:text-white">{{ selected.leaderboard_entries }}</div>
-              <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">Best: {{ selected.leaderboard_best_score ?? '—' }}</div>
+              <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">Best: {{ fmtScore(selected.leaderboard_best_score) }}</div>
             </div>
 
             <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
               <div class="text-xs text-black/60 dark:text-white/60">Referrals</div>
               <div class="mt-1 text-lg font-extrabold text-black dark:text-white">{{ selected.referrals_count }}</div>
               <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">Earned: ৳{{ fmtMoney(selected.referral_earned_total_bdt) }}</div>
-            </div>
-
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
-              <div class="text-xs text-black/60 dark:text-white/60">Referral wallet</div>
-              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">৳{{ fmtMoney(selected.referral_bonus_bdt) }}</div>
-              <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">Used: ৳{{ fmtMoney(selected.referral_bonus_used_bdt) }}</div>
             </div>
           </div>
 
@@ -1352,10 +1777,24 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 xl:col-span-2">
               <div class="flex items-center justify-between gap-3">
-                <div class="text-sm font-bold text-black dark:text-white">Tournament scores</div>
-                <div class="text-xs text-black/60 dark:text-white/60">{{ selected.tournament_scores.length }}</div>
+                <div class="flex items-center gap-2">
+                  <div class="text-sm font-bold text-black dark:text-white">
+                    {{ selectedTournament ? 'Selected tournament scores' : 'Tournament scores' }}
+                  </div>
+                  <span
+                    v-if="selectedTournament"
+                    class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold"
+                    :class="tournamentStatusClass(selectedTournament.status)"
+                  >
+                    {{ selectedTournament.title }}
+                  </span>
+                </div>
+
+                <div class="text-xs text-black/60 dark:text-white/60">
+                  {{ selectedTournament ? (selectedScopedStats?.entries ?? 0) : selected.tournament_scores.length }}
+                </div>
               </div>
 
               <div v-if="selectedRecentTournament.length" class="mt-3 overflow-auto">
@@ -1364,6 +1803,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                     <tr class="border-b border-black/10 dark:border-white/10">
                       <th class="py-2 pr-3 text-left">Name</th>
                       <th class="py-2 pr-3 text-left">Score</th>
+                      <th class="py-2 pr-3 text-left">Accepted</th>
                       <th class="py-2 pr-3 text-left">Device</th>
                       <th class="py-2 pr-0 text-right">Updated</th>
                     </tr>
@@ -1371,7 +1811,8 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                   <tbody>
                     <tr v-for="t in selectedRecentTournament" :key="t.id" class="border-b border-black/5 dark:border-white/5">
                       <td class="py-2 pr-3">{{ t.player_name }}</td>
-                      <td class="py-2 pr-3">{{ t.score }}</td>
+                      <td class="py-2 pr-3">{{ fmtScore(t.score) }}</td>
+                      <td class="py-2 pr-3">{{ fmtScore(t.accepted_score) }}</td>
                       <td class="py-2 pr-3">{{ t.device_type || '—' }}</td>
                       <td class="py-2 pr-0 text-right whitespace-nowrap">{{ fmtDate(t.updated_at || t.created_at) }}</td>
                     </tr>
@@ -1402,7 +1843,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                   <tbody>
                     <tr v-for="l in selectedRecentLeaderboard" :key="l.id" class="border-b border-black/5 dark:border-white/5">
                       <td class="py-2 pr-3">{{ l.game_slug }}</td>
-                      <td class="py-2 pr-3">{{ l.score }}</td>
+                      <td class="py-2 pr-3">{{ fmtScore(l.score) }}</td>
                       <td class="py-2 pr-0 text-right whitespace-nowrap">{{ fmtDate(l.created_at) }}</td>
                     </tr>
                   </tbody>
@@ -1413,39 +1854,39 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                 No leaderboard scores found.
               </div>
             </div>
-          </div>
 
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
-            <div class="flex items-center justify-between gap-3">
-              <div class="text-sm font-bold text-black dark:text-white">Referrals earned</div>
-              <div class="text-xs text-black/60 dark:text-white/60">{{ selected.referrals_earned.length }}</div>
-            </div>
+            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+              <div class="flex items-center justify-between gap-3">
+                <div class="text-sm font-bold text-black dark:text-white">Referrals earned</div>
+                <div class="text-xs text-black/60 dark:text-white/60">{{ selected.referrals_earned.length }}</div>
+              </div>
 
-            <div v-if="selectedRecentReferrals.length" class="mt-3 overflow-auto">
-              <table class="w-full text-sm">
-                <thead class="text-black/60 dark:text-white/60">
-                  <tr class="border-b border-black/10 dark:border-white/10">
-                    <th class="py-2 pr-3 text-left">Referred user</th>
-                    <th class="py-2 pr-3 text-left">Code</th>
-                    <th class="py-2 pr-3 text-left">Status</th>
-                    <th class="py-2 pr-3 text-left">Created</th>
-                    <th class="py-2 pr-0 text-right">Bonus</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="r in selectedRecentReferrals" :key="r.id" class="border-b border-black/5 dark:border-white/5">
-                    <td class="py-2 pr-3 font-mono text-xs break-all">{{ r.referred_user_id }}</td>
-                    <td class="py-2 pr-3">{{ r.referral_code }}</td>
-                    <td class="py-2 pr-3">{{ r.status }}</td>
-                    <td class="py-2 pr-3 whitespace-nowrap">{{ fmtDate(r.created_at) }}</td>
-                    <td class="py-2 pr-0 text-right">৳{{ fmtMoney(r.bonus_bdt) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+              <div v-if="selectedRecentReferrals.length" class="mt-3 overflow-auto">
+                <table class="w-full text-sm">
+                  <thead class="text-black/60 dark:text-white/60">
+                    <tr class="border-b border-black/10 dark:border-white/10">
+                      <th class="py-2 pr-3 text-left">Referred user</th>
+                      <th class="py-2 pr-3 text-left">Code</th>
+                      <th class="py-2 pr-3 text-left">Status</th>
+                      <th class="py-2 pr-3 text-left">Created</th>
+                      <th class="py-2 pr-0 text-right">Bonus</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in selectedRecentReferrals" :key="r.id" class="border-b border-black/5 dark:border-white/5">
+                      <td class="py-2 pr-3 font-mono text-xs break-all">{{ r.referred_user_id }}</td>
+                      <td class="py-2 pr-3">{{ r.referral_code }}</td>
+                      <td class="py-2 pr-3">{{ r.status }}</td>
+                      <td class="py-2 pr-3 whitespace-nowrap">{{ fmtDate(r.created_at) }}</td>
+                      <td class="py-2 pr-0 text-right">৳{{ fmtMoney(r.bonus_bdt) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
 
-            <div v-else class="mt-3 text-sm text-black/60 dark:text-white/60">
-              No referrals found.
+              <div v-else class="mt-3 text-sm text-black/60 dark:text-white/60">
+                No referrals found.
+              </div>
             </div>
           </div>
         </div>
