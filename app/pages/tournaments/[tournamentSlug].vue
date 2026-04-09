@@ -42,6 +42,8 @@ type WinnerRow = {
   display_name?: string | null
   avatar_url?: string | null
   masked_phone?: string | null
+  is_verified?: boolean | null
+  verified_link?: string | null
 }
 
 type AssignedPrizeRow = {
@@ -117,10 +119,10 @@ await loadTournament()
 
 const pageTitle = computed(() => (t.value ? `টুর্নামেন্ট — ${t.value.title}` : 'টুর্নামেন্ট'))
 const pageDesc = computed(() =>
-    String(
-        t.value?.description ||
-        'Illusion Arc-এর টুর্নামেন্ট খেলুন, লিডারবোর্ডে উঠুন এবং আকর্ষণীয় পুরস্কার জিতুন।'
-    ).trim()
+  String(
+    t.value?.description ||
+      'Illusion Arc-এর টুর্নামেন্ট খেলুন, লিডারবোর্ডে উঠুন এবং আকর্ষণীয় পুরস্কার জিতুন।'
+  ).trim()
 )
 
 useHead(() => ({
@@ -242,6 +244,15 @@ function leaderboardScoreClass(rank: number) {
   if (rank <= 3) return 'text-lg sm:text-2xl font-extrabold'
   return 'text-base sm:text-xl font-bold'
 }
+function winnerVerifiedLink(w?: WinnerRow | null) {
+  const verified = Boolean(w?.is_verified)
+  const link = String(w?.verified_link || '').trim()
+  if (!verified || !link) return ''
+  return link
+}
+function isWinnerVerified(w?: WinnerRow | null) {
+  return Boolean(w?.is_verified) && Boolean(String(w?.verified_link || '').trim())
+}
 
 const effectiveStatus = computed<'scheduled' | 'live' | 'ended' | 'canceled'>(() => {
   if (!t.value) return 'scheduled'
@@ -360,8 +371,8 @@ const issueReportMessage = computed(() => {
     gameName ? `গেম: ${gameName}` : '',
     'সমস্যার বিস্তারিত: '
   ]
-      .filter(Boolean)
-      .join('\n')
+    .filter(Boolean)
+    .join('\n')
 })
 
 const whatsappReportLink = computed(() => {
@@ -385,8 +396,8 @@ async function loadAssignedPrizes() {
     }
 
     const { data, error } = await supabase
-        .from('tournament_prize_map')
-        .select(`
+      .from('tournament_prize_map')
+      .select(`
         id,
         rank,
         prize_id,
@@ -398,25 +409,25 @@ async function loadAssignedPrizes() {
           image_path
         )
       `)
-        .eq('tournament_id', t.value.id)
-        .order('rank', { ascending: true })
+      .eq('tournament_id', t.value.id)
+      .order('rank', { ascending: true })
 
     if (error) throw error
 
     assignedPrizes.value = ((data || []) as AssignedPrizeRow[])
-        .map((row) => {
-          const p = row.prize
-          if (!p) return null
-          return {
-            id: String(p.id || '').trim(),
-            rank: Number(row.rank || 0),
-            title: String(p.title || '').trim(),
-            description: p.description || null,
-            image_url: p.image_url || null,
-            image_path: p.image_path || null
-          } as PrizeRelation
-        })
-        .filter(Boolean) as PrizeRelation[]
+      .map((row) => {
+        const p = row.prize
+        if (!p) return null
+        return {
+          id: String(p.id || '').trim(),
+          rank: Number(row.rank || 0),
+          title: String(p.title || '').trim(),
+          description: p.description || null,
+          image_url: p.image_url || null,
+          image_path: p.image_path || null
+        } as PrizeRelation
+      })
+      .filter(Boolean) as PrizeRelation[]
   } catch (e: any) {
     prizesError.value = e?.message || 'পুরস্কারের তথ্য লোড করা যায়নি'
     assignedPrizes.value = []
@@ -476,9 +487,9 @@ async function fetchProfiles(ids: string[]) {
 
   try {
     const { data, error } = await (supabase as any)
-        .from('profiles')
-        .select('user_id, display_name, avatar_url, phone')
-        .in('user_id', cleanIds)
+      .from('profiles')
+      .select('user_id, display_name, avatar_url, phone')
+      .in('user_id', cleanIds)
 
     if (error) throw error
 
@@ -626,48 +637,48 @@ function trackMeta(eventName: string, params: Record<string, any> = {}) {
 const trackedTournamentViewKey = ref('')
 
 watch(
-    () => [slug.value, t.value?.id, t.value?.title, effectiveStatus.value] as const,
-    ([slugValue, tournamentId, tournamentTitle]) => {
-      if (!import.meta.client) return
-      const key = `${slugValue}:${String(tournamentId || '')}:${String(tournamentTitle || '')}`
-      if (!slugValue || !tournamentTitle || trackedTournamentViewKey.value === key) return
-      trackedTournamentViewKey.value = key
+  () => [slug.value, t.value?.id, t.value?.title, effectiveStatus.value] as const,
+  ([slugValue, tournamentId, tournamentTitle]) => {
+    if (!import.meta.client) return
+    const key = `${slugValue}:${String(tournamentId || '')}:${String(tournamentTitle || '')}`
+    if (!slugValue || !tournamentTitle || trackedTournamentViewKey.value === key) return
+    trackedTournamentViewKey.value = key
 
-      trackMeta('ViewContent', {
-        content_ids: [String(tournamentId || slugValue)],
-        content_category: 'Tournament Detail'
-      })
-    },
-    { immediate: true }
+    trackMeta('ViewContent', {
+      content_ids: [String(tournamentId || slugValue)],
+      content_category: 'Tournament Detail'
+    })
+  },
+  { immediate: true }
 )
 
 const lastBoundaryTick = ref<number>(0)
 
 watch(
-    () => now.value,
-    async () => {
-      if (!t.value) return
+  () => now.value,
+  async () => {
+    if (!t.value) return
 
-      const s = new Date(getStartsAt(t.value)).getTime()
-      const e = new Date(getEndsAt(t.value)).getTime()
-      if (!Number.isFinite(s) && !Number.isFinite(e)) return
+    const s = new Date(getStartsAt(t.value)).getTime()
+    const e = new Date(getEndsAt(t.value)).getTime()
+    if (!Number.isFinite(s) && !Number.isFinite(e)) return
 
-      const nearStart = Number.isFinite(s) ? Math.abs(now.value - s) < 1500 : false
-      const nearEnd = Number.isFinite(e) ? Math.abs(now.value - e) < 1500 : false
-      if (!nearStart && !nearEnd) return
+    const nearStart = Number.isFinite(s) ? Math.abs(now.value - s) < 1500 : false
+    const nearEnd = Number.isFinite(e) ? Math.abs(now.value - e) < 1500 : false
+    if (!nearStart && !nearEnd) return
 
-      if (now.value - lastBoundaryTick.value < 2000) return
-      lastBoundaryTick.value = now.value
+    if (now.value - lastBoundaryTick.value < 2000) return
+    lastBoundaryTick.value = now.value
 
-      await loadTournament()
-      await loadAssignedPrizes()
-      await refreshSub()
-      await loadLeaderboard()
+    await loadTournament()
+    await loadAssignedPrizes()
+    await refreshSub()
+    await loadLeaderboard()
 
-      if (effectiveStatus.value === 'ended') {
-        await loadWinners()
-      }
+    if (effectiveStatus.value === 'ended') {
+      await loadWinners()
     }
+  }
 )
 
 if (effectiveStatus.value === 'ended') {
@@ -727,13 +738,13 @@ function trackSocialClick(platform: string) {
   <div class="tournament-page">
     <UContainer class="py-6 sm:py-8 lg:py-10">
       <div
-          v-if="!t"
-          class="rounded-[26px] border border-black/10 bg-white p-5 text-slate-900 shadow-[0_14px_44px_rgba(15,23,42,0.08)] backdrop-blur sm:p-6 dark:border-white/10 dark:bg-white/5 dark:text-white dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+        v-if="!t"
+        class="rounded-[26px] border border-black/10 bg-white p-5 text-slate-900 shadow-[0_14px_44px_rgba(15,23,42,0.08)] backdrop-blur sm:p-6 dark:border-white/10 dark:bg-white/5 dark:text-white dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
       >
         <div class="text-lg font-semibold">টুর্নামেন্ট পাওয়া যায়নি</div>
         <NuxtLink
-            to="/tournaments"
-            class="mt-3 inline-block text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white"
+          to="/tournaments"
+          class="mt-3 inline-block text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white"
         >
           ← টুর্নামেন্টে ফিরে যান
         </NuxtLink>
@@ -742,29 +753,29 @@ function trackSocialClick(platform: string) {
       <div v-else class="space-y-6 text-slate-900 sm:space-y-8 dark:text-white">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <NuxtLink
-              to="/tournaments"
-              class="text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white"
+            to="/tournaments"
+            class="text-sm text-black/65 hover:text-black dark:text-white/65 dark:hover:text-white"
           >
             ← ফিরে যান
           </NuxtLink>
 
           <div class="flex items-center gap-2">
             <UButton
-                v-if="user && sub && !sub.active && !isEnded && !isCanceled"
-                to="/subscribe"
-                size="sm"
-                class="!rounded-full"
-                @click="trackSubscribeClick"
+              v-if="user && sub && !sub.active && !isEnded && !isCanceled"
+              to="/subscribe"
+              size="sm"
+              class="!rounded-full"
+              @click="trackSubscribeClick"
             >
               টুর্নামেন্টে সাবস্ক্রাইব করুন
             </UButton>
             <UButton
-                v-else-if="user && !isEnded && !isCanceled"
-                to="/subscribe"
-                size="sm"
-                variant="soft"
-                class="!rounded-full"
-                @click="trackSubscribeClick"
+              v-else-if="user && !isEnded && !isCanceled"
+              to="/subscribe"
+              size="sm"
+              variant="soft"
+              class="!rounded-full"
+              @click="trackSubscribeClick"
             >
               সাবস্ক্রিপশন
             </UButton>
@@ -774,7 +785,7 @@ function trackSocialClick(platform: string) {
         <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-6">
           <div class="min-w-0 space-y-5 sm:space-y-6">
             <div
-                class="hero-card relative overflow-hidden rounded-[26px] border border-black/10 bg-white/90 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)] sm:p-7 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_40px_rgba(0,0,0,0.25)]"
+              class="hero-card relative overflow-hidden rounded-[26px] border border-black/10 bg-white/90 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)] sm:p-7 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_40px_rgba(0,0,0,0.25)]"
             >
               <div class="hero-glow hero-glow-a"></div>
               <div class="hero-glow hero-glow-b"></div>
@@ -782,8 +793,8 @@ function trackSocialClick(platform: string) {
               <div class="relative space-y-3">
                 <div class="flex flex-wrap items-center gap-2">
                   <span
-                      class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold"
-                      :class="statusBadge.cls"
+                    class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold"
+                    :class="statusBadge.cls"
                   >
                     <span class="inline-flex h-1.5 w-1.5 rounded-full" :class="statusBadge.dot" />
                     {{ statusBadge.text }}
@@ -794,8 +805,8 @@ function trackSocialClick(platform: string) {
                   </span>
 
                   <span
-                      v-if="sub?.active && !isEnded && !isCanceled"
-                      class="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] text-emerald-700 dark:text-emerald-200"
+                    v-if="sub?.active && !isEnded && !isCanceled"
+                    class="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] text-emerald-700 dark:text-emerald-200"
                   >
                     সাবস্ক্রিপশন চালু
                   </span>
@@ -811,10 +822,10 @@ function trackSocialClick(platform: string) {
 
                 <div class="flex flex-wrap items-center gap-2 pt-1">
                   <a
-                      :href="formLink"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/15 dark:border-emerald-300/20 dark:text-emerald-200 dark:hover:bg-emerald-400/10"
+                    :href="formLink"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/15 dark:border-emerald-300/20 dark:text-emerald-200 dark:hover:bg-emerald-400/10"
                   >
                     <UIcon name="i-heroicons-document-text" class="h-4 w-4" />
                     <span>𝗙𝗼𝗿𝗺 𝗟𝗶𝗻𝗸</span>
@@ -830,23 +841,23 @@ function trackSocialClick(platform: string) {
             <div class="overflow-hidden rounded-[24px] border border-black/10 bg-white shadow-[0_14px_44px_rgba(15,23,42,0.08)] backdrop-blur sm:rounded-[28px] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]">
               <div class="aspect-[16/10] bg-black sm:aspect-[16/9]">
                 <video
-                    v-if="promoVideoType === 'upload' && promoVideoUrl"
-                    :src="promoVideoUrl"
-                    controls
-                    autoplay
-                    muted
-                    playsinline
-                    preload="metadata"
-                    class="h-full w-full object-cover"
+                  v-if="promoVideoType === 'upload' && promoVideoUrl"
+                  :src="promoVideoUrl"
+                  controls
+                  autoplay
+                  muted
+                  playsinline
+                  preload="metadata"
+                  class="h-full w-full object-cover"
                 />
                 <iframe
-                    v-else-if="promoVideoType === 'youtube' && promoYoutubeEmbedUrl"
-                    :src="promoYoutubeEmbedUrl"
-                    :title="promoVideoTitle || 'টুর্নামেন্ট প্রোমো ভিডিও'"
-                    class="h-full w-full"
-                    frameborder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowfullscreen
+                  v-else-if="promoVideoType === 'youtube' && promoYoutubeEmbedUrl"
+                  :src="promoYoutubeEmbedUrl"
+                  :title="promoVideoTitle || 'টুর্নামেন্ট প্রোমো ভিডিও'"
+                  class="h-full w-full"
+                  frameborder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowfullscreen
                 />
                 <div v-else class="relative h-full w-full">
                   <img :src="thumb" :alt="t.title" class="h-full w-full object-cover opacity-90" />
@@ -862,8 +873,8 @@ function trackSocialClick(platform: string) {
 
             <div class="xl:hidden">
               <div
-                  class="state-shell rounded-[26px] p-[1px] sm:rounded-[30px]"
-                  :class="{
+                class="state-shell rounded-[26px] p-[1px] sm:rounded-[30px]"
+                :class="{
                   'state-shell-live': isLive,
                   'state-shell-scheduled': isScheduled,
                   'state-shell-ended': isEnded || isCanceled
@@ -872,8 +883,8 @@ function trackSocialClick(platform: string) {
                 <div class="rounded-[25px] bg-white p-4 sm:rounded-[29px] sm:p-6 dark:bg-[#0b1322]">
                   <div class="flex justify-center">
                     <span
-                        class="inline-flex items-center gap-3 rounded-[16px] border px-4 py-2 text-xl font-extrabold tracking-tight sm:rounded-[18px] sm:px-5 sm:py-3 sm:text-2xl"
-                        :class="statusBadge.cls"
+                      class="inline-flex items-center gap-3 rounded-[16px] border px-4 py-2 text-xl font-extrabold tracking-tight sm:rounded-[18px] sm:px-5 sm:py-3 sm:text-2xl"
+                      :class="statusBadge.cls"
                     >
                       <span class="inline-flex h-3 w-3 rounded-full sm:h-3.5 sm:w-3.5" :class="statusBadge.dot" />
                       {{ statusBadge.text }}
@@ -885,8 +896,8 @@ function trackSocialClick(platform: string) {
                       {{ isLive ? 'শেষ হতে বাকি' : isScheduled ? 'শুরু হতে বাকি' : isEnded ? 'টুর্নামেন্ট শেষ' : 'টুর্নামেন্ট বাতিল' }}
                     </div>
                     <div
-                        class="mt-2 break-words text-2xl font-extrabold tracking-tight sm:text-4xl"
-                        :class="{
+                      class="mt-2 break-words text-2xl font-extrabold tracking-tight sm:text-4xl"
+                      :class="{
                         'text-emerald-700 dark:text-emerald-300': isLive,
                         'text-violet-700 dark:text-violet-300': isScheduled,
                         'text-red-700 dark:text-red-300': isEnded || isCanceled
@@ -908,44 +919,44 @@ function trackSocialClick(platform: string) {
 
                   <div v-if="showPlayButtons" class="mt-6 space-y-3 sm:mt-8">
                     <UButton
-                        v-if="canPlay"
-                        block
-                        size="xl"
-                        class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
-                        @click="playHard(t.slug)"
+                      v-if="canPlay"
+                      block
+                      size="xl"
+                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                      @click="playHard(t.slug)"
                     >
                       খেলুন
                     </UButton>
 
                     <UButton
-                        v-else-if="isLive && user && sub && !sub.active"
-                        block
-                        size="xl"
-                        class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
-                        to="/subscribe"
-                        @click="trackSubscribeClick"
+                      v-else-if="isLive && user && sub && !sub.active"
+                      block
+                      size="xl"
+                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                      to="/subscribe"
+                      @click="trackSubscribeClick"
                     >
                       টুর্নামেন্টে সাবস্ক্রাইব করুন
                     </UButton>
 
                     <UButton
-                        v-else
-                        block
-                        size="xl"
-                        class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
-                        @click="playHard(t.slug)"
+                      v-else
+                      block
+                      size="xl"
+                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                      @click="playHard(t.slug)"
                     >
                       খেলুন
                     </UButton>
 
                     <UButton
-                        :to="practiceLink"
-                        block
-                        size="lg"
-                        variant="solid"
-                        color="secondary"
-                        class="practice-btn !rounded-[18px] min-h-[48px]"
-                        @click="trackPracticeClick"
+                      :to="practiceLink"
+                      block
+                      size="lg"
+                      variant="solid"
+                      color="secondary"
+                      class="practice-btn !rounded-[18px] min-h-[48px]"
+                      @click="trackPracticeClick"
                     >
                       প্র‍্যাকটিস করুন
                     </UButton>
@@ -973,42 +984,42 @@ function trackSocialClick(platform: string) {
               </div>
 
               <div
-                  v-if="prizesError && !visiblePrizes.length"
-                  class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
+                v-if="prizesError && !visiblePrizes.length"
+                class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
               >
                 {{ prizesError }}
               </div>
 
               <div
-                  v-else-if="prizesPending && !visiblePrizes.length"
-                  class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                v-else-if="prizesPending && !visiblePrizes.length"
+                class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
               >
                 পুরস্কারের তথ্য লোড হচ্ছে…
               </div>
 
               <div
-                  v-else-if="!visiblePrizes.length"
-                  class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                v-else-if="!visiblePrizes.length"
+                class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
               >
                 পুরস্কারের বিস্তারিত শীঘ্রই প্রকাশ করা হবে।
               </div>
 
               <div
-                  v-else
-                  class="prize-scroll-x rounded-[24px] border border-black/10 bg-white p-3 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:p-4 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                v-else
+                class="prize-scroll-x rounded-[24px] border border-black/10 bg-white p-3 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:p-4 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
               >
                 <div class="prize-row">
                   <div
-                      v-for="p in visiblePrizes"
-                      :key="`${p.rank}-${p.id || p.title}`"
-                      class="prize-item prize-card-horizontal rounded-[20px] border border-black/10 bg-black/5 p-3 sm:rounded-[22px] sm:p-4 dark:border-white/10 dark:bg-white/5"
+                    v-for="p in visiblePrizes"
+                    :key="`${p.rank}-${p.id || p.title}`"
+                    class="prize-item prize-card-horizontal rounded-[20px] border border-black/10 bg-black/5 p-3 sm:rounded-[22px] sm:p-4 dark:border-white/10 dark:bg-white/5"
                   >
                     <div class="relative h-36 w-full overflow-hidden rounded-[16px] border border-black/10 bg-white sm:h-40 sm:rounded-[18px] dark:border-white/10 dark:bg-white/10">
                       <img
-                          v-if="p.image_url"
-                          :src="p.image_url"
-                          :alt="p.title"
-                          class="h-full w-full object-cover"
+                        v-if="p.image_url"
+                        :src="p.image_url"
+                        :alt="p.title"
+                        class="h-full w-full object-cover"
                       />
                       <div v-else class="grid h-full w-full place-items-center text-5xl">
                         {{ medal(p.rank) }}
@@ -1018,8 +1029,8 @@ function trackSocialClick(platform: string) {
                     <div class="mt-4">
                       <div class="flex flex-wrap items-center gap-2">
                         <span
-                            class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
-                            :class="rankChipClass(p.rank)"
+                          class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold"
+                          :class="rankChipClass(p.rank)"
                         >
                           {{ ordinalBn(p.rank) }}
                         </span>
@@ -1052,23 +1063,23 @@ function trackSocialClick(platform: string) {
               </div>
 
               <div
-                  v-else-if="!lbPending && !leaderboardPreview.length"
-                  class="mt-4 text-sm text-black/70 dark:text-white/75"
+                v-else-if="!lbPending && !leaderboardPreview.length"
+                class="mt-4 text-sm text-black/70 dark:text-white/75"
               >
                 এখনো কোনো স্কোর জমা পড়েনি।
               </div>
 
               <div v-else class="mt-4 space-y-3">
                 <div
-                    v-for="(r, i) in leaderboardPreview"
-                    :key="`${r.user_id || ''}-${r.player_name}-${r.created_at}-${i}`"
-                    class="leader-row relative flex items-center justify-between gap-3 overflow-hidden rounded-[16px] border border-black/10 bg-black/5 px-3 py-3 sm:rounded-[18px] sm:px-4 dark:border-white/10 dark:bg-white/5"
-                    :class="leaderboardRowClass(i + 1)"
+                  v-for="(r, i) in leaderboardPreview"
+                  :key="`${r.user_id || ''}-${r.player_name}-${r.created_at}-${i}`"
+                  class="leader-row relative flex items-center justify-between gap-3 overflow-hidden rounded-[16px] border border-black/10 bg-black/5 px-3 py-3 sm:rounded-[18px] sm:px-4 dark:border-white/10 dark:bg-white/5"
+                  :class="leaderboardRowClass(i + 1)"
                 >
                   <div
-                      v-if="i + 1 <= 3"
-                      class="absolute left-0 top-0 h-full w-1.5"
-                      :class="{
+                    v-if="i + 1 <= 3"
+                    class="absolute left-0 top-0 h-full w-1.5"
+                    :class="{
                       'bg-amber-400': i + 1 === 1,
                       'bg-slate-300': i + 1 === 2,
                       'bg-orange-400': i + 1 === 3
@@ -1083,16 +1094,16 @@ function trackSocialClick(platform: string) {
                       </div>
                     </div>
                     <div
-                        class="truncate text-base sm:text-xl"
-                        :class="[leaderboardRankTextClass(i + 1), leaderboardNameClass(i + 1)]"
+                      class="truncate text-base sm:text-xl"
+                      :class="[leaderboardRankTextClass(i + 1), leaderboardNameClass(i + 1)]"
                     >
                       {{ leaderboardName(r) }}
                     </div>
                   </div>
 
                   <div
-                      class="shrink-0"
-                      :class="[leaderboardRankTextClass(i + 1), leaderboardScoreClass(i + 1)]"
+                    class="shrink-0"
+                    :class="[leaderboardRankTextClass(i + 1), leaderboardScoreClass(i + 1)]"
                   >
                     {{ toBnDigits(r.score) }}
                   </div>
@@ -1111,11 +1122,11 @@ function trackSocialClick(platform: string) {
 
               <div class="mt-4">
                 <UButton
-                    :to="fullLeaderboardLink"
-                    variant="soft"
-                    block
-                    class="!rounded-full"
-                    @click="trackLeaderboardClick"
+                  :to="fullLeaderboardLink"
+                  variant="soft"
+                  block
+                  class="!rounded-full"
+                  @click="trackLeaderboardClick"
                 >
                   View Full Leaderboard
                 </UButton>
@@ -1135,15 +1146,15 @@ function trackSocialClick(platform: string) {
               </div>
 
               <div
-                  v-if="winnersError"
-                  class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
+                v-if="winnersError"
+                class="rounded-[22px] border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-100"
               >
                 {{ winnersError }}
               </div>
 
               <div
-                  v-else-if="!winnersPending && !hasWinners"
-                  class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                v-else-if="!winnersPending && !hasWinners"
+                class="rounded-[22px] border border-black/10 bg-white p-4 text-sm text-black/70 shadow-[0_14px_44px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
               >
                 এখনো বিজয়ীদের তথ্য পাওয়া যায়নি। রিফ্রেশ করে দেখুন।
               </div>
@@ -1151,9 +1162,9 @@ function trackSocialClick(platform: string) {
               <template v-else>
                 <div class="grid gap-4 md:grid-cols-3">
                   <div
-                      v-for="rank in [1, 2, 3]"
-                      :key="`podium-${rank}`"
-                      class="rounded-[22px] border border-black/10 bg-white p-5 text-center shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[24px] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
+                    v-for="rank in [1, 2, 3]"
+                    :key="`podium-${rank}`"
+                    class="rounded-[22px] border border-black/10 bg-white p-5 text-center shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:rounded-[24px] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_46px_rgba(0,0,0,0.30)]"
                   >
                     <div class="text-4xl">{{ medal(rank) }}</div>
                     <div class="mt-2 text-xs uppercase tracking-[0.2em] text-black/55 dark:text-white/55">
@@ -1163,11 +1174,11 @@ function trackSocialClick(platform: string) {
                     <div class="mt-4 flex justify-center">
                       <div class="h-16 w-16 overflow-hidden rounded-full border border-black/10 bg-white dark:border-white/10 dark:bg-white/10">
                         <img
-                            v-if="winnerAvatar(winnerByRank(rank))"
-                            :src="winnerAvatar(winnerByRank(rank))"
-                            alt="avatar"
-                            class="h-full w-full object-cover"
-                            @error="onAvatarError(winnerByRank(rank)?.user_id)"
+                          v-if="winnerAvatar(winnerByRank(rank))"
+                          :src="winnerAvatar(winnerByRank(rank))"
+                          alt="avatar"
+                          class="h-full w-full object-cover"
+                          @error="onAvatarError(winnerByRank(rank)?.user_id)"
                         />
                         <div v-else class="grid h-full w-full place-items-center text-sm font-semibold text-slate-900 dark:text-white">
                           {{ initials(winnerName(winnerByRank(rank))) }}
@@ -1175,8 +1186,21 @@ function trackSocialClick(platform: string) {
                       </div>
                     </div>
 
-                    <div class="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
-                      {{ winnerName(winnerByRank(rank)) }}
+                    <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+                      <div class="text-xl font-semibold text-slate-900 dark:text-white">
+                        {{ winnerName(winnerByRank(rank)) }}
+                      </div>
+
+                      <a
+                        v-if="isWinnerVerified(winnerByRank(rank))"
+                        :href="winnerVerifiedLink(winnerByRank(rank))"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="verified-tag inline-flex items-center gap-1 rounded-full border px-1.5 py-[2px] text-[9px] font-semibold leading-none"
+                      >
+                        <UIcon name="i-heroicons-check-badge" class="h-3.5 w-3.5" />
+                        Verified
+                      </a>
                     </div>
 
                     <div class="mt-1 text-xs text-black/55 dark:text-white/55">
@@ -1207,9 +1231,9 @@ function trackSocialClick(platform: string) {
 
                   <div class="space-y-3">
                     <div
-                        v-for="w in visibleWinners"
-                        :key="`winner-${w.rank}-${w.user_id || w.player_name}`"
-                        class="flex items-center justify-between gap-3 rounded-[18px] border border-black/10 bg-black/5 px-4 py-3 dark:border-white/10 dark:bg-white/5"
+                      v-for="w in visibleWinners"
+                      :key="`winner-${w.rank}-${w.user_id || w.player_name}`"
+                      class="flex items-center justify-between gap-3 rounded-[18px] border border-black/10 bg-black/5 px-4 py-3 dark:border-white/10 dark:bg-white/5"
                     >
                       <div class="flex min-w-0 items-center gap-3">
                         <div class="w-12 shrink-0 text-center text-base font-extrabold text-slate-900 dark:text-white">
@@ -1218,24 +1242,38 @@ function trackSocialClick(platform: string) {
 
                         <div class="h-11 w-11 shrink-0 overflow-hidden rounded-full border border-black/10 bg-white dark:border-white/10 dark:bg-white/10">
                           <img
-                              v-if="winnerAvatar(w)"
-                              :src="winnerAvatar(w)"
-                              alt="avatar"
-                              class="h-full w-full object-cover"
-                              @error="onAvatarError(w.user_id)"
+                            v-if="winnerAvatar(w)"
+                            :src="winnerAvatar(w)"
+                            alt="avatar"
+                            class="h-full w-full object-cover"
+                            @error="onAvatarError(w.user_id)"
                           />
                           <div
-                              v-else
-                              class="grid h-full w-full place-items-center text-xs font-semibold text-slate-900 dark:text-white"
+                            v-else
+                            class="grid h-full w-full place-items-center text-xs font-semibold text-slate-900 dark:text-white"
                           >
                             {{ initials(winnerName(w)) }}
                           </div>
                         </div>
 
                         <div class="min-w-0">
-                          <div class="truncate font-semibold text-slate-900 dark:text-white">
-                            {{ winnerName(w) }}
+                          <div class="flex flex-wrap items-center gap-2">
+                            <div class="truncate font-semibold text-slate-900 dark:text-white">
+                              {{ winnerName(w) }}
+                            </div>
+
+                            <a
+                              v-if="isWinnerVerified(w)"
+                              :href="winnerVerifiedLink(w)"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="verified-tag inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                            >
+                              <UIcon name="i-heroicons-check-badge" class="h-3.5 w-3.5" />
+                              Verified
+                            </a>
                           </div>
+
                           <div class="text-xs text-black/55 dark:text-white/55">
                             ফোন:
                             <b class="font-semibold text-slate-900 dark:text-white">
@@ -1243,8 +1281,8 @@ function trackSocialClick(platform: string) {
                             </b>
                           </div>
                           <div
-                              v-if="winnerPrizeText(w)"
-                              class="mt-0.5 truncate text-xs text-black/65 dark:text-white/70"
+                            v-if="winnerPrizeText(w)"
+                            class="mt-0.5 truncate text-xs text-black/65 dark:text-white/70"
                           >
                             পুরস্কার: {{ winnerPrizeText(w) }}
                           </div>
@@ -1280,22 +1318,22 @@ function trackSocialClick(platform: string) {
 
                   <div class="flex flex-col gap-3 sm:flex-row">
                     <a
-                        :href="whatsappGroupLink"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="wa-report-btn inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95"
-                        @click="trackWhatsappGroupClick"
+                      :href="whatsappGroupLink"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="wa-report-btn inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95"
+                      @click="trackWhatsappGroupClick"
                     >
                       <UIcon name="i-simple-icons-whatsapp" class="h-5 w-5" />
                       Whatsapp Group-এ জয়েন করুন
                     </a>
 
                     <a
-                        :href="whatsappReportLink"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="wa-report-btn inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95"
-                        @click="trackWhatsappReportClick"
+                      :href="whatsappReportLink"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="wa-report-btn inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95"
+                      @click="trackWhatsappReportClick"
                     >
                       <UIcon name="i-simple-icons-whatsapp" class="h-5 w-5" />
                       WhatsApp-এ রিপোর্ট করুন
@@ -1323,15 +1361,15 @@ function trackSocialClick(platform: string) {
 
                   <div class="flex flex-wrap items-center gap-3">
                     <a
-                        v-for="item in socialLinks"
-                        :key="item.label"
-                        :href="item.href"
-                        :aria-label="item.label"
-                        :title="item.label"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="social-icon-btn inline-flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-black/5 text-slate-900 transition hover:-translate-y-0.5 hover:border-black/20 hover:bg-black/[0.07] dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:border-white/20 dark:hover:bg-white/10"
-                        @click="trackSocialClick(item.label)"
+                      v-for="item in socialLinks"
+                      :key="item.label"
+                      :href="item.href"
+                      :aria-label="item.label"
+                      :title="item.label"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="social-icon-btn inline-flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-black/5 text-slate-900 transition hover:-translate-y-0.5 hover:border-black/20 hover:bg-black/[0.07] dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:border-white/20 dark:hover:bg-white/10"
+                      @click="trackSocialClick(item.label)"
                     >
                       <UIcon :name="item.icon" class="h-5 w-5" />
                     </a>
@@ -1354,8 +1392,8 @@ function trackSocialClick(platform: string) {
 
           <aside class="hidden space-y-5 xl:sticky xl:top-6 xl:block xl:self-start xl:space-y-6">
             <div
-                class="state-shell rounded-[26px] p-[1px] sm:rounded-[30px]"
-                :class="{
+              class="state-shell rounded-[26px] p-[1px] sm:rounded-[30px]"
+              :class="{
                 'state-shell-live': isLive,
                 'state-shell-scheduled': isScheduled,
                 'state-shell-ended': isEnded || isCanceled
@@ -1364,8 +1402,8 @@ function trackSocialClick(platform: string) {
               <div class="rounded-[25px] bg-white p-4 sm:rounded-[29px] sm:p-6 dark:bg-[#0b1322]">
                 <div class="flex justify-center">
                   <span
-                      class="inline-flex items-center gap-3 rounded-[16px] border px-4 py-2 text-xl font-extrabold tracking-tight sm:rounded-[18px] sm:px-5 sm:py-3 sm:text-2xl"
-                      :class="statusBadge.cls"
+                    class="inline-flex items-center gap-3 rounded-[16px] border px-4 py-2 text-xl font-extrabold tracking-tight sm:rounded-[18px] sm:px-5 sm:py-3 sm:text-2xl"
+                    :class="statusBadge.cls"
                   >
                     <span class="inline-flex h-3 w-3 rounded-full sm:h-3.5 sm:w-3.5" :class="statusBadge.dot" />
                     {{ statusBadge.text }}
@@ -1377,8 +1415,8 @@ function trackSocialClick(platform: string) {
                     {{ isLive ? 'শেষ হতে বাকি' : isScheduled ? 'শুরু হতে বাকি' : isEnded ? 'টুর্নামেন্ট শেষ' : 'টুর্নামেন্ট বাতিল' }}
                   </div>
                   <div
-                      class="mt-2 break-words text-2xl font-extrabold tracking-tight sm:text-4xl"
-                      :class="{
+                    class="mt-2 break-words text-2xl font-extrabold tracking-tight sm:text-4xl"
+                    :class="{
                       'text-emerald-700 dark:text-emerald-300': isLive,
                       'text-violet-700 dark:text-violet-300': isScheduled,
                       'text-red-700 dark:text-red-300': isEnded || isCanceled
@@ -1400,44 +1438,44 @@ function trackSocialClick(platform: string) {
 
                 <div v-if="showPlayButtons" class="mt-6 space-y-3 sm:mt-8">
                   <UButton
-                      v-if="canPlay"
-                      block
-                      size="xl"
-                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
-                      @click="playHard(t.slug)"
+                    v-if="canPlay"
+                    block
+                    size="xl"
+                    class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                    @click="playHard(t.slug)"
                   >
                     খেলুন
                   </UButton>
 
                   <UButton
-                      v-else-if="isLive && user && sub && !sub.active"
-                      block
-                      size="xl"
-                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
-                      to="/subscribe"
-                      @click="trackSubscribeClick"
+                    v-else-if="isLive && user && sub && !sub.active"
+                    block
+                    size="xl"
+                    class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                    to="/subscribe"
+                    @click="trackSubscribeClick"
                   >
                     টুর্নামেন্টে সাবস্ক্রাইব করুন
                   </UButton>
 
                   <UButton
-                      v-else
-                      block
-                      size="xl"
-                      class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
-                      @click="playHard(t.slug)"
+                    v-else
+                    block
+                    size="xl"
+                    class="cta-glow !rounded-[18px] min-h-[52px] sm:min-h-[56px]"
+                    @click="playHard(t.slug)"
                   >
                     খেলুন
                   </UButton>
 
                   <UButton
-                      :to="practiceLink"
-                      block
-                      size="lg"
-                      variant="solid"
-                      color="primary"
-                      class="practice-btn !rounded-[18px] min-h-[48px]"
-                      @click="trackPracticeClick"
+                    :to="practiceLink"
+                    block
+                    size="lg"
+                    variant="solid"
+                    color="primary"
+                    class="practice-btn !rounded-[18px] min-h-[48px]"
+                    @click="trackPracticeClick"
                   >
                     প্র‍্যাকটিস করুন
                   </UButton>
@@ -1463,23 +1501,23 @@ function trackSocialClick(platform: string) {
               </div>
 
               <div
-                  v-else-if="!lbPending && !leaderboardPreview.length"
-                  class="mt-4 text-sm text-black/70 dark:text-white/75"
+                v-else-if="!lbPending && !leaderboardPreview.length"
+                class="mt-4 text-sm text-black/70 dark:text-white/75"
               >
                 এখনো কোনো স্কোর জমা পড়েনি।
               </div>
 
               <div v-else class="mt-4 space-y-3">
                 <div
-                    v-for="(r, i) in leaderboardPreview"
-                    :key="`${r.user_id || ''}-${r.player_name}-${r.created_at}-${i}`"
-                    class="leader-row relative flex items-center justify-between gap-3 overflow-hidden rounded-[16px] border border-black/10 bg-black/5 px-3 py-3 sm:rounded-[18px] sm:px-4 dark:border-white/10 dark:bg-white/5"
-                    :class="leaderboardRowClass(i + 1)"
+                  v-for="(r, i) in leaderboardPreview"
+                  :key="`${r.user_id || ''}-${r.player_name}-${r.created_at}-${i}`"
+                  class="leader-row relative flex items-center justify-between gap-3 overflow-hidden rounded-[16px] border border-black/10 bg-black/5 px-3 py-3 sm:rounded-[18px] sm:px-4 dark:border-white/10 dark:bg-white/5"
+                  :class="leaderboardRowClass(i + 1)"
                 >
                   <div
-                      v-if="i + 1 <= 3"
-                      class="absolute left-0 top-0 h-full w-1.5"
-                      :class="{
+                    v-if="i + 1 <= 3"
+                    class="absolute left-0 top-0 h-full w-1.5"
+                    :class="{
                       'bg-amber-400': i + 1 === 1,
                       'bg-slate-300': i + 1 === 2,
                       'bg-orange-400': i + 1 === 3
@@ -1494,16 +1532,16 @@ function trackSocialClick(platform: string) {
                       </div>
                     </div>
                     <div
-                        class="truncate text-base sm:text-xl"
-                        :class="[leaderboardRankTextClass(i + 1), leaderboardNameClass(i + 1)]"
+                      class="truncate text-base sm:text-xl"
+                      :class="[leaderboardRankTextClass(i + 1), leaderboardNameClass(i + 1)]"
                     >
                       {{ leaderboardName(r) }}
                     </div>
                   </div>
 
                   <div
-                      class="shrink-0"
-                      :class="[leaderboardRankTextClass(i + 1), leaderboardScoreClass(i + 1)]"
+                    class="shrink-0"
+                    :class="[leaderboardRankTextClass(i + 1), leaderboardScoreClass(i + 1)]"
                   >
                     {{ toBnDigits(r.score) }}
                   </div>
@@ -1522,11 +1560,11 @@ function trackSocialClick(platform: string) {
 
               <div class="mt-4">
                 <UButton
-                    :to="fullLeaderboardLink"
-                    variant="soft"
-                    block
-                    class="!rounded-full"
-                    @click="trackLeaderboardClick"
+                  :to="fullLeaderboardLink"
+                  variant="soft"
+                  block
+                  class="!rounded-full"
+                  @click="trackLeaderboardClick"
                 >
                   View Full Leaderboard
                 </UButton>
@@ -1551,9 +1589,9 @@ function trackSocialClick(platform: string) {
   inset: 0;
   z-index: -2;
   background:
-      radial-gradient(circle at 18% 10%, rgba(139, 92, 246, 0.12), transparent 28%),
-      radial-gradient(circle at 82% 14%, rgba(16, 185, 129, 0.1), transparent 24%),
-      linear-gradient(180deg, #f7faff 0%, #eef4ff 52%, #f9fbff 100%);
+    radial-gradient(circle at 18% 10%, rgba(139, 92, 246, 0.12), transparent 28%),
+    radial-gradient(circle at 82% 14%, rgba(16, 185, 129, 0.1), transparent 24%),
+    linear-gradient(180deg, #f7faff 0%, #eef4ff 52%, #f9fbff 100%);
 }
 
 .tournament-page::after {
@@ -1564,8 +1602,8 @@ function trackSocialClick(platform: string) {
   pointer-events: none;
   opacity: 0.08;
   background-image:
-      linear-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(99, 102, 241, 0.08) 1px, transparent 1px);
+    linear-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.08) 1px, transparent 1px);
   background-size: 38px 38px;
   mask-image: radial-gradient(circle at center, black 35%, transparent 100%);
 }
@@ -1595,8 +1633,8 @@ function trackSocialClick(platform: string) {
 
 .state-shell {
   box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.03),
-      0 18px 48px rgba(15, 23, 42, 0.12);
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 18px 48px rgba(15, 23, 42, 0.12);
 }
 
 .state-shell-live {
@@ -1613,8 +1651,8 @@ function trackSocialClick(platform: string) {
 
 .cta-glow {
   box-shadow:
-      0 0 0 1px rgba(16, 185, 129, 0.14),
-      0 12px 28px rgba(16, 185, 129, 0.18);
+    0 0 0 1px rgba(16, 185, 129, 0.14),
+    0 12px 28px rgba(16, 185, 129, 0.18);
 }
 
 .practice-btn {
@@ -1631,8 +1669,8 @@ function trackSocialClick(platform: string) {
 .wa-report-btn {
   background: linear-gradient(135deg, rgb(34 197 94), rgb(22 163 74));
   box-shadow:
-      0 0 0 1px rgba(34, 197, 94, 0.18),
-      0 12px 28px rgba(34, 197, 94, 0.22);
+    0 0 0 1px rgba(34, 197, 94, 0.18),
+    0 12px 28px rgba(34, 197, 94, 0.22);
 }
 
 .prize-scroll-x {
@@ -1680,10 +1718,10 @@ function trackSocialClick(platform: string) {
 
 .leader-row {
   transition:
-      transform 0.2s ease,
-      border-color 0.2s ease,
-      box-shadow 0.2s ease,
-      background-color 0.2s ease;
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .leader-row:hover {
@@ -1712,6 +1750,31 @@ function trackSocialClick(platform: string) {
   box-shadow: 0 10px 24px rgba(249, 115, 22, 0.08);
 }
 
+.verified-tag {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: rgba(34, 197, 94, 0.18);
+  color: rgb(22 163 74);
+  text-decoration: none;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.verified-tag:hover {
+  transform: translateY(-1px);
+  background: rgba(34, 197, 94, 0.24);
+  border-color: rgba(34, 197, 94, 0.55);
+  color: rgb(21 128 61);
+}
+
+:global(.dark) .verified-tag {
+  border-color: rgba(74, 222, 128, 0.5);
+  background: rgba(34, 197, 94, 0.22);
+  color: rgb(134 239 172);
+}
+
 :global(.dark) .leader-row-gold {
   border-color: rgba(251, 191, 36, 0.22) !important;
   background: rgba(251, 191, 36, 0.08) !important;
@@ -1729,8 +1792,8 @@ function trackSocialClick(platform: string) {
 
 .social-icon-btn {
   box-shadow:
-      0 8px 22px rgba(15, 23, 42, 0.06),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    0 8px 22px rgba(15, 23, 42, 0.06),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 @media (max-width: 1279px) {

@@ -1,4 +1,3 @@
-// server/api/tournaments/winners.get.ts
 import { serverSupabaseClient } from '#supabase/server'
 import { createError, getQuery } from 'h3'
 
@@ -20,6 +19,8 @@ type WinnerRow = {
   prize?: string | null
   prize_label?: string | null
   prize_bdt?: number | null
+  is_verified?: boolean | null
+  verified_link?: string | null
   tournament_prize?: PrizeRelation | null
 }
 
@@ -69,24 +70,26 @@ export default defineEventHandler(async (event) => {
       prize: finalPrize,
       prize_label: labelPrize,
       prize_bdt: w?.prize_bdt ?? null,
+      is_verified: typeof w?.is_verified === 'boolean' ? w.is_verified : null,
+      verified_link: clean(w?.verified_link),
       tournament_prize: joinedPrize
-          ? {
+        ? {
             id: String(joinedPrize.id || '').trim(),
             title: String(joinedPrize.title || '').trim(),
             description: joinedPrize.description || null,
             image_url: joinedPrize.image_url || null,
             image_path: joinedPrize.image_path || null
           }
-          : null
+        : null
     }
   }
 
   async function readTournament(): Promise<TournamentRow> {
     const { data, error } = await db
-        .from('tournaments')
-        .select('id, slug, ends_at, status, finalized')
-        .eq('slug', slug)
-        .maybeSingle()
+      .from('tournaments')
+      .select('id, slug, ends_at, status, finalized')
+      .eq('slug', slug)
+      .maybeSingle()
 
     if (error) {
       throw createError({
@@ -107,8 +110,8 @@ export default defineEventHandler(async (event) => {
 
   async function readWinners(): Promise<WinnerRow[]> {
     const { data, error } = await db
-        .from('tournament_winners')
-        .select(`
+      .from('tournament_winners')
+      .select(`
         rank,
         player_name,
         score,
@@ -118,6 +121,8 @@ export default defineEventHandler(async (event) => {
         prize,
         prize_label,
         prize_bdt,
+        is_verified,
+        verified_link,
         tournament_prize:tournament_prizes!tournament_winners_prize_id_fkey (
           id,
           title,
@@ -126,8 +131,8 @@ export default defineEventHandler(async (event) => {
           image_path
         )
       `)
-        .eq('tournament_slug', slug)
-        .order('rank', { ascending: true })
+      .eq('tournament_slug', slug)
+      .order('rank', { ascending: true })
 
     if (error) {
       throw createError({

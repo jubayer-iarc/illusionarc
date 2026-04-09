@@ -68,6 +68,8 @@ type WinnerRow = {
   reward_method?: RewardMethod | null
   reward_txn_id?: string | null
   rewarded_at?: string | null
+  is_verified?: boolean | null
+  verified_link?: string | null
   created_at?: string
 }
 
@@ -1212,6 +1214,8 @@ function normalizeRewardFields(w: WinnerRow): WinnerRow {
   if (rw.reward_status == null || rw.reward_status === '') rw.reward_status = 'pending'
   if (rw.reward_method == null) rw.reward_method = ''
   if (rw.reward_txn_id == null) rw.reward_txn_id = ''
+  if (rw.is_verified == null) rw.is_verified = null
+  if (rw.verified_link == null) rw.verified_link = ''
   return rw
 }
 
@@ -1262,6 +1266,18 @@ function validateWinnerReward(w: WinnerRow) {
   if (requiresTxnId(w) && !String(w.reward_txn_id || '').trim()) {
     return 'Transaction ID is required for online rewards marked as GIVEN.'
   }
+
+  if (w.is_verified === true) {
+    const link = String(w.verified_link || '').trim()
+    if (!link) return 'Verification link is required when winner is marked as verified.'
+
+    try {
+      new URL(link)
+    } catch {
+      return 'Verification link must be a valid URL.'
+    }
+  }
+
   return ''
 }
 
@@ -1279,10 +1295,14 @@ async function updateWinnerReward(row: WinnerRow) {
         id: row.id,
         reward_status: row.reward_status ?? 'pending',
         reward_method: row.reward_method ?? '',
-        reward_txn_id: String(row.reward_txn_id || '').trim() || null
+        reward_txn_id: String(row.reward_txn_id || '').trim() || null,
+        is_verified: row.is_verified === null ? null : Boolean(row.is_verified),
+        verified_link: row.is_verified === true
+          ? (String(row.verified_link || '').trim() || null)
+          : null
       }
     })
-    toast.add({ title: 'Reward saved', color: 'success' })
+    toast.add({ title: 'Winner updated', color: 'success' })
     await loadWinners()
   } catch (e: any) {
     toast.add({ title: 'Update failed', description: e?.data?.message || e?.message || '', color: 'error' })
@@ -1438,7 +1458,6 @@ onMounted(async () => {
 <template>
   <div class="h-[calc(100vh-110px)] overflow-hidden">
     <div class="grid h-full min-h-0 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-      <!-- LEFT SIDEBAR -->
       <aside class="min-h-0">
         <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-black/10 bg-white/80 backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div class="border-b border-black/10 p-4 dark:border-white/10">
@@ -1558,10 +1577,8 @@ onMounted(async () => {
         </div>
       </aside>
 
-      <!-- RIGHT CONTENT -->
       <main class="min-w-0 min-h-0">
         <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-black/10 bg-white/80 backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <!-- STICKY TOP HEADER -->
           <div class="shrink-0 border-b border-black/10 p-5 dark:border-white/10">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="min-w-0">
@@ -1676,9 +1693,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- THIS IS THE FIX: ONLY THIS AREA SCROLLS -->
           <div class="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
-            <!-- DETAILS -->
             <div v-if="tab === 'details'" class="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
               <div class="min-w-0 space-y-4">
                 <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
@@ -1991,7 +2006,6 @@ onMounted(async () => {
               </aside>
             </div>
 
-            <!-- SCHEDULE -->
             <div v-else-if="tab === 'schedule'" class="mx-auto max-w-5xl space-y-4">
               <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
                 <div class="flex flex-wrap items-start justify-between gap-3">
@@ -2046,7 +2060,6 @@ onMounted(async () => {
               </section>
             </div>
 
-            <!-- ADS -->
             <div v-else-if="tab === 'ads'" class="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
               <div class="space-y-4">
                 <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
@@ -2265,14 +2278,13 @@ onMounted(async () => {
               </aside>
             </div>
 
-            <!-- WINNERS -->
             <div v-else class="space-y-4">
               <section class="rounded-3xl border border-black/10 bg-white p-5 dark:border-white/10 dark:bg-black/20">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div class="font-semibold">Winners & Rewards</div>
                     <div class="text-xs opacity-70">
-                      Finalize after end. Online + GIVEN requires transaction ID.
+                      Finalize after end. Online + GIVEN requires transaction ID. Verified winners require a valid verification link.
                     </div>
                   </div>
 
@@ -2330,19 +2342,30 @@ onMounted(async () => {
                             <span class="px-1 opacity-40">•</span>
                             Prize: <b class="opacity-100">{{ w.prize || w.prize_label || '—' }}</b>
                           </div>
-                        </div>
 
-                        <span
-                          class="rounded-full border px-2 py-1 text-[11px]"
-                          :class="(w.reward_status || 'pending') === 'given'
-                            ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-300'
-                            : 'border-black/10 bg-white text-black/70 dark:border-white/10 dark:bg-black/20 dark:text-white/70'"
-                        >
-                          {{ String(w.reward_status || 'pending').toUpperCase() }}
-                        </span>
+                          <div class="mt-2 flex flex-wrap gap-2">
+                            <span
+                              class="rounded-full border px-2 py-1 text-[11px]"
+                              :class="(w.reward_status || 'pending') === 'given'
+                                ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-300'
+                                : 'border-black/10 bg-white text-black/70 dark:border-white/10 dark:bg-black/20 dark:text-white/70'"
+                            >
+                              {{ String(w.reward_status || 'pending').toUpperCase() }}
+                            </span>
+
+                            <span
+                              class="rounded-full border px-2 py-1 text-[11px]"
+                              :class="w.is_verified === true
+                                ? 'border-sky-400/20 bg-sky-500/15 text-sky-300'
+                                : 'border-black/10 bg-white text-black/70 dark:border-white/10 dark:bg-black/20 dark:text-white/70'"
+                            >
+                              {{ w.is_verified === true ? 'VERIFIED' : 'NOT VERIFIED' }}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
-                      <div class="mt-4 grid gap-3 lg:grid-cols-[180px_180px_minmax(0,1fr)_100px]">
+                      <div class="mt-4 grid gap-3 xl:grid-cols-[160px_160px_minmax(0,1fr)_140px_minmax(0,1fr)_110px]">
                         <div class="grid gap-1">
                           <label class="text-[11px] opacity-70">Reward Status</label>
                           <select
@@ -2378,11 +2401,48 @@ onMounted(async () => {
                           </div>
                         </div>
 
-                        <div class="flex items-end">
-                          <UButton size="xs" class="!rounded-full w-full" @click="updateWinnerReward(w)">
+                        <div class="grid gap-1">
+                          <label class="text-[11px] opacity-70">Verified?</label>
+                          <select
+                            :value="w.is_verified === null ? '' : String(w.is_verified)"
+                            class="rounded-xl border border-black/10 bg-white px-2 py-2 text-sm outline-none dark:border-white/10 dark:bg-black/20"
+                            @change="w.is_verified = ($event.target as HTMLSelectElement).value === '' ? null : (($event.target as HTMLSelectElement).value === 'true')"
+                          >
+                            <option value="">not set</option>
+                            <option value="true">verified</option>
+                            <option value="false">not verified</option>
+                          </select>
+                        </div>
+
+                        <div class="grid gap-1">
+                          <label class="text-[11px] opacity-70">Verification Link</label>
+                          <input
+                            v-model="w.verified_link"
+                            class="rounded-xl border border-black/10 bg-white px-2 py-2 text-sm outline-none dark:border-white/10 dark:bg-black/20"
+                            :placeholder="w.is_verified === true ? 'Required valid URL' : 'Optional'"
+                          />
+                          <div v-if="w.is_verified === true && !(w.verified_link || '').trim()" class="text-[11px] text-red-300">
+                            Required when verified.
+                          </div>
+                        </div>
+
+                        <div class="flex items-end xl:col-span-6">
+                          <UButton size="xs" class="!rounded-full w-full sm:w-auto" @click="updateWinnerReward(w)">
                             Save
                           </UButton>
                         </div>
+                      </div>
+
+                      <div v-if="w.is_verified === true && (w.verified_link || '').trim()" class="mt-3 text-xs opacity-70 break-all">
+                        Current verification link:
+                        <a
+                          :href="String(w.verified_link || '')"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="underline underline-offset-2"
+                        >
+                          {{ String(w.verified_link || '') }}
+                        </a>
                       </div>
                     </div>
                   </div>
