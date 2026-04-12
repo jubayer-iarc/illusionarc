@@ -9,7 +9,7 @@ useHead({ title: 'Admin — Users' })
 const toast = useToast()
 const supabase = useSupabaseClient()
 
-type Role = 'user' | 'admin'
+type Role = 'user' | 'writer' | 'admin'
 type SubStatus = 'active' | 'expired' | 'canceled' | 'none'
 type ParticipationFilter = 'all' | 'joined_selected' | 'not_joined_selected'
 
@@ -24,6 +24,8 @@ type ProfileRow = {
   referred_by_user_id: string | null
   referral_bonus_bdt: number
   referral_bonus_used_bdt: number
+  writer_verified?: boolean | null
+  writer_no_approval_needed?: boolean | null
 }
 
 type SubscriptionRow = {
@@ -122,6 +124,9 @@ type UserRow = {
   referrals_count: number
   referral_earned_total_bdt: number
 
+  writer_verified: boolean
+  writer_no_approval_needed: boolean
+
   subscription_status: SubStatus
   subscription_starts_at: string | null
   subscription_ends_at: string | null
@@ -202,9 +207,9 @@ function fmtScore(n?: number | null) {
 }
 
 function rolePillClass(r: Role) {
-  return r === 'admin'
-    ? 'bg-rose-500/10 text-rose-700 dark:text-rose-200 border-rose-500/20'
-    : 'bg-sky-500/10 text-sky-700 dark:text-sky-200 border-sky-500/20'
+  if (r === 'admin') return 'bg-rose-500/10 text-rose-700 dark:text-rose-200 border-rose-500/20'
+  if (r === 'writer') return 'bg-violet-500/10 text-violet-700 dark:text-violet-200 border-violet-500/20'
+  return 'bg-sky-500/10 text-sky-700 dark:text-sky-200 border-sky-500/20'
 }
 
 function subPillClass(s: SubStatus) {
@@ -387,9 +392,10 @@ const tournamentSummary = computed(() => {
 const summary = computed(() => {
   const total = rows.value.length
   const admins = rows.value.filter((r) => r.role === 'admin').length
+  const writers = rows.value.filter((r) => r.role === 'writer').length
   const activeSubs = rows.value.filter((r) => r.subscription_status === 'active').length
   const totalPayments = rows.value.reduce((sum, r) => sum + r.payments_total_bdt, 0)
-  return { total, admins, activeSubs, totalPayments }
+  return { total, admins, writers, activeSubs, totalPayments }
 })
 
 const filtered = computed(() => {
@@ -547,7 +553,9 @@ async function load(): Promise<void> {
         referral_code,
         referred_by_user_id,
         referral_bonus_bdt,
-        referral_bonus_used_bdt
+        referral_bonus_used_bdt,
+        writer_verified,
+        writer_no_approval_needed
       `)
       .order('updated_at', { ascending: false })
       .range(0, fetchCap - 1)
@@ -750,7 +758,10 @@ async function load(): Promise<void> {
 
       const subInfo = deriveSubscriptionStatus(userSubs)
 
-      const paymentsPaid = userPayments.filter((x) => String(x.status || '').toLowerCase() === 'paid')
+      const paymentsPaid = userPayments.filter((x) => {
+        const s = String(x.status || '').toLowerCase()
+        return s === 'paid' || s === 'success'
+      })
       const paymentsTotal = userPayments.reduce((sum, x) => sum + Number(x.amount_bdt || 0), 0)
       const paymentsReferralUsed = userPayments.reduce((sum, x) => sum + Number(x.referral_bonus_used_bdt || 0), 0)
       const subscriptionsTotal = userSubs.reduce((sum, x) => sum + Number(x.amount_bdt || 0), 0)
@@ -790,6 +801,9 @@ async function load(): Promise<void> {
         referral_bonus_used_bdt: Number(p.referral_bonus_used_bdt || 0),
         referrals_count: userReferrals.length,
         referral_earned_total_bdt: userReferrals.reduce((sum, x) => sum + Number(x.bonus_bdt || 0), 0),
+
+        writer_verified: Boolean(p.writer_verified),
+        writer_no_approval_needed: Boolean(p.writer_no_approval_needed),
 
         subscription_status: subInfo.status,
         subscription_starts_at: subInfo.starts_at,
@@ -900,6 +914,46 @@ async function setRole(next: Role): Promise<void> {
   }
 }
 
+async function setWriterFlags(key: 'writer_verified' | 'writer_no_approval_needed', nextValue: boolean) {
+  if (!selected.value) return
+  if (updating.value) return
+
+  updating.value = true
+  try {
+    const id = selected.value.user_id
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ [key]: nextValue })
+      .eq('user_id', id)
+
+    if (error) throw error
+
+    rows.value = rows.value.map((r) =>
+      r.user_id === id ? { ...r, [key]: nextValue } : r
+    )
+
+    selected.value = {
+      ...selected.value,
+      [key]: nextValue
+    }
+
+    toast.add({
+      title: 'Writer setting updated',
+      description: `${key} set to ${nextValue ? 'true' : 'false'}.`,
+      color: 'success'
+    })
+  } catch (e: any) {
+    toast.add({
+      title: 'Update failed',
+      description: e?.message || 'Try again.',
+      color: 'error'
+    })
+  } finally {
+    updating.value = false
+  }
+}
+
 const selectedScopedStats = computed(() => {
   if (!selected.value || !selectedTournamentId.value) return null
   return getScopedStats(selected.value, selectedTournamentId.value)
@@ -919,50 +973,29 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
 <template>
   <div class="space-y-4">
-    <div
-      class="relative overflow-hidden rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5 lg:p-6 backdrop-blur"
-    >
-      <div
-        class="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full blur-3xl opacity-60"
-        style="background: radial-gradient(circle at 30% 30%, rgba(34,197,94,.22), transparent 60%);"
-        aria-hidden="true"
-      />
-      <div
-        class="pointer-events-none absolute -bottom-28 -left-28 h-80 w-80 rounded-full blur-3xl opacity-60"
-        style="background: radial-gradient(circle at 30% 30%, rgba(34,211,238,.22), transparent 60%);"
-        aria-hidden="true"
-      />
-
+    <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-5 lg:p-6">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div class="min-w-0">
-          <div
-            class="inline-flex items-center gap-2 rounded-full border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-1.5 text-xs text-black/60 dark:text-white/60"
-          >
-            <UIcon name="i-heroicons-users" class="h-4 w-4" />
-            User management + tournament lens
-          </div>
-
-          <h1 class="mt-3 text-2xl lg:text-3xl font-extrabold tracking-tight text-black dark:text-white">
-            Users
+          <div class="text-sm text-black/60 dark:text-white/60">Users</div>
+          <h1 class="mt-1 text-2xl lg:text-3xl font-bold tracking-tight text-black dark:text-white">
+            User Management
           </h1>
-
-          <p class="mt-1 text-sm text-black/60 dark:text-white/60 max-w-4xl">
-            Manage user role, subscription, payments, referrals, overall activity, and any selected tournament from one page.
+          <p class="mt-2 text-sm text-black/60 dark:text-white/60 max-w-4xl">
+            Manage role, subscriptions, payments, referrals, and tournament participation from one place.
           </p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/10 dark:hover:bg-white/10 transition"
+            class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition"
             @click="load"
           >
-            <UIcon name="i-heroicons-arrow-path" class="h-5 w-5 opacity-80" />
+            <UIcon name="i-heroicons-arrow-path" class="h-5 w-5" />
             Refresh
           </button>
 
-          <div class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5">
-            <UIcon name="i-heroicons-list-bullet" class="h-4 w-4 opacity-70" />
+          <div class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2.5">
             <span class="text-xs text-black/60 dark:text-white/60">Show</span>
             <input
               v-model.number="limit"
@@ -975,51 +1008,56 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
         </div>
       </div>
 
-      <div class="mt-4 grid grid-cols-2 xl:grid-cols-4 gap-3">
-        <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
-          <div class="text-xs text-black/60 dark:text-white/60">Total users loaded</div>
-          <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ summary.total }}</div>
+      <div class="mt-5 grid grid-cols-2 xl:grid-cols-5 gap-3">
+        <div class="rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-4">
+          <div class="text-xs text-black/60 dark:text-white/60">Total users</div>
+          <div class="mt-1 text-xl font-bold text-black dark:text-white">{{ summary.total }}</div>
         </div>
 
-        <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+        <div class="rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-4">
           <div class="text-xs text-black/60 dark:text-white/60">Admins</div>
-          <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ summary.admins }}</div>
+          <div class="mt-1 text-xl font-bold text-black dark:text-white">{{ summary.admins }}</div>
         </div>
 
-        <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+        <div class="rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-4">
+          <div class="text-xs text-black/60 dark:text-white/60">Writers</div>
+          <div class="mt-1 text-xl font-bold text-black dark:text-white">{{ summary.writers }}</div>
+        </div>
+
+        <div class="rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-4">
           <div class="text-xs text-black/60 dark:text-white/60">Active subscriptions</div>
-          <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ summary.activeSubs }}</div>
+          <div class="mt-1 text-xl font-bold text-black dark:text-white">{{ summary.activeSubs }}</div>
         </div>
 
-        <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+        <div class="rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-4">
           <div class="text-xs text-black/60 dark:text-white/60">Total payments</div>
-          <div class="mt-1 text-xl font-extrabold text-black dark:text-white">৳{{ fmtMoney(summary.totalPayments) }}</div>
+          <div class="mt-1 text-xl font-bold text-black dark:text-white">৳{{ fmtMoney(summary.totalPayments) }}</div>
         </div>
       </div>
 
-      <div class="mt-4 rounded-3xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+      <div class="mt-5 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div class="text-sm font-bold text-black dark:text-white">Tournament focus</div>
+            <div class="text-sm font-semibold text-black dark:text-white">Tournament focus</div>
             <div class="mt-1 text-xs text-black/60 dark:text-white/60">
-              Select a tournament to turn this page into tournament-wise user management.
+              Select a tournament to view joined users, top scores, and selected-tournament ranking.
             </div>
           </div>
 
           <button
             v-if="selectedTournamentId"
             type="button"
-            class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10 transition"
+            class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10 transition"
             @click="resetTournamentLens"
           >
             <UIcon name="i-heroicons-x-mark" class="h-4 w-4" />
-            Clear tournament focus
+            Clear focus
           </button>
         </div>
 
         <div class="mt-3 grid grid-cols-1 xl:grid-cols-[1.3fr_auto_auto_auto] gap-3">
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5">
-            <div class="text-[11px] text-black/50 dark:text-white/50 mb-1">Tournament</div>
+          <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2.5">
+            <div class="mb-1 text-[11px] text-black/50 dark:text-white/50">Tournament</div>
             <select
               v-model="selectedTournamentId"
               class="w-full bg-transparent text-sm text-black dark:text-white outline-none"
@@ -1035,12 +1073,10 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
             </select>
           </div>
 
-          <div
-            class="inline-flex flex-wrap items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-1.5 backdrop-blur"
-          >
+          <div class="inline-flex flex-wrap items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-1.5">
             <button
               type="button"
-              class="px-3 py-2 rounded-xl text-sm transition"
+              class="px-3 py-2 rounded-lg text-sm transition"
               :class="participationFilter === 'all'
                 ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white'
                 : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -1051,19 +1087,19 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
             <button
               type="button"
-              class="px-3 py-2 rounded-xl text-sm transition"
+              class="px-3 py-2 rounded-lg text-sm transition"
               :disabled="!selectedTournamentId"
               :class="participationFilter === 'joined_selected'
                 ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200'
                 : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white disabled:opacity-40'"
               @click="participationFilter = 'joined_selected'"
             >
-              Joined selected
+              Joined
             </button>
 
             <button
               type="button"
-              class="px-3 py-2 rounded-xl text-sm transition"
+              class="px-3 py-2 rounded-lg text-sm transition"
               :disabled="!selectedTournamentId"
               :class="participationFilter === 'not_joined_selected'
                 ? 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
@@ -1076,23 +1112,19 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
           <div
             v-if="selectedTournament"
-            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5"
+            class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2.5"
           >
-            <div class="text-[11px] text-black/50 dark:text-white/50 mb-1">Selected status</div>
-            <div class="flex items-center gap-2">
-              <span
-                class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold"
-                :class="tournamentStatusClass(selectedTournament.status)"
-              >
-                {{ selectedTournament.status }}
-              </span>
-            </div>
+            <div class="mb-1 text-[11px] text-black/50 dark:text-white/50">Status</div>
+            <span
+              class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold"
+              :class="tournamentStatusClass(selectedTournament.status)"
+            >
+              {{ selectedTournament.status }}
+            </span>
           </div>
 
-          <div
-            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5"
-          >
-            <div class="text-[11px] text-black/50 dark:text-white/50 mb-1">Sort</div>
+          <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2.5">
+            <div class="mb-1 text-[11px] text-black/50 dark:text-white/50">Sort</div>
             <select
               v-model="sortBy"
               class="w-full bg-transparent text-sm text-black dark:text-white outline-none"
@@ -1112,32 +1144,30 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
           v-if="selectedTournament"
           class="mt-3 grid grid-cols-2 xl:grid-cols-4 gap-3"
         >
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+          <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
             <div class="text-xs text-black/60 dark:text-white/60">Users joined</div>
-            <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ tournamentSummary.usersJoined }}</div>
+            <div class="mt-1 text-xl font-bold text-black dark:text-white">{{ tournamentSummary.usersJoined }}</div>
           </div>
 
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+          <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
             <div class="text-xs text-black/60 dark:text-white/60">Total entries</div>
-            <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ tournamentSummary.totalEntries }}</div>
+            <div class="mt-1 text-xl font-bold text-black dark:text-white">{{ tournamentSummary.totalEntries }}</div>
           </div>
 
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+          <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
             <div class="text-xs text-black/60 dark:text-white/60">Highest score</div>
-            <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ fmtScore(tournamentSummary.highestScore) }}</div>
+            <div class="mt-1 text-xl font-bold text-black dark:text-white">{{ fmtScore(tournamentSummary.highestScore) }}</div>
           </div>
 
-          <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+          <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
             <div class="text-xs text-black/60 dark:text-white/60">Highest accepted</div>
-            <div class="mt-1 text-xl font-extrabold text-black dark:text-white">{{ fmtScore(tournamentSummary.highestAcceptedScore) }}</div>
+            <div class="mt-1 text-xl font-bold text-black dark:text-white">{{ fmtScore(tournamentSummary.highestAcceptedScore) }}</div>
           </div>
         </div>
       </div>
 
       <div class="mt-4 grid grid-cols-1 xl:grid-cols-[1fr_auto_auto] gap-3">
-        <div
-          class="flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2.5 backdrop-blur"
-        >
+        <div class="flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2.5">
           <UIcon name="i-heroicons-magnifying-glass" class="h-5 w-5 opacity-60" />
           <input
             v-model="q"
@@ -1148,19 +1178,17 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
           <button
             v-if="q.trim()"
             type="button"
-            class="rounded-xl px-2 py-1 text-xs border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition"
+            class="rounded-lg px-2 py-1 text-xs border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition"
             @click="q = ''"
           >
             Clear
           </button>
         </div>
 
-        <div
-          class="inline-flex flex-wrap items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-1.5 backdrop-blur"
-        >
+        <div class="inline-flex flex-wrap items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-1.5">
           <button
             type="button"
-            class="px-3 py-2 rounded-xl text-sm transition"
+            class="px-3 py-2 rounded-lg text-sm transition"
             :class="roleFilter === 'all'
               ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white'
               : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -1171,7 +1199,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
           <button
             type="button"
-            class="px-3 py-2 rounded-xl text-sm transition"
+            class="px-3 py-2 rounded-lg text-sm transition"
             :class="roleFilter === 'user'
               ? 'bg-sky-500/15 text-sky-800 dark:text-sky-200'
               : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -1182,7 +1210,18 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
           <button
             type="button"
-            class="px-3 py-2 rounded-xl text-sm transition"
+            class="px-3 py-2 rounded-lg text-sm transition"
+            :class="roleFilter === 'writer'
+              ? 'bg-violet-500/15 text-violet-800 dark:text-violet-200'
+              : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
+            @click="roleFilter = 'writer'"
+          >
+            Writers
+          </button>
+
+          <button
+            type="button"
+            class="px-3 py-2 rounded-lg text-sm transition"
             :class="roleFilter === 'admin'
               ? 'bg-rose-500/15 text-rose-800 dark:text-rose-200'
               : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -1192,12 +1231,10 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
           </button>
         </div>
 
-        <div
-          class="inline-flex flex-wrap items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-1.5 backdrop-blur"
-        >
+        <div class="inline-flex flex-wrap items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-1.5">
           <button
             type="button"
-            class="px-3 py-2 rounded-xl text-sm transition"
+            class="px-3 py-2 rounded-lg text-sm transition"
             :class="subFilter === 'all'
               ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white'
               : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -1208,7 +1245,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
           <button
             type="button"
-            class="px-3 py-2 rounded-xl text-sm transition"
+            class="px-3 py-2 rounded-lg text-sm transition"
             :class="subFilter === 'active'
               ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200'
               : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -1219,7 +1256,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
           <button
             type="button"
-            class="px-3 py-2 rounded-xl text-sm transition"
+            class="px-3 py-2 rounded-lg text-sm transition"
             :class="subFilter === 'expired'
               ? 'bg-amber-500/15 text-amber-800 dark:text-amber-200'
               : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -1230,7 +1267,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
           <button
             type="button"
-            class="px-3 py-2 rounded-xl text-sm transition"
+            class="px-3 py-2 rounded-lg text-sm transition"
             :class="subFilter === 'canceled'
               ? 'bg-rose-500/15 text-rose-800 dark:text-rose-200'
               : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -1241,7 +1278,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
           <button
             type="button"
-            class="px-3 py-2 rounded-xl text-sm transition"
+            class="px-3 py-2 rounded-lg text-sm transition"
             :class="subFilter === 'none'
               ? 'bg-black/10 dark:bg-white/10 text-black dark:text-white'
               : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -1254,19 +1291,16 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
       <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-black/60 dark:text-white/60">
         <span class="inline-flex items-center gap-2 rounded-full border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-1.5">
-          <UIcon name="i-heroicons-queue-list" class="h-4 w-4 opacity-70" />
           Showing
           <span class="font-semibold text-black dark:text-white">{{ displayedRows.length }}</span>
           of
           <span class="font-semibold text-black dark:text-white">{{ filtered.length }}</span>
-          filtered
         </span>
 
         <span
           v-if="selectedTournament"
           class="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-cyan-800 dark:text-cyan-200"
         >
-          <UIcon name="i-heroicons-trophy" class="h-4 w-4" />
           Focused on: {{ selectedTournament.title }}
         </span>
 
@@ -1280,20 +1314,20 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
       </div>
 
       <div class="mt-2 text-[11px] text-black/45 dark:text-white/45">
-        Email is not shown here because this page is loading directly from app tables. If you want auth email on this page, fetch it through a secure admin server API.
+        Email is not shown here because this page is loading directly from app tables. For auth email, expose it through a secure admin server API.
       </div>
     </div>
 
-    <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur overflow-hidden">
+    <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 overflow-hidden">
       <div v-if="errorMsg" class="p-4">
         <div class="text-sm text-black dark:text-white">❌ {{ errorMsg }}</div>
         <div class="mt-3">
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/10 dark:hover:bg-white/10 transition"
+            class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition"
             @click="load"
           >
-            <UIcon name="i-heroicons-arrow-path" class="h-5 w-5 opacity-80" />
+            <UIcon name="i-heroicons-arrow-path" class="h-5 w-5" />
             Retry
           </button>
         </div>
@@ -1323,16 +1357,14 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
             >
               <td class="py-3 px-4 min-w-[260px]">
                 <div class="flex items-center gap-3">
-                  <div
-                    class="h-10 w-10 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 grid place-items-center overflow-hidden"
-                  >
+                  <div class="h-10 w-10 rounded-full border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 grid place-items-center overflow-hidden">
                     <img
                       v-if="r.avatar_url"
                       :src="r.avatar_url"
                       alt=""
                       class="h-full w-full object-cover"
                     />
-                    <span v-else class="text-xs font-extrabold text-black/70 dark:text-white/70">
+                    <span v-else class="text-xs font-bold text-black/70 dark:text-white/70">
                       {{ avatarFallback(r.display_name) }}
                     </span>
                   </div>
@@ -1356,13 +1388,22 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </td>
 
               <td class="py-3 px-4">
-                <span
-                  class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold"
-                  :class="rolePillClass(r.role)"
-                >
-                  <span class="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-                  {{ r.role }}
-                </span>
+                <div class="flex flex-col gap-1">
+                  <span
+                    class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold w-fit"
+                    :class="rolePillClass(r.role)"
+                  >
+                    <span class="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+                    {{ r.role }}
+                  </span>
+
+                  <span
+                    v-if="r.role === 'writer' && r.writer_verified"
+                    class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold w-fit bg-emerald-500/10 text-emerald-700 dark:text-emerald-200 border-emerald-500/20"
+                  >
+                    Verified
+                  </span>
+                </div>
               </td>
 
               <td class="py-3 px-4 hidden xl:table-cell">
@@ -1439,7 +1480,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                 <div class="inline-flex gap-2 justify-end">
                   <button
                     type="button"
-                    class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/10 dark:hover:bg-white/10 transition"
+                    class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10 transition"
                     @click="copy(r.user_id)"
                   >
                     <UIcon name="i-heroicons-clipboard" class="h-4 w-4" />
@@ -1448,7 +1489,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
                   <button
                     type="button"
-                    class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/10 dark:hover:bg-white/10 transition"
+                    class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10 transition"
                     @click="openRow(r)"
                   >
                     <UIcon name="i-heroicons-eye" class="h-4 w-4" />
@@ -1467,9 +1508,9 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
             <tr v-if="loading">
               <td colspan="9" class="py-8">
                 <div class="px-4 grid gap-2">
-                  <div class="h-10 rounded-2xl bg-black/10 dark:bg-white/10 animate-pulse" />
-                  <div class="h-10 rounded-2xl bg-black/10 dark:bg-white/10 animate-pulse" />
-                  <div class="h-10 rounded-2xl bg-black/10 dark:bg-white/10 animate-pulse" />
+                  <div class="h-10 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
+                  <div class="h-10 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
+                  <div class="h-10 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
                 </div>
               </td>
             </tr>
@@ -1487,13 +1528,13 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
       <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="closeModal" />
 
       <div
-        class="relative w-full sm:max-w-6xl rounded-t-3xl sm:rounded-3xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#0b1020] shadow-[0_30px_100px_rgba(0,0,0,.35)] overflow-hidden max-h-[92vh] flex flex-col"
+        class="relative w-full sm:max-w-6xl rounded-t-3xl sm:rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#0b1020] shadow-[0_30px_100px_rgba(0,0,0,.35)] overflow-hidden max-h-[92vh] flex flex-col"
       >
         <div class="p-4 sm:p-5 border-b border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
-                <div class="text-lg font-extrabold tracking-tight text-black dark:text-white truncate">
+                <div class="text-lg font-bold tracking-tight text-black dark:text-white truncate">
                   {{ selected.display_name }}
                 </div>
 
@@ -1528,7 +1569,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
             <button
               type="button"
-              class="shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition"
+              class="shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 transition"
               @click="closeModal"
             >
               <UIcon name="i-heroicons-x-mark" class="h-5 w-5" />
@@ -1538,13 +1579,11 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
 
         <div class="flex-1 overflow-auto p-4 sm:p-5 grid gap-4">
           <div class="grid grid-cols-1 xl:grid-cols-[1.4fr_.8fr] gap-4">
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="flex items-start gap-4">
-                <div
-                  class="h-16 w-16 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 grid place-items-center overflow-hidden shrink-0"
-                >
+                <div class="h-16 w-16 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 grid place-items-center overflow-hidden shrink-0">
                   <img v-if="selected.avatar_url" :src="selected.avatar_url" class="h-full w-full object-cover" alt="" />
-                  <span v-else class="text-sm font-extrabold text-black/70 dark:text-white/70">
+                  <span v-else class="text-sm font-bold text-black/70 dark:text-white/70">
                     {{ avatarFallback(selected.display_name) }}
                   </span>
                 </div>
@@ -1597,7 +1636,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                   <div class="mt-4 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/10 dark:hover:bg-white/10 transition"
+                      class="inline-flex items-center gap-2 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10 transition"
                       @click="copy(selected.user_id)"
                     >
                       <UIcon name="i-heroicons-clipboard" class="h-4 w-4" />
@@ -1607,7 +1646,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                     <button
                       v-if="selected.phone"
                       type="button"
-                      class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/10 dark:hover:bg-white/10 transition"
+                      class="inline-flex items-center gap-2 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10 transition"
                       @click="copy(selected.phone)"
                     >
                       <UIcon name="i-heroicons-phone" class="h-4 w-4" />
@@ -1617,7 +1656,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
                     <button
                       v-if="selected.referral_code"
                       type="button"
-                      class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/10 dark:hover:bg-white/10 transition"
+                      class="inline-flex items-center gap-2 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/10 transition"
                       @click="copy(selected.referral_code)"
                     >
                       <UIcon name="i-heroicons-ticket" class="h-4 w-4" />
@@ -1628,58 +1667,92 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] p-4">
               <div class="text-xs text-black/60 dark:text-white/60">Role actions</div>
               <div class="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  class="inline-flex items-center gap-2 rounded-2xl border border-sky-500/25 bg-sky-500/10 px-4 py-2.5 text-sm font-semibold text-sky-800 dark:text-sky-200 hover:bg-sky-500/15 transition disabled:opacity-60"
+                  class="inline-flex items-center gap-2 rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-2.5 text-sm font-semibold text-sky-800 dark:text-sky-200 hover:bg-sky-500/15 transition disabled:opacity-60"
                   :disabled="updating || selected.role === 'user'"
                   @click="setRole('user')"
                 >
-                  <span v-if="updating && selected.role !== 'user'" class="h-4 w-4 rounded-full border-2 border-sky-400/40 border-t-sky-400 animate-spin" />
-                  <UIcon v-else name="i-heroicons-user" class="h-5 w-5" />
+                  <UIcon name="i-heroicons-user" class="h-5 w-5" />
                   Set user
                 </button>
 
                 <button
                   type="button"
-                  class="inline-flex items-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-2.5 text-sm font-semibold text-rose-800 dark:text-rose-200 hover:bg-rose-500/15 transition disabled:opacity-60"
+                  class="inline-flex items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/10 px-4 py-2.5 text-sm font-semibold text-violet-800 dark:text-violet-200 hover:bg-violet-500/15 transition disabled:opacity-60"
+                  :disabled="updating || selected.role === 'writer'"
+                  @click="setRole('writer')"
+                >
+                  <UIcon name="i-heroicons-pencil-square" class="h-5 w-5" />
+                  Set writer
+                </button>
+
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-2 rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-2.5 text-sm font-semibold text-rose-800 dark:text-rose-200 hover:bg-rose-500/15 transition disabled:opacity-60"
                   :disabled="updating || selected.role === 'admin'"
                   @click="setRole('admin')"
                 >
-                  <span v-if="updating && selected.role !== 'admin'" class="h-4 w-4 rounded-full border-2 border-rose-400/40 border-t-rose-400 animate-spin" />
-                  <UIcon v-else name="i-heroicons-shield-check" class="h-5 w-5" />
+                  <UIcon name="i-heroicons-shield-check" class="h-5 w-5" />
                   Set admin
                 </button>
               </div>
 
+              <div v-if="selected.role === 'writer' || selected.writer_verified || selected.writer_no_approval_needed" class="mt-4">
+                <div class="mb-2 text-xs text-black/60 dark:text-white/60">Writer controls</div>
+
+                <div class="grid gap-2">
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-between rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-60"
+                    :disabled="updating"
+                    @click="setWriterFlags('writer_verified', !selected.writer_verified)"
+                  >
+                    <span>Writer verified</span>
+                    <span class="font-semibold">{{ selected.writer_verified ? 'On' : 'Off' }}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-between rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-60"
+                    :disabled="updating"
+                    @click="setWriterFlags('writer_no_approval_needed', !selected.writer_no_approval_needed)"
+                  >
+                    <span>No approve needed further</span>
+                    <span class="font-semibold">{{ selected.writer_no_approval_needed ? 'On' : 'Off' }}</span>
+                  </button>
+                </div>
+              </div>
+
               <div class="mt-3 text-xs text-black/60 dark:text-white/60">
-                Role update depends on your RLS policies allowing admins to update profiles.
+                Profile updates depend on your RLS policies allowing admins to update profiles.
               </div>
             </div>
           </div>
 
           <div class="grid grid-cols-2 xl:grid-cols-6 gap-3">
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="text-xs text-black/60 dark:text-white/60">Subscription</div>
-              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">{{ selected.subscription_status }}</div>
+              <div class="mt-1 text-lg font-bold text-black dark:text-white">{{ selected.subscription_status }}</div>
               <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">
                 {{ fmtDate(selected.subscription_ends_at) }}
               </div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="text-xs text-black/60 dark:text-white/60">Payments</div>
-              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">{{ selected.payments_count }}</div>
+              <div class="mt-1 text-lg font-bold text-black dark:text-white">{{ selected.payments_count }}</div>
               <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">৳{{ fmtMoney(selected.payments_total_bdt) }}</div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="text-xs text-black/60 dark:text-white/60">
-                {{ selectedTournament ? 'Selected tournament entries' : 'Tournament entries' }}
+                {{ selectedTournament ? 'Selected entries' : 'Tournament entries' }}
               </div>
-              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">
+              <div class="mt-1 text-lg font-bold text-black dark:text-white">
                 {{ selectedTournament ? (selectedScopedStats?.entries ?? 0) : selected.tournament_entries }}
               </div>
               <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">
@@ -1687,11 +1760,11 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="text-xs text-black/60 dark:text-white/60">
                 {{ selectedTournament ? 'Selected accepted best' : 'Overall accepted best' }}
               </div>
-              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">
+              <div class="mt-1 text-lg font-bold text-black dark:text-white">
                 {{ selectedTournament ? fmtScore(selectedScopedStats?.best_accepted_score) : fmtScore(selected.tournament_best_accepted_score) }}
               </div>
               <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">
@@ -1699,23 +1772,23 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="text-xs text-black/60 dark:text-white/60">Leaderboard entries</div>
-              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">{{ selected.leaderboard_entries }}</div>
+              <div class="mt-1 text-lg font-bold text-black dark:text-white">{{ selected.leaderboard_entries }}</div>
               <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">Best: {{ fmtScore(selected.leaderboard_best_score) }}</div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="text-xs text-black/60 dark:text-white/60">Referrals</div>
-              <div class="mt-1 text-lg font-extrabold text-black dark:text-white">{{ selected.referrals_count }}</div>
+              <div class="mt-1 text-lg font-bold text-black dark:text-white">{{ selected.referrals_count }}</div>
               <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">Earned: ৳{{ fmtMoney(selected.referral_earned_total_bdt) }}</div>
             </div>
           </div>
 
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="flex items-center justify-between gap-3">
-                <div class="text-sm font-bold text-black dark:text-white">Subscriptions</div>
+                <div class="text-sm font-semibold text-black dark:text-white">Subscriptions</div>
                 <div class="text-xs text-black/60 dark:text-white/60">{{ selected.subscriptions.length }}</div>
               </div>
 
@@ -1745,9 +1818,9 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="flex items-center justify-between gap-3">
-                <div class="text-sm font-bold text-black dark:text-white">Payments</div>
+                <div class="text-sm font-semibold text-black dark:text-white">Payments</div>
                 <div class="text-xs text-black/60 dark:text-white/60">{{ selected.payments.length }}</div>
               </div>
 
@@ -1777,10 +1850,10 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 xl:col-span-2">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4 xl:col-span-2">
               <div class="flex items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
-                  <div class="text-sm font-bold text-black dark:text-white">
+                  <div class="text-sm font-semibold text-black dark:text-white">
                     {{ selectedTournament ? 'Selected tournament scores' : 'Tournament scores' }}
                   </div>
                   <span
@@ -1825,9 +1898,9 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="flex items-center justify-between gap-3">
-                <div class="text-sm font-bold text-black dark:text-white">Leaderboard scores</div>
+                <div class="text-sm font-semibold text-black dark:text-white">Leaderboard scores</div>
                 <div class="text-xs text-black/60 dark:text-white/60">{{ selected.leaderboard_scores.length }}</div>
               </div>
 
@@ -1855,9 +1928,9 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
               </div>
             </div>
 
-            <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4">
+            <div class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
               <div class="flex items-center justify-between gap-3">
-                <div class="text-sm font-bold text-black dark:text-white">Referrals earned</div>
+                <div class="text-sm font-semibold text-black dark:text-white">Referrals earned</div>
                 <div class="text-xs text-black/60 dark:text-white/60">{{ selected.referrals_earned.length }}</div>
               </div>
 
@@ -1894,7 +1967,7 @@ const selectedRecentReferrals = computed(() => selected.value?.referrals_earned.
         <div class="p-4 sm:p-5 border-t border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 flex justify-end">
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition"
+            class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition"
             @click="closeModal"
           >
             Close

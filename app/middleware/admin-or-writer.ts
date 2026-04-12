@@ -1,4 +1,4 @@
-// app/middleware/admin.ts
+// app/middleware/admin-or-writer.ts
 type RoleResponse = {
   role: 'admin' | 'writer' | 'user' | null
   found: boolean
@@ -14,7 +14,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const session = data?.session || null
 
   if (error) {
-    console.warn('admin middleware getSession error:', error.message)
+    console.warn('admin-or-writer middleware getSession error:', error.message)
   }
 
   if (!session) {
@@ -29,11 +29,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
       credentials: 'include'
     })
 
-    if (res.role !== 'admin') {
+    if (res.role !== 'admin' && res.role !== 'writer') {
       return navigateTo('/', { replace: true })
     }
   } catch (err: any) {
-    console.warn('admin middleware role fetch error:', err?.message || err)
+    console.warn('admin-or-writer middleware role fetch error:', err?.message || err)
     return navigateTo('/', { replace: true })
   }
 })

@@ -4,14 +4,56 @@ useHead({
   meta: [{ name: 'description', content: 'Login to play games on Illusion Arc.' }]
 })
 
+type Role = 'admin' | 'writer' | 'user' | null
+type RoleResponse = { role: Role; found?: boolean }
+
+const route = useRoute()
+const toast = useToast()
+
+const supabase = useSupabaseClient()
+const user = useSupabaseUser()
+
+async function fetchRole(): Promise<Role> {
+  try {
+    const res = await $fetch<RoleResponse>('/api/auth/role', { credentials: 'include' })
+    return res.role
+  } catch {
+    return null
+  }
+}
+
+function resolveNextByRole(role: Role, requestedNext?: string | null) {
+  const next = String(requestedNext || '').trim()
+
+  if (next && next.startsWith('/')) {
+    return next
+  }
+
+  if (role === 'admin') return '/admin'
+  if (role === 'writer') return '/admin/blogs'
+  return '/arcade'
+}
+
 definePageMeta({
   middleware: [
     async () => {
       const user = useSupabaseUser()
       const supabase = useSupabaseClient()
+      const route = useRoute()
+
+      async function getRoleInsideMiddleware(): Promise<Role> {
+        try {
+          const res = await $fetch<RoleResponse>('/api/auth/role', { credentials: 'include' })
+          return res.role
+        } catch {
+          return null
+        }
+      }
 
       if (user.value) {
-        return navigateTo('/', { replace: true })
+        const role = await getRoleInsideMiddleware()
+        const target = resolveNextByRole(role, typeof route.query.next === 'string' ? route.query.next : null)
+        return navigateTo(target, { replace: true })
       }
 
       const {
@@ -19,19 +61,13 @@ definePageMeta({
       } = await supabase.auth.getSession()
 
       if (session) {
-        return navigateTo('/', { replace: true })
+        const role = await getRoleInsideMiddleware()
+        const target = resolveNextByRole(role, typeof route.query.next === 'string' ? route.query.next : null)
+        return navigateTo(target, { replace: true })
       }
     }
   ]
 })
-
-type RoleResponse = { role: 'admin' | 'user' | null; found?: boolean }
-
-const route = useRoute()
-const toast = useToast()
-
-const supabase = useSupabaseClient()
-const user = useSupabaseUser()
 
 const email = ref('')
 const password = ref('')
@@ -145,7 +181,8 @@ async function claimReferralCode(code: string) {
 
 const nextUrl = computed(() => {
   const n = route.query.next
-  return typeof n === 'string' && n.startsWith('/') ? n : '/arcade'
+  const next = typeof n === 'string' && n.startsWith('/') ? n : ''
+  return next || ''
 })
 
 function isEmailValid(v: string) {
@@ -176,15 +213,6 @@ const canSubmit = computed(() => {
   return true
 })
 
-async function getRole(): Promise<'admin' | 'user' | null> {
-  try {
-    const res = await $fetch<RoleResponse>('/api/auth/role')
-    return res.role
-  } catch {
-    return null
-  }
-}
-
 function hardReloadTo(path: string) {
   if (!import.meta.client) return
   window.location.assign(path)
@@ -197,10 +225,14 @@ async function redirectAfterLogin() {
 
   if (!session) return
 
-  const role = await getRole()
-  if (role === 'admin') return hardReloadTo('/admin')
+  const role = await fetchRole()
+  const target = resolveNextByRole(role, nextUrl.value)
 
-  return navigateTo(nextUrl.value, { replace: true })
+  if (target.startsWith('/admin')) {
+    return hardReloadTo(target)
+  }
+
+  return navigateTo(target, { replace: true })
 }
 
 watch(
@@ -434,7 +466,7 @@ async function submit() {
     })
 
     if (data?.session) {
-      await navigateTo('/arcade', { replace: true })
+      await redirectAfterLogin()
     }
     return
   } catch (e: any) {
@@ -490,7 +522,7 @@ function goToForgotPassword() {
         <div class="order-2 lg:order-1 max-w-xl">
           <div class="badge">
             <UIcon name="i-heroicons-lock-closed" class="w-4 h-4" />
-            Login required to play games
+            Login required to continue
           </div>
 
           <h1 class="mt-4 text-4xl md:text-6xl font-semibold tracking-tight">
@@ -498,7 +530,7 @@ function goToForgotPassword() {
           </h1>
 
           <p class="mt-4 text-sm md:text-base opacity-80 leading-relaxed max-w-lg">
-            Sign in to save scores, show up on leaderboards, and continue your runs across devices.
+            Sign in to save scores, manage your account, and access the right panel based on your role.
           </p>
 
           <div class="mt-6 grid gap-3 sm:grid-cols-2 max-w-lg">
@@ -511,18 +543,18 @@ function goToForgotPassword() {
             </div>
 
             <div class="feature">
-              <UIcon name="i-heroicons-sparkles" class="w-5 h-5" />
+              <UIcon name="i-heroicons-pencil-square" class="w-5 h-5" />
               <div>
-                <div class="text-sm font-semibold">Micro-interactions</div>
-                <div class="text-xs opacity-70">Fast, playful UI</div>
+                <div class="text-sm font-semibold">Writers</div>
+                <div class="text-xs opacity-70">Go straight to blog management</div>
               </div>
             </div>
 
             <div class="feature">
               <UIcon name="i-heroicons-shield-check" class="w-5 h-5" />
               <div>
-                <div class="text-sm font-semibold">Secure</div>
-                <div class="text-xs opacity-70">Supabase authentication</div>
+                <div class="text-sm font-semibold">Admins</div>
+                <div class="text-xs opacity-70">Open admin dashboard directly</div>
               </div>
             </div>
 
@@ -537,7 +569,7 @@ function goToForgotPassword() {
 
           <div class="mt-6 text-xs opacity-60">
             After login you’ll return to:
-            <span class="opacity-100">{{ nextUrl }}</span>
+            <span class="opacity-100">{{ nextUrl || 'role-based default page' }}</span>
           </div>
         </div>
 
@@ -552,8 +584,8 @@ function goToForgotPassword() {
                   <div class="text-xs opacity-70 mt-1">
                     {{
                       mode === 'signin'
-                        ? 'Login to play games and save scores.'
-                        : 'Create an account to join the leaderboard.'
+                        ? 'Login to continue.'
+                        : 'Create an account to get started.'
                     }}
                   </div>
                 </div>
@@ -703,7 +735,7 @@ function goToForgotPassword() {
           </div>
 
           <div class="mt-4 text-xs opacity-60 text-center">
-            Tip: Use the same account to keep scores across games.
+            Tip: Writers go to Blogs, admins go to Admin, players go to Arcade.
           </div>
         </div>
       </div>

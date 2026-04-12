@@ -2,7 +2,7 @@
 <script setup lang="ts">
 definePageMeta({
   layout: 'admin',
-  middleware: ['admin']
+  middleware: ['admin-or-writer']
 })
 
 useHead({ title: 'Admin — Dashboard' })
@@ -12,27 +12,26 @@ const supabase = useSupabaseClient()
 
 const loading = ref(true)
 const refreshing = ref(false)
+const checkingRole = ref(true)
 
 /* ---------------- Types ---------------- */
+type Role = 'admin' | 'writer' | 'user' | null
+type RoleResponse = { role: Role; found: boolean }
+
 type DashboardStats = {
   users: number
   newMessages: number
   scoreEvents: number
-
   paymentsPending: number
   paymentsPaid: number
   totalIncomeBDT: number
-
   activeSubs: number
   expiringSubs: number
-
   liveTournaments: number
   scheduledTournaments: number
-
   endedTotal: number
   endedFinalized: number
   endedUnfinalized: number
-
   activeServices: number
   activeWorks: number
 }
@@ -86,25 +85,22 @@ type PrizeSummary = {
 }
 
 /* ---------------- State ---------------- */
+const role = ref<Role>(null)
+
 const stats = ref<DashboardStats>({
   users: 0,
   newMessages: 0,
   scoreEvents: 0,
-
   paymentsPending: 0,
   paymentsPaid: 0,
   totalIncomeBDT: 0,
-
   activeSubs: 0,
   expiringSubs: 0,
-
   liveTournaments: 0,
   scheduledTournaments: 0,
-
   endedTotal: 0,
   endedFinalized: 0,
   endedUnfinalized: 0,
-
   activeServices: 0,
   activeWorks: 0
 })
@@ -122,9 +118,11 @@ const prizeSummaryMap = ref<Record<string, PrizeSummary>>({})
 function n(v: number) {
   return new Intl.NumberFormat().format(v || 0)
 }
+
 function money(v: number) {
   return `৳ ${n(v || 0)}`
 }
+
 function fmtDT(v?: string | null) {
   if (!v) return '—'
   const d = new Date(v)
@@ -136,6 +134,7 @@ function fmtDT(v?: string | null) {
     minute: '2-digit'
   }).format(d)
 }
+
 function fmtDate(v?: string | null) {
   if (!v) return '—'
   const d = new Date(v)
@@ -145,12 +144,14 @@ function fmtDate(v?: string | null) {
     day: '2-digit'
   }).format(d)
 }
+
 function minutesFromNow(iso: string) {
   const t = new Date(iso).getTime()
   const diff = t - Date.now()
   if (!Number.isFinite(t)) return null
   return Math.round(diff / 60000)
 }
+
 function relTime(iso: string) {
   const m = minutesFromNow(iso)
   if (m == null) return '—'
@@ -172,8 +173,34 @@ function badgeClass(kind: string) {
   if (k === 'finalized') return 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/25'
   return 'bg-black/5 dark:bg-white/5 text-black/70 dark:text-white/70 border-black/10 dark:border-white/10'
 }
+
 function pill(v: string) {
   return `inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClass(v)}`
+}
+
+/* ---------------- Role guard ---------------- */
+async function ensureAdminDashboardAccess() {
+  checkingRole.value = true
+  try {
+    const res = await $fetch<RoleResponse>('/api/auth/role', {
+      credentials: 'include'
+    })
+
+    role.value = res.role
+
+    if (res.role === 'writer') {
+      return navigateTo('/admin/blogs', { replace: true })
+    }
+
+    if (res.role !== 'admin') {
+      return navigateTo('/', { replace: true })
+    }
+  } catch (e: any) {
+    console.warn('dashboard role check failed:', e?.message || e)
+    return navigateTo('/', { replace: true })
+  } finally {
+    checkingRole.value = false
+  }
 }
 
 /* ---------------- Data helpers ---------------- */
@@ -317,21 +344,16 @@ async function loadDashboard() {
       users: Number(row.users || 0),
       newMessages: Number(row.new_messages || 0),
       scoreEvents: Number(row.score_events || 0),
-
       paymentsPending: Number(row.payments_pending || 0),
       paymentsPaid: Number(row.payments_paid || 0),
       totalIncomeBDT: Number(row.total_income_bdt || 0),
-
       activeSubs: Number(row.active_subs || 0),
       expiringSubs: Number(row.expiring_subs || 0),
-
       liveTournaments: Number(row.live_tournaments || 0),
       scheduledTournaments: Number(row.scheduled_tournaments || 0),
-
       endedTotal: Number(row.ended_total || 0),
       endedFinalized: Number(row.ended_finalized || 0),
       endedUnfinalized: Number(row.ended_unfinalized || 0),
-
       activeServices: Number(row.active_services || 0),
       activeWorks: Number(row.active_works || 0)
     }
@@ -370,7 +392,11 @@ async function refresh() {
   }
 }
 
-onMounted(loadDashboard)
+onMounted(async () => {
+  const nav = await ensureAdminDashboardAccess()
+  if (nav) return
+  await loadDashboard()
+})
 
 const attentionCount = computed(() => {
   return (
@@ -385,190 +411,142 @@ const needsAttention = computed(() => attentionCount.value > 0)
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- HERO -->
-    <div
-      class="relative overflow-hidden rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5 lg:p-6 shadow-[0_30px_90px_rgba(0,0,0,.12)] dark:shadow-[0_30px_90px_rgba(0,0,0,.30)] backdrop-blur"
-    >
-      <div
-        class="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full blur-3xl opacity-60"
-        style="background: radial-gradient(circle at 30% 30%, rgba(34,211,238,.28), transparent 60%);"
-        aria-hidden="true"
-      />
-      <div
-        class="pointer-events-none absolute -bottom-32 -left-32 h-80 w-80 rounded-full blur-3xl opacity-60"
-        style="background: radial-gradient(circle at 30% 30%, rgba(124,58,237,.26), transparent 60%);"
-        aria-hidden="true"
-      />
+  <div v-if="checkingRole" class="space-y-4">
+    <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-6">
+      <div class="h-6 w-48 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
+      <div class="mt-3 h-4 w-72 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
+    </div>
 
-      <div class="flex flex-wrap items-end justify-between gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div v-for="i in 4" :key="i" class="h-32 rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 animate-pulse" />
+    </div>
+  </div>
+
+  <div v-else class="space-y-4">
+    <!-- Header -->
+    <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-5 lg:p-6">
+      <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
-          <div
-            class="inline-flex items-center gap-2 rounded-full border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-3 py-1.5 text-xs text-black/60 dark:text-white/60"
-          >
-            <span
-              class="h-2 w-2 rounded-full"
-              style="background: radial-gradient(circle at 30% 30%, #22d3ee, #7c3aed); box-shadow: 0 0 0 6px rgba(34,211,238,.10);"
-            />
+          <div class="text-sm text-black/60 dark:text-white/60">Overview</div>
+          <h1 class="mt-1 text-2xl lg:text-3xl font-bold tracking-tight text-black dark:text-white">
             Admin Dashboard
-            <span v-if="!loading" class="ml-1 opacity-70">•</span>
-            <span v-if="!loading" class="opacity-70">Attention: {{ n(attentionCount) }}</span>
-            <span
-              v-if="!loading && needsAttention"
-              class="ml-2 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold"
-              :class="badgeClass('pending')"
-            >
-              Action needed
-            </span>
-          </div>
-
-          <h1 class="mt-3 text-2xl lg:text-3xl font-extrabold tracking-tight text-black dark:text-white">
-            Admin Command Center
           </h1>
-          <p class="mt-1 text-sm text-black/60 dark:text-white/60 max-w-2xl">
-            Messages, payments, scores, tournaments — the essentials, clean and fast.
+          <p class="mt-2 text-sm text-black/60 dark:text-white/60 max-w-2xl">
+            A simple overview of the most important activities across users, content, payments, subscriptions, and tournaments.
           </p>
         </div>
 
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/10 dark:hover:bg-white/10 transition disabled:opacity-60"
+            class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-60"
             :disabled="loading || refreshing"
             @click="refresh"
           >
-            <UIcon name="i-heroicons-arrow-path" class="h-5 w-5 opacity-80" />
+            <UIcon name="i-heroicons-arrow-path" class="h-5 w-5" />
             {{ refreshing ? 'Refreshing…' : 'Refresh' }}
           </button>
 
           <NuxtLink
             to="/admin/messages"
-            class="inline-flex items-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 px-4 py-2.5 text-sm font-semibold hover:bg-white/80 dark:hover:bg-white/10 transition"
+            class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition"
           >
-            <UIcon name="i-heroicons-inbox" class="h-5 w-5 opacity-90" />
             Inbox
           </NuxtLink>
 
           <NuxtLink
-            to="/admin/payments"
-            class="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/30 bg-gradient-to-br from-emerald-500/15 via-cyan-500/10 to-violet-500/10 px-4 py-2.5 text-sm font-semibold hover:from-emerald-500/20 hover:via-cyan-500/15 hover:to-violet-500/15 transition"
-          >
-            <UIcon name="i-heroicons-banknotes" class="h-5 w-5 opacity-90" />
-            Payments
-          </NuxtLink>
-
-          <NuxtLink
             to="/admin/tournaments"
-            class="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/30 bg-gradient-to-br from-cyan-400/15 via-violet-500/10 to-emerald-500/10 px-4 py-2.5 text-sm font-semibold hover:from-cyan-400/20 hover:via-violet-500/15 hover:to-emerald-500/15 transition"
+            class="inline-flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition"
           >
-            <UIcon name="i-heroicons-flag" class="h-5 w-5 opacity-90" />
             Tournaments
           </NuxtLink>
         </div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-2 text-xs">
+        <span :class="pill(needsAttention ? 'pending' : 'ok')">
+          {{ needsAttention ? `${n(attentionCount)} item(s) need attention` : 'Everything looks good' }}
+        </span>
       </div>
     </div>
 
     <!-- KPIs -->
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-      <!-- Total Income -->
-      <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 backdrop-blur">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="h-11 w-11 rounded-2xl grid place-items-center border border-emerald-500/25 bg-emerald-500/10">
-              <UIcon name="i-heroicons-banknotes" class="h-5 w-5 opacity-80" />
-            </div>
-            <div>
-              <div class="text-sm font-semibold text-black dark:text-white">Total Income</div>
-              <div class="text-xs text-black/60 dark:text-white/60">paid/success</div>
-            </div>
+      <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold">Total Income</div>
+            <div class="text-xs text-black/60 dark:text-white/60">Paid / success</div>
           </div>
-          <NuxtLink to="/admin/payments" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
-            Open →
+          <NuxtLink to="/admin/payments" class="text-xs text-black/60 dark:text-white/60 hover:underline">
+            Open
           </NuxtLink>
         </div>
 
-        <div class="mt-4 text-3xl font-extrabold tracking-tight text-black dark:text-white tabular-nums">
-          <span v-if="loading" class="inline-block h-9 w-32 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
+        <div class="mt-4 text-3xl font-bold tabular-nums">
+          <span v-if="loading" class="inline-block h-9 w-32 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
           <span v-else>{{ money(stats.totalIncomeBDT) }}</span>
         </div>
 
-        <div class="mt-2 flex flex-wrap gap-2 text-xs">
+        <div class="mt-3 flex flex-wrap gap-2 text-xs">
           <span :class="pill('paid')">{{ n(stats.paymentsPaid) }} paid</span>
           <span v-if="stats.paymentsPending > 0" :class="pill('pending')">{{ n(stats.paymentsPending) }} pending</span>
         </div>
       </div>
 
-      <!-- Users -->
-      <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 backdrop-blur">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="h-11 w-11 rounded-2xl grid place-items-center border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
-              <UIcon name="i-heroicons-users" class="h-5 w-5 opacity-80" />
-            </div>
-            <div>
-              <div class="text-sm font-semibold text-black dark:text-white">Users</div>
-              <div class="text-xs text-black/60 dark:text-white/60">profiles</div>
-            </div>
+      <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold">Users</div>
+            <div class="text-xs text-black/60 dark:text-white/60">Profiles</div>
           </div>
-          <NuxtLink to="/admin/users" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
-            Open →
+          <NuxtLink to="/admin/users" class="text-xs text-black/60 dark:text-white/60 hover:underline">
+            Open
           </NuxtLink>
         </div>
 
-        <div class="mt-4 text-3xl font-extrabold tracking-tight text-black dark:text-white tabular-nums">
-          <span v-if="loading" class="inline-block h-9 w-20 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
+        <div class="mt-4 text-3xl font-bold tabular-nums">
+          <span v-if="loading" class="inline-block h-9 w-20 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
           <span v-else>{{ n(stats.users) }}</span>
         </div>
       </div>
 
-      <!-- Inbox -->
-      <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 backdrop-blur">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="h-11 w-11 rounded-2xl grid place-items-center border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
-              <UIcon name="i-heroicons-inbox" class="h-5 w-5 opacity-80" />
-            </div>
-            <div>
-              <div class="text-sm font-semibold text-black dark:text-white">Inbox</div>
-              <div class="text-xs text-black/60 dark:text-white/60">new messages</div>
-            </div>
+      <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold">Inbox</div>
+            <div class="text-xs text-black/60 dark:text-white/60">New messages</div>
           </div>
-          <NuxtLink to="/admin/messages" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
-            Open →
+          <NuxtLink to="/admin/messages" class="text-xs text-black/60 dark:text-white/60 hover:underline">
+            Open
           </NuxtLink>
         </div>
 
         <div class="mt-4 flex items-end justify-between gap-3">
-          <div class="text-3xl font-extrabold tracking-tight text-black dark:text-white tabular-nums">
-            <span v-if="loading" class="inline-block h-9 w-20 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
+          <div class="text-3xl font-bold tabular-nums">
+            <span v-if="loading" class="inline-block h-9 w-20 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
             <span v-else>{{ n(stats.newMessages) }}</span>
           </div>
-          <div class="text-xs">
-            <span :class="pill(stats.newMessages > 0 ? 'new' : 'ok')">{{ stats.newMessages > 0 ? 'Needs review' : 'Clear' }}</span>
-          </div>
+          <span :class="pill(stats.newMessages > 0 ? 'new' : 'ok')">
+            {{ stats.newMessages > 0 ? 'Needs review' : 'Clear' }}
+          </span>
         </div>
       </div>
 
-      <!-- Tournaments focus -->
-      <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 backdrop-blur">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="h-11 w-11 rounded-2xl grid place-items-center border border-cyan-500/25 bg-cyan-500/10">
-              <UIcon name="i-heroicons-flag" class="h-5 w-5 opacity-80" />
-            </div>
-            <div>
-              <div class="text-sm font-semibold text-black dark:text-white">Tournaments</div>
-              <div class="text-xs text-black/60 dark:text-white/60">live + upcoming + ended</div>
-            </div>
+      <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold">Tournaments</div>
+            <div class="text-xs text-black/60 dark:text-white/60">Live / scheduled / ended</div>
           </div>
-          <NuxtLink to="/admin/tournaments" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
-            Open →
+          <NuxtLink to="/admin/tournaments" class="text-xs text-black/60 dark:text-white/60 hover:underline">
+            Open
           </NuxtLink>
         </div>
 
         <div class="mt-4 flex items-end justify-between gap-3">
-          <div class="text-3xl font-extrabold tracking-tight text-black dark:text-white tabular-nums">
-            <span v-if="loading" class="inline-block h-9 w-24 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
+          <div class="text-3xl font-bold tabular-nums">
+            <span v-if="loading" class="inline-block h-9 w-24 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
             <span v-else>{{ n(stats.endedTotal) }}</span>
           </div>
 
@@ -576,61 +554,49 @@ const needsAttention = computed(() => attentionCount.value > 0)
             <span :class="pill('live')">{{ n(stats.liveTournaments) }} live</span>
             <span :class="pill('scheduled')">{{ n(stats.scheduledTournaments) }} scheduled</span>
             <span :class="pill('finalized')">{{ n(stats.endedFinalized) }} finalized</span>
-            <span v-if="stats.endedUnfinalized > 0" :class="pill('pending')">{{ n(stats.endedUnfinalized) }} needs finalize</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- CONTENT + SUBS -->
+    <!-- Mid cards -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
-      <!-- Subscriptions -->
-      <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 backdrop-blur">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="h-11 w-11 rounded-2xl grid place-items-center border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
-              <UIcon name="i-heroicons-ticket" class="h-5 w-5 opacity-80" />
-            </div>
-            <div>
-              <div class="text-sm font-semibold text-black dark:text-white">Subscriptions</div>
-              <div class="text-xs text-black/60 dark:text-white/60">active / expiring</div>
-            </div>
+      <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold">Subscriptions</div>
+            <div class="text-xs text-black/60 dark:text-white/60">Active and expiring</div>
           </div>
-          <NuxtLink to="/admin/subscriptions" class="text-xs text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition">
-            Open →
+          <NuxtLink to="/admin/subscriptions" class="text-xs text-black/60 dark:text-white/60 hover:underline">
+            Open
           </NuxtLink>
         </div>
 
         <div class="mt-4 flex items-end justify-between gap-3">
-          <div class="text-3xl font-extrabold tracking-tight text-black dark:text-white tabular-nums">
-            <span v-if="loading" class="inline-block h-9 w-24 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
+          <div class="text-3xl font-bold tabular-nums">
+            <span v-if="loading" class="inline-block h-9 w-24 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
             <span v-else>{{ n(stats.activeSubs) }}</span>
           </div>
           <div class="flex items-center gap-2 text-xs">
             <span :class="pill('active')">active</span>
-            <span :class="pill(stats.expiringSubs > 0 ? 'pending' : 'ok')">{{ n(stats.expiringSubs) }} expiring</span>
+            <span :class="pill(stats.expiringSubs > 0 ? 'pending' : 'ok')">
+              {{ n(stats.expiringSubs) }} expiring
+            </span>
           </div>
         </div>
       </div>
 
-      <!-- Content -->
-      <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 backdrop-blur">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="h-11 w-11 rounded-2xl grid place-items-center border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
-              <UIcon name="i-heroicons-squares-2x2" class="h-5 w-5 opacity-80" />
-            </div>
-            <div>
-              <div class="text-sm font-semibold text-black dark:text-white">Content</div>
-              <div class="text-xs text-black/60 dark:text-white/60">services / works</div>
-            </div>
+      <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold">Content</div>
+            <div class="text-xs text-black/60 dark:text-white/60">Services and works</div>
           </div>
-          <div class="text-xs text-black/60 dark:text-white/60">Quick</div>
         </div>
 
         <div class="mt-4 flex items-end justify-between gap-3">
-          <div class="text-3xl font-extrabold tracking-tight text-black dark:text-white tabular-nums">
-            <span v-if="loading" class="inline-block h-9 w-24 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
+          <div class="text-3xl font-bold tabular-nums">
+            <span v-if="loading" class="inline-block h-9 w-24 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
             <span v-else>{{ n(stats.activeServices) }}</span>
           </div>
 
@@ -644,57 +610,39 @@ const needsAttention = computed(() => attentionCount.value > 0)
         </div>
       </div>
 
-      <!-- Quick actions -->
-      <div class="relative overflow-hidden rounded-3xl border border-black/10 dark:border-white/10 bg-gradient-to-br from-cyan-400/10 via-violet-500/10 to-emerald-500/10 p-4 backdrop-blur">
-        <div
-          class="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full blur-3xl opacity-40"
-          style="background: radial-gradient(circle at 30% 30%, rgba(34,211,238,.30), transparent 60%);"
-        />
-        <div class="text-sm font-extrabold tracking-tight text-black dark:text-white">Quick Actions</div>
-        <div class="mt-1 text-xs text-black/60 dark:text-white/60">Jump straight to your daily ops.</div>
+      <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4">
+        <div class="text-sm font-semibold">Quick Actions</div>
+        <div class="mt-1 text-xs text-black/60 dark:text-white/60">Go where you need quickly.</div>
 
         <div class="mt-4 grid grid-cols-2 gap-2">
-          <NuxtLink
-            to="/admin/messages"
-            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/90 dark:hover:bg-white/10 transition"
-          >
-            Inbox →
+          <NuxtLink to="/admin/messages" class="rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition">
+            Inbox
           </NuxtLink>
-          <NuxtLink
-            to="/admin/payments"
-            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/90 dark:hover:bg-white/10 transition"
-          >
-            Payments →
+          <NuxtLink to="/admin/payments" class="rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition">
+            Payments
           </NuxtLink>
-          <NuxtLink
-            to="/admin/tournaments"
-            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/90 dark:hover:bg-white/10 transition"
-          >
-            Tournaments →
+          <NuxtLink to="/admin/tournaments" class="rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition">
+            Tournaments
           </NuxtLink>
-          <NuxtLink
-            to="/admin/subscriptions"
-            class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/90 dark:hover:bg-white/10 transition"
-          >
-            Subscriptions →
+          <NuxtLink to="/admin/subscriptions" class="rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition">
+            Subscriptions
           </NuxtLink>
         </div>
       </div>
     </div>
 
-    <!-- MAIN PANELS -->
+    <!-- Main panels -->
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
-      <!-- LEFT -->
       <div class="xl:col-span-2 grid grid-cols-1 lg:grid-cols-3 gap-3">
         <!-- Recent Messages -->
-        <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5 backdrop-blur lg:col-span-1">
+        <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-5 lg:col-span-1">
           <div class="flex items-center justify-between gap-3">
             <div>
-              <div class="text-lg font-extrabold tracking-tight text-black dark:text-white">Recent Messages</div>
+              <div class="text-lg font-semibold">Recent Messages</div>
               <div class="text-xs text-black/60 dark:text-white/60">Latest 3 from contact_messages</div>
             </div>
-            <NuxtLink to="/admin/messages" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition">
-              Open →
+            <NuxtLink to="/admin/messages" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:underline">
+              Open
             </NuxtLink>
           </div>
 
@@ -713,32 +661,30 @@ const needsAttention = computed(() => attentionCount.value > 0)
               v-else
               v-for="m in latestMessages"
               :key="m.id"
-              class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-3 hover:bg-white/80 dark:hover:bg-white/10 transition"
+              class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-3"
             >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <div class="font-semibold text-black dark:text-white truncate">{{ m.name }}</div>
-                    <span :class="pill(m.status)">{{ m.status }}</span>
-                  </div>
-                  <div class="mt-1 text-xs text-black/60 dark:text-white/60 truncate">{{ m.email }}</div>
-                  <div class="mt-2 text-sm text-black/70 dark:text-white/70 line-clamp-1">{{ m.subject || 'No subject' }}</div>
-                  <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">{{ fmtDT(m.created_at) }}</div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <div class="font-semibold truncate">{{ m.name }}</div>
+                  <span :class="pill(m.status)">{{ m.status }}</span>
                 </div>
+                <div class="mt-1 text-xs text-black/60 dark:text-white/60 truncate">{{ m.email }}</div>
+                <div class="mt-2 text-sm text-black/70 dark:text-white/70 line-clamp-1">{{ m.subject || 'No subject' }}</div>
+                <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">{{ fmtDT(m.created_at) }}</div>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Recent Payments -->
-        <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5 backdrop-blur lg:col-span-1">
+        <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-5 lg:col-span-1">
           <div class="flex items-center justify-between gap-3">
             <div>
-              <div class="text-lg font-extrabold tracking-tight text-black dark:text-white">Recent Payments</div>
+              <div class="text-lg font-semibold">Recent Payments</div>
               <div class="text-xs text-black/60 dark:text-white/60">Latest 3 from payments</div>
             </div>
-            <NuxtLink to="/admin/payments" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition">
-              Open →
+            <NuxtLink to="/admin/payments" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:underline">
+              Open
             </NuxtLink>
           </div>
 
@@ -757,26 +703,24 @@ const needsAttention = computed(() => attentionCount.value > 0)
               v-else
               v-for="p in latestPayments"
               :key="p.id"
-              class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-3 hover:bg-white/80 dark:hover:bg-white/10 transition"
+              class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-3"
             >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <div class="font-semibold text-black dark:text-white truncate">
-                      {{ p.plan_code }}
-                      <span v-if="nameByUserId[p.user_id]" class="ml-1 text-xs font-normal text-black/50 dark:text-white/50">
-                        ({{ nameByUserId[p.user_id] }})
-                      </span>
-                    </div>
-                    <span :class="pill(p.status)">{{ p.status }}</span>
-                    <span v-if="p.applied" :class="pill('success')">applied</span>
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="font-semibold truncate">
+                    {{ p.plan_code }}
+                    <span v-if="nameByUserId[p.user_id]" class="ml-1 text-xs font-normal text-black/50 dark:text-white/50">
+                      ({{ nameByUserId[p.user_id] }})
+                    </span>
                   </div>
-                  <div class="mt-2 text-sm text-black/70 dark:text-white/70 truncate">
-                    {{ money(p.amount_bdt) }} • Tran: {{ p.tran_id }}
-                  </div>
-                  <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">
-                    {{ fmtDT(p.created_at) }} <span class="opacity-50">•</span> Paid: {{ fmtDT(p.paid_at) }}
-                  </div>
+                  <span :class="pill(p.status)">{{ p.status }}</span>
+                  <span v-if="p.applied" :class="pill('success')">applied</span>
+                </div>
+                <div class="mt-2 text-sm text-black/70 dark:text-white/70 truncate">
+                  {{ money(p.amount_bdt) }} • Tran: {{ p.tran_id }}
+                </div>
+                <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">
+                  {{ fmtDT(p.created_at) }} <span class="opacity-50">•</span> Paid: {{ fmtDT(p.paid_at) }}
                 </div>
               </div>
             </div>
@@ -784,14 +728,14 @@ const needsAttention = computed(() => attentionCount.value > 0)
         </div>
 
         <!-- Latest Scores -->
-        <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5 backdrop-blur lg:col-span-1">
+        <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-5 lg:col-span-1">
           <div class="flex items-center justify-between gap-3">
             <div>
-              <div class="text-lg font-extrabold tracking-tight text-black dark:text-white">Latest Scores</div>
+              <div class="text-lg font-semibold">Latest Scores</div>
               <div class="text-xs text-black/60 dark:text-white/60">Latest 3 from leaderboard_scores</div>
             </div>
-            <NuxtLink to="/admin/scores" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition">
-              Open →
+            <NuxtLink to="/admin/scores" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:underline">
+              Open
             </NuxtLink>
           </div>
 
@@ -810,45 +754,40 @@ const needsAttention = computed(() => attentionCount.value > 0)
               v-else
               v-for="s in latestScores"
               :key="s.id"
-              class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-3 hover:bg-white/80 dark:hover:bg-white/10 transition"
+              class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-3"
             >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <div class="font-semibold text-black dark:text-white truncate">{{ s.game_slug }}</div>
-                    <span
-                      class="inline-flex items-center rounded-full border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-2.5 py-1 text-xs font-semibold text-black/70 dark:text-white/70"
-                    >
-                      {{ s.player_name || 'Player' }}
-                    </span>
-                  </div>
-                  <div class="mt-2 text-sm text-black/70 dark:text-white/70">
-                    Score: <span class="font-extrabold tabular-nums">{{ n(s.score) }}</span>
-                  </div>
-                  <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">{{ fmtDT(s.created_at) }}</div>
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="font-semibold truncate">{{ s.game_slug }}</div>
+                  <span class="inline-flex items-center rounded-full border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 px-2.5 py-1 text-xs font-semibold text-black/70 dark:text-white/70">
+                    {{ s.player_name || 'Player' }}
+                  </span>
                 </div>
+                <div class="mt-2 text-sm text-black/70 dark:text-white/70">
+                  Score: <span class="font-bold tabular-nums">{{ n(s.score) }}</span>
+                </div>
+                <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">{{ fmtDT(s.created_at) }}</div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- RIGHT: Tournaments panel -->
-      <div class="rounded-3xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-5 backdrop-blur">
+      <!-- Right side tournaments -->
+      <div class="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-5">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <div class="text-lg font-extrabold tracking-tight text-black dark:text-white">Tournaments</div>
-            <div class="text-xs text-black/60 dark:text-white/60">Live now + upcoming</div>
+            <div class="text-lg font-semibold">Tournaments</div>
+            <div class="text-xs text-black/60 dark:text-white/60">Live and upcoming</div>
           </div>
-          <NuxtLink to="/admin/tournaments" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white transition">
-            Open →
+          <NuxtLink to="/admin/tournaments" class="text-xs font-semibold text-black/70 dark:text-white/70 hover:underline">
+            Open
           </NuxtLink>
         </div>
 
-        <!-- Live -->
         <div v-if="!loading && liveTournaments.length" class="mt-4">
           <div class="flex items-center justify-between">
-            <div class="text-sm font-semibold text-black dark:text-white">Live now</div>
+            <div class="text-sm font-semibold">Live now</div>
             <span :class="pill('live')">{{ liveTournaments.length }} live</span>
           </div>
 
@@ -857,16 +796,17 @@ const needsAttention = computed(() => attentionCount.value > 0)
               v-for="t in liveTournaments"
               :key="t.id"
               :to="`/admin/tournaments`"
-              class="block rounded-2xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/10 via-cyan-500/10 to-violet-500/10 p-3 hover:from-emerald-500/15 hover:via-cyan-500/15 hover:to-violet-500/15 transition"
+              class="block rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-3 hover:bg-black/5 dark:hover:bg-white/10 transition"
             >
               <div class="flex items-start gap-3">
-                <div class="h-11 w-14 rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 shrink-0">
+                <div class="h-11 w-14 rounded-lg overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 shrink-0">
                   <img v-if="t.thumbnail_url" :src="t.thumbnail_url" class="h-full w-full object-cover" />
                   <div v-else class="h-full w-full grid place-items-center text-[10px] opacity-60">LIVE</div>
                 </div>
+
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
-                    <div class="font-semibold text-black dark:text-white truncate">{{ t.title }}</div>
+                    <div class="font-semibold truncate">{{ t.title }}</div>
                     <span :class="pill('live')">live</span>
                     <span
                       v-if="!t.finalized && new Date(t.ends_at).getTime() < Date.now() + 5 * 60 * 1000"
@@ -875,14 +815,16 @@ const needsAttention = computed(() => attentionCount.value > 0)
                       finalize soon
                     </span>
                   </div>
+
                   <div class="mt-1 text-xs text-black/60 dark:text-white/60 truncate">
                     {{ t.game_slug }} • ends {{ relTime(t.ends_at) }}
                   </div>
+
                   <div class="mt-2 flex flex-wrap gap-1 text-[11px] text-black/70 dark:text-white/70">
                     <span
                       v-for="x in tournamentPills(t)"
                       :key="x"
-                      class="rounded-full border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 px-2 py-0.5"
+                      class="rounded-full border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-2 py-0.5"
                     >
                       {{ x }}
                     </span>
@@ -893,10 +835,9 @@ const needsAttention = computed(() => attentionCount.value > 0)
           </div>
         </div>
 
-        <!-- Upcoming -->
         <div class="mt-5">
           <div class="flex items-center justify-between">
-            <div class="text-sm font-semibold text-black dark:text-white">Upcoming</div>
+            <div class="text-sm font-semibold">Upcoming</div>
             <span v-if="!loading" class="text-xs text-black/60 dark:text-white/60">
               {{ upcomingTournaments.length ? `${upcomingTournaments.length} scheduled` : 'none' }}
             </span>
@@ -904,13 +845,13 @@ const needsAttention = computed(() => attentionCount.value > 0)
 
           <div class="mt-3 space-y-2">
             <div v-if="loading" class="space-y-2">
-              <div class="h-14 rounded-2xl bg-black/10 dark:bg-white/10 animate-pulse" />
-              <div class="h-14 rounded-2xl bg-black/10 dark:bg-white/10 animate-pulse" />
+              <div class="h-14 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
+              <div class="h-14 rounded-xl bg-black/10 dark:bg-white/10 animate-pulse" />
             </div>
 
             <div
               v-else-if="upcomingTournaments.length === 0"
-              class="rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-4 text-sm text-black/60 dark:text-white/60"
+              class="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-4 text-sm text-black/60 dark:text-white/60"
             >
               No upcoming tournaments.
             </div>
@@ -920,29 +861,33 @@ const needsAttention = computed(() => attentionCount.value > 0)
               v-for="t in upcomingTournaments"
               :key="t.id"
               :to="`/admin/tournaments`"
-              class="block rounded-2xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 p-3 hover:bg-white/80 dark:hover:bg-white/10 transition"
+              class="block rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-3 hover:bg-black/5 dark:hover:bg-white/10 transition"
             >
               <div class="flex items-start gap-3">
-                <div class="h-11 w-14 rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 shrink-0">
+                <div class="h-11 w-14 rounded-lg overflow-hidden border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 shrink-0">
                   <img v-if="t.thumbnail_url" :src="t.thumbnail_url" class="h-full w-full object-cover" />
                   <div v-else class="h-full w-full grid place-items-center text-[10px] opacity-60">SOON</div>
                 </div>
+
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
-                    <div class="font-semibold text-black dark:text-white truncate">{{ t.title }}</div>
+                    <div class="font-semibold truncate">{{ t.title }}</div>
                     <span :class="pill('scheduled')">scheduled</span>
                   </div>
+
                   <div class="mt-1 text-xs text-black/60 dark:text-white/60 truncate">
                     {{ t.game_slug }} • starts {{ relTime(t.starts_at) }}
                   </div>
+
                   <div class="mt-1 text-[11px] text-black/50 dark:text-white/50">
                     {{ fmtDate(t.starts_at) }} → {{ fmtDate(t.ends_at) }}
                   </div>
+
                   <div class="mt-2 flex flex-wrap gap-1 text-[11px] text-black/70 dark:text-white/70">
                     <span
                       v-for="x in tournamentPills(t)"
                       :key="x"
-                      class="rounded-full border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/5 px-2 py-0.5"
+                      class="rounded-full border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 px-2 py-0.5"
                     >
                       {{ x }}
                     </span>
@@ -953,22 +898,17 @@ const needsAttention = computed(() => attentionCount.value > 0)
           </div>
         </div>
 
-        <!-- Finalize reminder -->
-        <div v-if="!loading && stats.endedUnfinalized > 0" class="mt-5 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4">
-          <div class="flex items-start gap-3">
-            <div class="h-10 w-10 rounded-xl grid place-items-center border border-amber-500/25 bg-amber-500/10">
-              <UIcon name="i-heroicons-exclamation-triangle" class="h-5 w-5 opacity-80" />
-            </div>
-            <div class="min-w-0">
-              <div class="font-semibold text-black dark:text-white">Finalize needed</div>
-              <div class="mt-1 text-sm text-black/70 dark:text-white/70">
-                {{ n(stats.endedUnfinalized) }} ended tournament(s) are not finalized.
-              </div>
-              <NuxtLink to="/admin/tournaments" class="mt-2 inline-flex text-sm font-semibold hover:underline">
-                Go finalize →
-              </NuxtLink>
-            </div>
+        <div
+          v-if="!loading && stats.endedUnfinalized > 0"
+          class="mt-5 rounded-xl border border-amber-500/25 bg-amber-500/10 p-4"
+        >
+          <div class="font-semibold">Finalize needed</div>
+          <div class="mt-1 text-sm text-black/70 dark:text-white/70">
+            {{ n(stats.endedUnfinalized) }} ended tournament(s) are not finalized.
           </div>
+          <NuxtLink to="/admin/tournaments" class="mt-2 inline-flex text-sm font-semibold hover:underline">
+            Go finalize
+          </NuxtLink>
         </div>
       </div>
     </div>
