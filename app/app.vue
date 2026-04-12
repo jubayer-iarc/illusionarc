@@ -34,13 +34,13 @@
         <NuxtPage />
       </NuxtLayout>
 
-      <LandingTournamentBanner
+      <!-- <LandingTournamentBanner
         image="/img/banners/ended_thumbnail.jpeg"
         to="/tournaments/salami-rush-eid-tournament"
         alt="Join the Salami Rush Eid Tournament and win amazing prizes!"
         :enabled="true"
         :show-only-on-home="false"
-      />
+      /> -->
     </template>
   </UApp>
 </template>
@@ -48,7 +48,7 @@
 <script setup lang="ts">
 import { Analytics } from '@vercel/analytics/nuxt'
 import RouteLoader from '~/components/RouteLoader.vue'
-import LandingTournamentBanner from '~/components/ads/LandingTournamentBanner.vue'
+// import LandingTournamentBanner from '~/components/ads/LandingTournamentBanner.vue'
 import BreakingNewsTicker from '~/components/BreakingNewsTicker.vue'
 
 // Toggle this
