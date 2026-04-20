@@ -18,9 +18,10 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!incomingKey || !validKey || incomingKey !== validKey) {
+    // TEMPORARY DIAGNOSTIC - remove after debugging
     throw createError({
       statusCode: 401,
-      statusMessage: 'Unauthorized: Invalid or missing Publisher API Key'
+      statusMessage: `Unauthorized: stored_len=${validKey?.length ?? 'UNDEFINED'} incoming_len=${incomingKey?.length ?? 0} nuxt_env=${process.env.NUXT_PUBLISHER_API_KEY ? 'SET' : 'NOT_SET'} pub_env=${process.env.PUBLISHER_API_KEY ? 'SET' : 'NOT_SET'}`
     })
   }
 
