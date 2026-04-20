@@ -1,18 +1,23 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 
 export default defineEventHandler(async (event) => {
+  // Read directly from process.env as primary source (always current on Vercel/production).
+  // Falls back to runtimeConfig for local development via .env file.
   const config = useRuntimeConfig()
-  
+  const validKey = process.env.NUXT_PUBLISHER_API_KEY
+    || process.env.PUBLISHER_API_KEY
+    || config.publisherApiKey
+
   // 1. Authentication
   const authHeader = getHeader(event, 'authorization') || ''
   const publisherKeyHeader = getHeader(event, 'x-publisher-key') || ''
-  
+
   let incomingKey = publisherKeyHeader
   if (authHeader.toLowerCase().startsWith('bearer ')) {
     incomingKey = authHeader.substring(7)
   }
 
-  if (!incomingKey || incomingKey !== config.publisherApiKey) {
+  if (!incomingKey || !validKey || incomingKey !== validKey) {
     throw createError({
       statusCode: 401,
       statusMessage: 'Unauthorized: Invalid or missing Publisher API Key'
